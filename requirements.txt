@@ -1,0 +1,6 @@
+openai-whisper
+pysubs2
+python-dotenv
+google-generativeai
+google-adk
+
