@@ -21,7 +21,7 @@ from .tools import (
 
 cutter_agent = Agent(
     name="cutter_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3-flash-preview",
     description="Especialista em remover silêncio de vídeos.",
     instruction="""
     Você é um editor de vídeo especialista em remover silêncio (jumpcuts).
@@ -33,20 +33,21 @@ cutter_agent = Agent(
 
 captioner_agent = Agent(
     name="captioner_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3-flash-preview",
     description="Especialista em transcrever e legendar vídeos.",
     instruction="""
     Você é um especialista em legendagem.
     Sua função é adicionar legendas estilosas (estilo CapCut) aos vídeos.
     Use a ferramenta 'add_subtitles_tool'.
     Se o usuário não especificar o modelo, use 'small'.
+    Se tiver algo escrito GABU, substitua por GABUL.
     """,
     tools=[FunctionTool(add_subtitles_tool)]
 )
 
 reviewer_agent = Agent(
     name="reviewer_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3-flash-preview",
     description="Especialista em validar conteúdo e remover erros de gravação.",
     instruction="""
     Você é um revisor de conteúdo de vídeo.
@@ -65,7 +66,7 @@ reviewer_agent = Agent(
 
 root_agent = Agent(
     name="root_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3-flash-preview",
     description="Gerente da equipe de edição de vídeo.",
     instruction="""
     Você é o gerente de uma equipe de pós-produção de vídeo.

@@ -45,14 +45,17 @@ def gerar_ass_capcut(segments, ass_path: str):
     # Estilo Base (Branco com borda preta para contraste)
     style = pysubs2.SSAStyle()
     style.fontname = "Prohibition"  # Fonte solicitada
-    style.fontsize = 12             # Tamanho reduzido
+    style.fontsize = 10             # Tamanho reduzido
     style.bold = True
     style.primarycolor = pysubs2.Color(255, 255, 255)  # Branco
     style.outlinecolor = pysubs2.Color(0, 0, 0)        # Borda preta
     style.outline = 1.0
     style.shadow = 0
     style.alignment = 2   # centro inferior
-    style.marginv = 30    # margem vertical
+    # O sistema de legendas usa uma altura virtual de 288 pixels por padrão.
+    # 30 era baixo. 350 joga para fora da tela.
+    # Para o Instagram (limpar UI), usamos ~30-35% da altura (aprox 85-95).
+    style.marginv = 95
 
     subs.styles["Default"] = style
 
@@ -66,10 +69,9 @@ def gerar_ass_capcut(segments, ass_path: str):
     WHITE_COLOR = "&HFFFFFF&"
     
     BORDER_NORMAL = 1.5
-    # Aumentamos a borda para 8.0 e adicionamos BLUR para criar efeito de "bloco" sólido
-    # sem parecer apenas um contorno da letra.
-    BORDER_HIGHLIGHT = 8.0
-    BLUR_HIGHLIGHT = 3.0
+    # Borda reduzida para 5.0 (antes 8.0) para ficar mais ajustada
+    BORDER_HIGHLIGHT = 5.0
+    BLUR_HIGHLIGHT = 2.0
     
     # Tag Destaque: 
     # \bord8 \blur3 -> Cria um "borrão" sólido laranja atrás da letra, simulando a caixa (pill)

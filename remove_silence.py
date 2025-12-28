@@ -6,7 +6,7 @@ import sys
 import os
 import whisper
 
-def detect_speech_intervals(input_file, model_name="tiny", language="pt", padding=0.2, min_silence=0.5):
+def detect_speech_intervals(input_file, model_name="tiny", language="pt", padding=0.25, min_silence=0.5, word_threshold=0.3):
     """
     Usa o Whisper para detectar onde REALMENTE há fala, ignorando ruídos.
     Retorna lista de tuplas (start, end) para manter.
@@ -22,17 +22,27 @@ def detect_speech_intervals(input_file, model_name="tiny", language="pt", paddin
     # Transcreve com word_timestamps para precisão máxima
     result = model.transcribe(input_file, language=language, word_timestamps=True, verbose=False)
     
-    # Achatar todas as palavras
+    # Achatar todas as palavras com filtragem de confiança
     all_words = []
+    skipped_noise = 0
+    
     for seg in result["segments"]:
+        # Se a probabilidade de NÃO ter fala for alta (> 80%), ignora o segmento inteiro (alucinação)
+        if seg.get("no_speech_prob", 0) > 0.8:
+            continue
+
         for w in seg.get("words", []):
+            # Filtra palavras com confiança baixa (provavelmente ruído/alucinação)
+            if w.get("probability", 1.0) < word_threshold:
+                skipped_noise += 1
+                continue
             all_words.append(w)
             
     if not all_words:
         print("Nenhuma fala detectada.")
         return []
         
-    print(f"Detectadas {len(all_words)} palavras. Calculando intervalos...")
+    print(f"Detectadas {len(all_words)} palavras. (Ignorados {skipped_noise} possíveis ruídos). Calculando intervalos...")
     
     keep_intervals = []
     
