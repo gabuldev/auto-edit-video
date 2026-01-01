@@ -7,21 +7,56 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 load_dotenv(os.path.join(parent_dir, '.env'))
 
+import sys
+import os
+
+# Adiciona o diretório atual ao path para permitir imports absolutos como se estivesse na raiz
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
-from .tools import (
-    list_videos, 
-    remove_silence_tool, 
-    add_subtitles_tool,
-    analyze_takes_tool,
-    cut_segments_tool
-)
+from google.adk.models.lite_llm import LiteLlm
+
+try:
+    from .tools import (
+        list_videos, 
+        remove_silence_tool, 
+        add_subtitles_tool,
+        analyze_takes_tool,
+        cut_segments_tool
+    )
+except ImportError:
+    # Fallback para execução direta ou via ADK onde 'agent' é um pacote
+    try:
+        from agent.tools import (
+            list_videos, 
+            remove_silence_tool, 
+            add_subtitles_tool,
+            analyze_takes_tool,
+            cut_segments_tool
+        )
+    except ImportError:
+        # Última tentativa: import direto do tools se estiver no path
+        from tools import (
+            list_videos, 
+            remove_silence_tool, 
+            add_subtitles_tool,
+            analyze_takes_tool,
+            cut_segments_tool
+        )
+
+# Helper para configurar modelo Ollama via LiteLLM
+def get_ollama_model():
+    model_name = os.environ.get("OLLAMA_MODEL", "llama3")
+    # LiteLLM usa o formato "provider/model"
+    # Para Ollama é geralmente "ollama/modelo" ou "ollama_chat/modelo"
+    return LiteLlm(model=f"ollama_chat/{model_name}")
 
 # --- Specialized Agents ---
 
 cutter_agent = Agent(
     name="cutter_agent",
-    model="gemini-3-flash-preview",
+    model=get_ollama_model(),
     description="Especialista em remover silêncio de vídeos.",
     instruction="""
     Você é um editor de vídeo especialista em remover silêncio (jumpcuts).
@@ -33,7 +68,7 @@ cutter_agent = Agent(
 
 captioner_agent = Agent(
     name="captioner_agent",
-    model="gemini-3-flash-preview",
+    model=get_ollama_model(),
     description="Especialista em transcrever e legendar vídeos.",
     instruction="""
     Você é um especialista em legendagem.
@@ -47,7 +82,7 @@ captioner_agent = Agent(
 
 reviewer_agent = Agent(
     name="reviewer_agent",
-    model="gemini-3-flash-preview",
+    model=get_ollama_model(),
     description="Especialista em validar conteúdo e remover erros de gravação.",
     instruction="""
     Você é um revisor de conteúdo de vídeo.
@@ -66,7 +101,7 @@ reviewer_agent = Agent(
 
 root_agent = Agent(
     name="root_agent",
-    model="gemini-3-flash-preview",
+    model=get_ollama_model(),
     description="Gerente da equipe de edição de vídeo.",
     instruction="""
     Você é o gerente de uma equipe de pós-produção de vídeo.

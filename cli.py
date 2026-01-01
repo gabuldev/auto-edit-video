@@ -22,22 +22,12 @@ def listar_videos():
     return sorted(list(set(arquivos)))
 
 def perguntar_gemini_key():
-    # Verifica se existe no ambiente (carregado do .env ou sistema)
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    
-    if key:
-        print(f"\nℹ️  API Key encontrada no ambiente.")
-        return key
-    
-    print("\n🤖 Deseja ativar a CORREÇÃO DE TEXTO com IA (Google Gemini)?")
-    print("   (Isso corrige erros de ortografia e pontuação na legenda)")
-    resp = input("   Sim [s] / Não [n] (Default: n): ").strip().lower()
-    
-    if resp == 's':
-        print("\n   Digite sua API Key do Google Gemini (ou cole aqui):")
-        key = input("   >>> ").strip()
-        if key:
-            return key
+    # Versão adaptada para Ollama
+    model = os.environ.get("OLLAMA_MODEL", "default")
+    url = os.environ.get("OLLAMA_API_URL", "localhost")
+    print(f"\nℹ️  Modo Ollama Ativo.")
+    print(f"   Modelo: {model}")
+    print(f"   URL: {url}")
     return None
 
 def main():

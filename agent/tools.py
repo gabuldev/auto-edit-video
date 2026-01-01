@@ -41,7 +41,7 @@ except ImportError:
         print(f"CRITICAL ERROR importing video scripts: {e}")
         traceback.print_exc()
 
-import google.generativeai as genai
+import requests
 
 def list_videos():
     import glob
@@ -101,14 +101,15 @@ def add_subtitles_tool(video_path: str, model: str = "small") -> str:
     output_path = f"{base}_legendado{ext}"
     
     try:
-        gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        # gemini_key era usado, mas agora usamos Ollama (configurado via env)
+        # Mantemos None para compatibilidade de assinatura se necessário
         
         final_path = processar_legenda_completo(
             full_path,
             output_path,
             model_name=model,
             language="pt",
-            gemini_key=gemini_key
+            gemini_key=None
         )
         return f"Sucesso! Vídeo legendado salvo em: {os.path.basename(final_path)}"
     except Exception as e:
@@ -120,6 +121,12 @@ def analyze_takes_tool(video_path: str) -> str:
     Retorna uma análise em texto sugerindo intervalos para remover.
     """
     import os
+    try:
+        from .ollama_agent import OllamaAgent
+    except ImportError:
+        # Fallback para execução direta
+        from ollama_agent import OllamaAgent
+
     if os.path.isabs(video_path):
         full_path = video_path
     else:
@@ -142,48 +149,11 @@ def analyze_takes_tool(video_path: str) -> str:
         text = seg['text'].strip()
         transcript_text += f"[{start:.2f} - {end:.2f}] {text}\n"
 
-    print(f"[Analyze] Enviando para análise (Gemini)...")
+    print(f"[Analyze] Enviando para análise (Ollama)...")
     
-    prompt = f"""
-    Analise a seguinte transcrição de um vídeo bruto. 
-    O orador pode ter cometido erros e repetido frases (takes ruins).
-    Identifique os trechos que são claramente erros, gaguejadas ou tentativas falhas que foram corrigidas logo em seguida.
-    
-    TAMBÉM verifique grandes pausas ou silêncios que não foram transcritos mas podem ser inferidos pelos timestamps.
-    
-    Transcrição:
-    {transcript_text}
-    
-    Retorne APENAS um JSON com a lista de intervalos para REMOVER.
-    Seja conservador: Só remova se tiver CERTEZA que é um erro ou repetição desnecessária.
-    
-    Formato:
-    {{
-        "remove_intervals": [
-            {{"start": 10.5, "end": 15.2, "reason": "Errou a frase e repetiu"}},
-            ...
-        ]
-    }}
-    Se não houver nada para remover, retorne lista vazia.
-    """
-    
-    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not gemini_key:
-        return "Erro: API Key do Gemini não configurada."
-        
-    genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
-    
+    agent = OllamaAgent()
     try:
-        response = model.generate_content(prompt)
-        text_resp = response.text.strip()
-        # Limpa markdown se houver
-        if text_resp.startswith("```json"):
-            text_resp = text_resp[7:-3]
-        elif text_resp.startswith("```"):
-            text_resp = text_resp[3:-3]
-            
-        return text_resp
+        return agent.analyze_takes(transcript_text)
     except Exception as e:
         return f"Erro na análise da IA: {e}"
 

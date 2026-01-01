@@ -4,3 +4,4 @@ python-dotenv
 google-generativeai
 google-adk
 
+requests

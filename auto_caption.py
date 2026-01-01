@@ -8,12 +8,23 @@ import re
 import whisper
 import pysubs2
 
-# Import opcional da correção ADK
+# Import opcional da correção com Ollama
 try:
-    from adk_correction import corrigir_palavras_com_adk
-except ImportError as e:
-    print(f"⚠️  Aviso: Não foi possível importar o módulo de correção ADK: {e}")
-    corrigir_palavras_com_adk = None
+    from agent.ollama_agent import OllamaAgent
+except ImportError:
+    # Fallback se estiver rodando como script sem o pacote agent no path
+    try:
+        sys.path.append(os.path.join(os.path.dirname(__file__), 'agent'))
+        from ollama_agent import OllamaAgent
+    except ImportError as e:
+        print(f"⚠️  Aviso: Não foi possível importar o agente Ollama: {e}")
+        OllamaAgent = None
+
+def corrigir_palavras_com_adk(words_list, api_key=None):
+    if not OllamaAgent:
+        return None
+    agent = OllamaAgent()
+    return agent.correct_words(words_list)
 
 
 def transcrever(video_path: str, model_name: str = "small", language: str = "pt"):
