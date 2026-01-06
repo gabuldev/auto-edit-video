@@ -131,3 +131,4 @@ class OllamaAgent:
         
         return self.generate(prompt, format="json")
 
+
