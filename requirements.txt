@@ -3,4 +3,8 @@ pysubs2
 python-dotenv
 google-generativeai
 google-adk
+customtkinter
+pillow
+flask
+flask-socketio
 

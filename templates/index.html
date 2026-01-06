@@ -1,0 +1,3074 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 Auto Video Editor</title>
+    
+    <!-- Segurança: Headers básicos -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="SAMEORIGIN">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI" crossorigin="anonymous"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Lottie Animation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+    
+    <style>
+        :root {
+            /* Paleta de Cores - Estilo Cyberpunk/Editor */
+            --bg-dark: #0a0a0f;
+            --bg-primary: #12121a;
+            --bg-secondary: #1a1a2e;
+            --bg-card: #16162a;
+            --bg-hover: #252540;
+            
+            /* Cores de Acento */
+            --accent-cyan: #00f5d4;
+            --accent-purple: #9b5de5;
+            --accent-pink: #f15bb5;
+            --accent-orange: #ff8500;
+            --accent-success: #00f5a0;
+            --accent-error: #ff3860;
+            --accent-warning: #ffbe0b;
+            
+            /* Texto */
+            --text-primary: #f8f8f2;
+            --text-secondary: #a0a0b0;
+            --text-muted: #6b6b80;
+            
+            /* Bordas e Sombras */
+            --border-color: rgba(155, 93, 229, 0.2);
+            --glow-cyan: 0 0 20px rgba(0, 245, 212, 0.3);
+            --glow-purple: 0 0 20px rgba(155, 93, 229, 0.3);
+            --glow-pink: 0 0 20px rgba(241, 91, 181, 0.3);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* ========== LUCIDE ICONS ========== */
+        .lucide-icon {
+            width: 1em;
+            height: 1em;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+        
+        .lucide-sm { width: 14px; height: 14px; }
+        .lucide-md { width: 18px; height: 18px; }
+        .lucide-lg { width: 24px; height: 24px; }
+        .lucide-xl { width: 32px; height: 32px; }
+        
+        /* ========== SCROLLBAR GLOBAL (Dark Theme) ========== */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--bg-hover) var(--bg-secondary);
+        }
+        
+        *::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        *::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        
+        *::-webkit-scrollbar-thumb {
+            background: var(--bg-hover);
+            border-radius: 4px;
+            border: 2px solid var(--bg-secondary);
+        }
+        
+        *::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-purple);
+        }
+        
+        *::-webkit-scrollbar-corner {
+            background: var(--bg-secondary);
+        }
+        
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        /* Background com gradiente animado */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(155, 93, 229, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(0, 245, 212, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(241, 91, 181, 0.05) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        /* Layout Principal */
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* ========== SIDEBAR ========== */
+        .sidebar {
+            width: 300px;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--border-color);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: var(--glow-cyan);
+        }
+        
+        .logo-text h1 {
+            font-size: 18px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .logo-text span {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+            margin: 20px 0;
+        }
+        
+        .section-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* Vídeo Selecionado */
+        .selected-video {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .selected-video .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        
+        .selected-video .value {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-warning);
+            word-break: break-all;
+        }
+        
+        .selected-video.has-video .value {
+            color: var(--accent-success);
+        }
+        
+        /* Configurações */
+        .config-group {
+            margin-bottom: 16px;
+        }
+        
+        .config-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .config-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .config-group select:hover {
+            border-color: var(--accent-purple);
+        }
+        
+        .config-group select:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(0, 245, 212, 0.1);
+        }
+        
+        /* Switch Toggle */
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .toggle-group .toggle-label {
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-hover);
+            border-radius: 24px;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-slider::before {
+            position: absolute;
+            content: '';
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--accent-success);
+        }
+        
+        .toggle-switch input:checked + .toggle-slider::before {
+            background: white;
+            transform: translateX(20px);
+        }
+        
+        /* API Status */
+        .api-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            padding: 10px;
+            background: var(--bg-hover);
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+        
+        .api-status.configured {
+            color: var(--accent-success);
+        }
+        
+        .api-status.not-configured {
+            color: var(--accent-error);
+        }
+        
+        .api-btn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            background: transparent;
+            border: 1px solid var(--accent-purple);
+            border-radius: 8px;
+            color: var(--accent-purple);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .api-btn:hover {
+            background: var(--accent-purple);
+            color: white;
+        }
+        
+        /* Footer Sidebar */
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .sidebar-footer p {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+        
+        .logout-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 12px;
+            background: transparent;
+            border: 1px solid var(--accent-error);
+            border-radius: 8px;
+            color: var(--accent-error);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .logout-btn:hover {
+            background: var(--accent-error);
+            color: white;
+        }
+        
+        /* ========== BOTÃO DE AJUDA / INFO ========== */
+        .label-with-help {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .help-icon {
+            width: 18px;
+            height: 18px;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: help;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .help-icon:hover {
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
+            color: white;
+        }
+        
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-primary);
+            border: 1px solid var(--accent-purple);
+            border-radius: 12px;
+            padding: 16px;
+            width: 280px;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        .tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 8px solid transparent;
+            border-top-color: var(--accent-purple);
+        }
+        
+        .help-icon:hover .tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .tooltip h5 {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            margin-bottom: 10px;
+        }
+        
+        .tooltip-table {
+            width: 100%;
+            font-size: 11px;
+        }
+        
+        .tooltip-table tr {
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .tooltip-table tr:last-child {
+            border-bottom: none;
+        }
+        
+        .tooltip-table td {
+            padding: 6px 4px;
+            vertical-align: middle;
+        }
+        
+        .tooltip-table .model-name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .tooltip-table .model-speed {
+            color: var(--accent-success);
+            font-size: 10px;
+        }
+        
+        .tooltip-table .model-quality {
+            color: var(--accent-warning);
+            font-size: 10px;
+        }
+        
+        .tooltip-note {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        
+        /* ========== FILE EXPLORER ========== */
+        .file-explorer {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 32px;
+        }
+        
+        .explorer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .explorer-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .explorer-title h3 {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        
+        .explorer-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .explorer-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .explorer-btn:hover {
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
+            color: white;
+        }
+        
+        .explorer-breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: var(--bg-dark);
+            border-bottom: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+        
+        .breadcrumb-item {
+            font-size: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        
+        .breadcrumb-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .breadcrumb-item.active {
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+        
+        .breadcrumb-separator {
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+        
+        .explorer-content {
+            min-height: 250px;
+            max-height: 350px;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        
+        .explorer-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text-muted);
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--bg-hover);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 12px;
+        }
+        
+        .explorer-empty {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+        
+        .explorer-empty .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .explorer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        
+        /* Folder Item */
+        .folder-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .folder-item:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-warning);
+            transform: translateY(-2px);
+        }
+        
+        .folder-item .folder-icon {
+            font-size: 28px;
+        }
+        
+        .folder-item .folder-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .folder-item:hover .folder-actions {
+            opacity: 1;
+        }
+        
+        .folder-item .folder-actions .file-action-btn {
+            padding: 4px 6px;
+            font-size: 12px;
+        }
+        
+        .folder-item .folder-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .folder-item .folder-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .folder-item .folder-meta {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        
+        /* File Item */
+        .file-item {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .file-item:hover {
+            border-color: var(--accent-cyan);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .file-item.selected {
+            border-color: var(--accent-success);
+            background: rgba(0, 245, 160, 0.1);
+        }
+        
+        .file-item .file-preview {
+            width: 100%;
+            height: 100px;
+            background: var(--bg-dark);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            font-size: 36px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item .file-preview .thumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+            transition: transform 0.3s ease;
+        }
+        
+        .file-item:hover .file-preview .thumbnail {
+            transform: scale(1.05);
+        }
+        
+        .file-item .file-preview .thumbnail-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            color: var(--text-muted);
+        }
+        
+        .file-item .file-preview .thumbnail-placeholder span {
+            font-size: 32px;
+        }
+        
+        .file-item .file-preview .thumbnail-loading {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--bg-hover);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .file-item .file-extension {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            padding: 2px 6px;
+            background: var(--accent-purple);
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            color: white;
+            text-transform: uppercase;
+        }
+        
+        .file-item .file-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+        
+        .file-item .file-meta {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        
+        .file-item .file-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .file-item:hover .file-actions {
+            opacity: 1;
+        }
+        
+        .file-action-btn {
+            flex: 1;
+            padding: 6px;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .file-action-btn.play {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+        }
+        
+        .file-action-btn.select {
+            background: var(--accent-success);
+            color: var(--bg-dark);
+        }
+        
+        .file-action-btn.delete {
+            background: var(--accent-error);
+            color: white;
+        }
+        
+        .file-action-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .file-item .selected-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            background: var(--accent-success);
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            z-index: 10;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .file-item.selected .selected-badge {
+            display: flex;
+        }
+        
+        .file-item.selected {
+            border-color: var(--accent-success);
+            background: rgba(0, 245, 212, 0.1);
+        }
+        
+        .explorer-footer {
+            padding: 12px 20px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        
+        /* Preview Modal */
+        .preview-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .preview-modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .preview-content {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            max-width: 900px;
+            width: 90%;
+            overflow: hidden;
+        }
+        
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .preview-header h4 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .preview-close {
+            width: 32px;
+            height: 32px;
+            background: var(--bg-hover);
+            border: none;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .preview-close:hover {
+            background: var(--accent-error);
+            color: white;
+        }
+        
+        .preview-video-container {
+            background: black;
+            padding: 20px;
+        }
+        
+        .preview-video-container video {
+            width: 100%;
+            max-height: 500px;
+            border-radius: 8px;
+        }
+        
+        .preview-actions {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .preview-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .preview-btn.select {
+            background: var(--accent-success);
+            color: var(--bg-dark);
+        }
+        
+        .preview-btn:hover {
+            transform: scale(1.02);
+        }
+        
+        /* Delete Modal */
+        .delete-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .delete-modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .delete-content {
+            background: var(--bg-primary);
+            border: 1px solid var(--accent-error);
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+            max-width: 400px;
+        }
+        
+        .delete-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .delete-content h4 {
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+        
+        .delete-filename {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--accent-warning);
+            background: var(--bg-secondary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+        }
+        
+        .delete-warning {
+            font-size: 12px;
+            color: var(--accent-error);
+            margin-bottom: 20px;
+        }
+        
+        .delete-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        
+        .delete-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .delete-btn.cancel {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+        
+        .delete-btn.confirm {
+            background: var(--accent-error);
+            color: white;
+        }
+        
+        .delete-btn:hover {
+            transform: scale(1.02);
+        }
+        
+        /* Botões de ação na drop zone */
+        .drop-zone-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .drop-zone-btn.primary {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border: none;
+        }
+        
+        .drop-zone-btn.secondary {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            box-shadow: none;
+        }
+        
+        .drop-zone-btn.secondary:hover {
+            border-color: var(--accent-cyan);
+            background: var(--bg-hover);
+        }
+        
+        /* ========== PROCESSING OVERLAY ========== */
+        .processing-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 10, 15, 0.95);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .processing-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .processing-modal {
+            text-align: center;
+            max-width: 400px;
+            padding: 40px;
+        }
+        
+        .processing-animation {
+            width: 180px;
+            height: 180px;
+            margin: 0 auto 20px;
+        }
+        
+        .processing-animation svg {
+            filter: drop-shadow(0 0 20px rgba(0, 245, 212, 0.5));
+        }
+        
+        .processing-modal h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .processing-modal p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        
+        .processing-progress {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-secondary);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .processing-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink));
+            background-size: 200% 100%;
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: shimmer 2s linear infinite;
+        }
+        
+        @keyframes shimmer {
+            from { background-position: 200% 0; }
+            to { background-position: -200% 0; }
+        }
+        
+        .processing-tip {
+            font-size: 12px !important;
+            color: var(--text-muted) !important;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 0 !important;
+        }
+        
+        /* Elementos desabilitados durante processamento */
+        body.processing .sidebar select,
+        body.processing .sidebar input,
+        body.processing .sidebar button,
+        body.processing .drop-zone,
+        body.processing .drop-zone-btn,
+        body.processing .action-btn,
+        body.processing .video-item {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        
+        body.processing .drop-zone {
+            cursor: not-allowed;
+        }
+        
+        /* ========== MAIN CONTENT ========== */
+        .main-content {
+            flex: 1;
+            margin-left: 300px;
+            padding: 32px;
+            padding-bottom: 60px;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 32px;
+        }
+        
+        .header h2 {
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+        
+        .help-btn {
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .help-btn:hover {
+            border-color: var(--accent-purple);
+            color: var(--text-primary);
+        }
+        
+        /* Drop Zone */
+        .drop-zone {
+            background: var(--bg-card);
+            border: 2px dashed var(--border-color);
+            border-radius: 20px;
+            padding: 50px;
+            text-align: center;
+            margin-bottom: 32px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .drop-zone:hover {
+            border-color: var(--accent-cyan);
+            background: rgba(0, 245, 212, 0.02);
+        }
+        
+        .drop-zone.drag-over {
+            border-color: var(--accent-success);
+            background: rgba(0, 245, 160, 0.05);
+            transform: scale(1.01);
+        }
+        
+        .drop-zone-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .drop-zone h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .drop-zone p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        
+        .drop-zone-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: var(--glow-cyan);
+        }
+        
+        .drop-zone-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 245, 212, 0.3);
+        }
+        
+        /* Section Title */
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .section-header h3 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .section-header .badge {
+            padding: 4px 10px;
+            background: var(--accent-purple);
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        /* Action Cards */
+        .action-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+        
+        .action-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 28px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .action-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--card-accent), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .action-card:hover {
+            border-color: var(--card-accent);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        .action-card:hover::before {
+            opacity: 1;
+        }
+        
+        .action-card.card-cut { --card-accent: var(--accent-pink); }
+        .action-card.card-subtitle { --card-accent: var(--accent-success); }
+        .action-card.card-full { --card-accent: var(--accent-purple); }
+        
+        .card-icon {
+            width: 56px;
+            height: 56px;
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .action-card:hover .card-icon {
+            background: var(--card-accent);
+            transform: scale(1.05);
+        }
+        
+        .action-card h4 {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .action-card p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 24px;
+            min-height: 60px;
+        }
+        
+        .action-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--card-accent);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .action-btn:hover {
+            filter: brightness(1.1);
+            transform: scale(1.02);
+        }
+        
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Console */
+        .console {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        .console-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .console-header h4 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .console-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-success);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        .clear-btn {
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .clear-btn:hover {
+            border-color: var(--accent-error);
+            color: var(--accent-error);
+        }
+        
+        /* Progress Bar */
+        .progress-section {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .progress-text {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        
+        .progress-bar {
+            height: 6px;
+            background: var(--bg-hover);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        /* Log Output */
+        .log-output {
+            height: 250px;
+            padding: 16px 24px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.8;
+            background: var(--bg-dark);
+        }
+        
+        .log-line {
+            padding: 4px 0;
+        }
+        
+        .log-line.success { color: var(--accent-success); }
+        .log-line.error { color: var(--accent-error); }
+        .log-line.warning { color: var(--accent-warning); }
+        .log-line.info { color: var(--text-secondary); }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+        
+        .modal-overlay.active .modal {
+            transform: translateY(0);
+        }
+        
+        .modal h3 {
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+        
+        .modal input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        
+        .modal input:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        
+        .modal-btn {
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .modal-btn.cancel {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+        
+        .modal-btn.confirm {
+            background: var(--accent-cyan);
+            border: none;
+            color: var(--bg-dark);
+        }
+        
+        /* File Input Hidden */
+        #fileInput {
+            display: none;
+        }
+        
+        /* Notifications */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            z-index: 1001;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+            max-width: 400px;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .notification.success {
+            border-color: var(--accent-success);
+        }
+        
+        .notification.error {
+            border-color: var(--accent-error);
+        }
+        
+        .notification h5 {
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .notification p {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .action-cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 900px) {
+            .sidebar {
+                width: 100%;
+                position: relative;
+                height: auto;
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .app-container {
+                flex-direction: column;
+            }
+            
+            .action-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon"><i data-lucide="film" class="lucide-icon"></i></div>
+                <div class="logo-text">
+                    <h1>Auto Video Editor</h1>
+                    <span>Edição inteligente com IA</span>
+                </div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="section-title"><i data-lucide="video" class="lucide-sm"></i> Vídeo Selecionado</div>
+            <div class="selected-video" id="selectedVideoBox">
+                <div class="label">Arquivo atual</div>
+                <div class="value" id="selectedVideoText">Nenhum vídeo selecionado</div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="section-title"><i data-lucide="settings" class="lucide-sm"></i> Configurações</div>
+            
+            <div class="config-group">
+                <label class="label-with-help">
+                    Modelo Whisper
+                    <span class="help-icon">
+                        ?
+                        <div class="tooltip">
+                            <h5><i data-lucide="bar-chart-3" class="lucide-sm"></i> Comparativo de Modelos</h5>
+                            <table class="tooltip-table">
+                                <tr>
+                                    <td class="model-name">Tiny</td>
+                                    <td class="model-speed">⚡⚡⚡⚡⚡</td>
+                                    <td class="model-quality">⭐⭐</td>
+                                </tr>
+                                <tr>
+                                    <td class="model-name">Base</td>
+                                    <td class="model-speed">⚡⚡⚡⚡</td>
+                                    <td class="model-quality">⭐⭐⭐</td>
+                                </tr>
+                                <tr>
+                                    <td class="model-name">Small</td>
+                                    <td class="model-speed">⚡⚡⚡</td>
+                                    <td class="model-quality">⭐⭐⭐⭐</td>
+                                </tr>
+                                <tr>
+                                    <td class="model-name">Medium</td>
+                                    <td class="model-speed">⚡⚡</td>
+                                    <td class="model-quality">⭐⭐⭐⭐⭐</td>
+                                </tr>
+                                <tr>
+                                    <td class="model-name">Large</td>
+                                    <td class="model-speed">⚡</td>
+                                    <td class="model-quality">⭐⭐⭐⭐⭐</td>
+                                </tr>
+                            </table>
+                            <div class="tooltip-note">
+                                <i data-lucide="lightbulb" class="lucide-sm"></i> <strong>Small</strong> é o melhor custo-benefício.<br>
+                                GPU recomendada para Medium/Large.
+                            </div>
+                        </div>
+                    </span>
+                </label>
+                <select id="whisperModel">
+                    <option value="tiny">Tiny (mais rápido)</option>
+                    <option value="base">Base</option>
+                    <option value="small" selected>Small (recomendado)</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large (mais preciso)</option>
+                </select>
+            </div>
+            
+            <div class="config-group">
+                <label class="label-with-help">
+                    Método de Corte
+                    <span class="help-icon">
+                        ?
+                        <div class="tooltip">
+                            <h5><i data-lucide="scissors" class="lucide-sm"></i> Métodos de Corte</h5>
+                            <table class="tooltip-table">
+                                <tr>
+                                    <td class="model-name">Inteligente</td>
+                                    <td style="font-size: 10px; color: var(--text-secondary);">
+                                        Usa Whisper para detectar pausas na fala. Mais preciso.
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="model-name">Volume</td>
+                                    <td style="font-size: 10px; color: var(--text-secondary);">
+                                        Detecta silêncio por dB. Mais rápido, menos preciso.
+                                    </td>
+                                </tr>
+                            </table>
+                            <div class="tooltip-note">
+                                <i data-lucide="lightbulb" class="lucide-sm"></i> Use <strong>Inteligente</strong> para melhor resultado.<br>
+                                <strong>Volume</strong> é útil para vídeos longos.
+                            </div>
+                        </div>
+                    </span>
+                </label>
+                <select id="cutMethod">
+                    <option value="speech" selected>Inteligente (Whisper/Fala)</option>
+                    <option value="volume">Volume (dB)</option>
+                </select>
+            </div>
+            
+            <div class="config-group">
+                <label>Idioma do Áudio</label>
+                <select id="language">
+                    <option value="pt" selected>🇧🇷 Português</option>
+                    <option value="en">🇺🇸 English</option>
+                    <option value="es">🇪🇸 Español</option>
+                    <option value="fr">🇫🇷 Français</option>
+                    <option value="de">🇩🇪 Deutsch</option>
+                    <option value="it">🇮🇹 Italiano</option>
+                    <option value="ja">🇯🇵 日本語</option>
+                    <option value="ko">🇰🇷 한국어</option>
+                    <option value="zh">🇨🇳 中文</option>
+                </select>
+            </div>
+            
+            <div class="toggle-group">
+                <span class="toggle-label">Correção com IA</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="useAI" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="api-status" id="apiStatus">
+                <span id="apiStatusIcon">⏳</span>
+                <span id="apiStatusText">Verificando API Key...</span>
+            </div>
+            
+            <button class="api-btn" id="configApiBtn" onclick="showApiModal()">
+                <i data-lucide="key" class="lucide-sm"></i> Configurar API Key
+            </button>
+            
+            <div class="sidebar-footer">
+                <button class="logout-btn" id="logoutBtn" onclick="handleLogout()" style="display: none;">
+                    <i data-lucide="log-out" class="lucide-sm"></i> Sair
+                </button>
+                <p>v1.0.0 • Powered by Whisper & Gemini</p>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header">
+                <div>
+                    <h2>Dashboard de Edição</h2>
+                    <p>Selecione um vídeo e escolha a operação desejada</p>
+                </div>
+                <button class="help-btn" onclick="showHelp()">
+                    <span>❓</span> Ajuda
+                </button>
+            </header>
+            
+            <!-- Drop Zone -->
+            <!-- File Explorer -->
+            <div class="file-explorer" id="fileExplorer">
+                <!-- Header -->
+                <div class="explorer-header">
+                    <div class="explorer-title">
+                        <i data-lucide="folder-open" class="lucide-lg"></i>
+                        <h3>Explorador de Arquivos</h3>
+                    </div>
+                    <div class="explorer-actions">
+                        <button class="explorer-btn" onclick="showCreateFolderModal()" title="Criar nova pasta">
+                            <i data-lucide="folder-plus" class="lucide-sm"></i> Nova Pasta
+                        </button>
+                        <button class="explorer-btn" onclick="document.getElementById('fileInput').click()" title="Importar vídeo">
+                            <i data-lucide="upload" class="lucide-sm"></i> Importar
+                        </button>
+                        <button class="explorer-btn" onclick="loadFileExplorer()" title="Atualizar">
+                            <i data-lucide="refresh-cw" class="lucide-sm"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Breadcrumb -->
+                <div class="explorer-breadcrumb" id="breadcrumb">
+                    <span class="breadcrumb-item active"><i data-lucide="home" class="lucide-sm"></i> Workspace</span>
+                </div>
+                
+                <!-- Content -->
+                <div class="explorer-content" id="explorerContent">
+                    <div class="explorer-loading">
+                        <div class="loading-spinner"></div>
+                        <p>Carregando arquivos...</p>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div class="explorer-footer" id="explorerFooter">
+                    <span id="explorerStats">0 pastas, 0 vídeos</span>
+                </div>
+            </div>
+            <input type="file" id="fileInput" accept="video/*" onchange="handleFileSelect(event)" style="display: none;">
+            
+            <!-- Video Preview Modal -->
+            <div class="preview-modal" id="previewModal">
+                <div class="preview-content">
+                    <div class="preview-header">
+                        <h4 id="previewTitle">Preview</h4>
+                        <button class="preview-close" onclick="closePreview()">✕</button>
+                    </div>
+                    <div class="preview-video-container">
+                        <video id="previewVideo" controls></video>
+                    </div>
+                    <div class="preview-actions">
+                        <button class="preview-btn select" onclick="selectFromPreview()">
+                            ✅ Selecionar este vídeo
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Delete Confirmation Modal -->
+            <div class="delete-modal" id="deleteModal">
+                <div class="delete-content">
+                    <div class="delete-icon"><i data-lucide="trash-2" class="lucide-xl"></i></div>
+                    <h4>Confirmar Exclusão</h4>
+                    <p>Deseja realmente excluir o arquivo:</p>
+                    <p class="delete-filename" id="deleteFilename"></p>
+                    <p class="delete-warning">⚠️ Esta ação não pode ser desfeita!</p>
+                    <div class="delete-actions">
+                        <button class="delete-btn cancel" onclick="closeDeleteModal()">Cancelar</button>
+                        <button class="delete-btn confirm" onclick="confirmDelete()">Excluir</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Cards -->
+            <div class="section-header">
+                <i data-lucide="rocket" class="lucide-lg"></i>
+                <h3>Ações Disponíveis</h3>
+            </div>
+            
+            <div class="action-cards">
+                <!-- Card: Remover Silêncio -->
+                <div class="action-card card-cut">
+                    <div class="card-icon"><i data-lucide="scissors" class="lucide-lg"></i></div>
+                    <h4>Remover Silêncio</h4>
+                    <p>Detecta e remove automaticamente pausas e silêncios do vídeo usando IA</p>
+                    <button class="action-btn" onclick="processRemoveSilence()" id="btnCut">
+                        Executar Corte
+                    </button>
+                </div>
+                
+                <!-- Card: Gerar Legendas -->
+                <div class="action-card card-subtitle">
+                    <div class="card-icon"><i data-lucide="subtitles" class="lucide-lg"></i></div>
+                    <h4>Gerar Legendas</h4>
+                    <p>Transcreve o áudio e adiciona legendas dinâmicas estilo CapCut (karaokê)</p>
+                    <button class="action-btn" onclick="processAddSubtitles()" id="btnSubtitle">
+                        Gerar Legendas
+                    </button>
+                </div>
+                
+                <!-- Card: Processo Completo -->
+                <div class="action-card card-full">
+                    <div class="card-icon"><i data-lucide="zap" class="lucide-lg"></i></div>
+                    <h4>Processo Completo</h4>
+                    <p>Pipeline completo: Corta silêncio + Adiciona legendas + Correção com IA</p>
+                    <button class="action-btn" onclick="processFullPipeline()" id="btnFull">
+                        Executar Tudo
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Console -->
+            <div class="section-header">
+                <i data-lucide="terminal" class="lucide-lg"></i>
+                <h3>Console de Processamento</h3>
+            </div>
+            
+            <div class="console">
+                <div class="console-header">
+                    <h4>
+                        <span class="console-dot"></span>
+                        Terminal de Saída
+                    </h4>
+                    <button class="clear-btn" onclick="clearLogs()">Limpar</button>
+                </div>
+                
+                <div class="progress-section">
+                    <div class="progress-text" id="progressText">Aguardando início...</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+                
+                <div class="log-output" id="logOutput">
+                    <div class="log-line info">[Sistema] Pronto para processar vídeos.</div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Modal API Key -->
+    <div class="modal-overlay" id="apiModal">
+        <div class="modal">
+            <h3><i data-lucide="key" class="lucide-md"></i> Configurar API Key do Google Gemini</h3>
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+                A API Key é necessária para correção ortográfica com IA. 
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style="color: var(--accent-cyan);">Obter chave →</a>
+            </p>
+            <input type="password" id="apiKeyInput" placeholder="Cole sua API Key aqui...">
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="hideApiModal()">Cancelar</button>
+                <button class="modal-btn confirm" onclick="saveApiKey()">Salvar</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Criar Pasta -->
+    <div class="modal-overlay" id="createFolderModal">
+        <div class="modal">
+            <h3><i data-lucide="folder-plus" class="lucide-md"></i> Criar Nova Pasta</h3>
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+                Digite o nome da nova pasta a ser criada.
+            </p>
+            <input type="text" id="newFolderName" placeholder="Nome da pasta" maxlength="100">
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="hideCreateFolderModal()">Cancelar</button>
+                <button class="modal-btn confirm" onclick="createFolder()">Criar</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Mover Arquivo -->
+    <div class="modal-overlay" id="moveFileModal">
+        <div class="modal">
+            <h3><i data-lucide="package" class="lucide-md"></i> Mover Arquivo</h3>
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 8px;">
+                Movendo: <strong id="moveFileName"></strong>
+            </p>
+            <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 16px;">
+                Selecione a pasta de destino:
+            </p>
+            <select id="moveDestination" style="width: 100%; padding: 12px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px;">
+                <option value="">/ Raiz (upload/)</option>
+            </select>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="hideMoveFileModal()">Cancelar</button>
+                <button class="modal-btn confirm" onclick="moveFile()">Mover</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Renomear -->
+    <div class="modal-overlay" id="renameModal">
+        <div class="modal">
+            <h3><i data-lucide="pencil" class="lucide-md"></i> Renomear</h3>
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+                Digite o novo nome:
+            </p>
+            <input type="text" id="renameInput" placeholder="Novo nome" maxlength="100">
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="hideRenameModal()">Cancelar</button>
+                <button class="modal-btn confirm" onclick="renameItem()">Renomear</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        <h5 id="notificationTitle">Sucesso!</h5>
+        <p id="notificationMessage">Operação concluída.</p>
+    </div>
+    
+    <!-- Processing Overlay -->
+    <div class="processing-overlay" id="processingOverlay">
+        <div class="processing-modal">
+            <div class="processing-animation" id="lottieContainer"></div>
+            <h3 id="processingTitle">Processando...</h3>
+            <p id="processingStatus">Aguarde enquanto processamos seu vídeo</p>
+            <div class="processing-progress">
+                <div class="processing-progress-bar" id="processingProgressBar"></div>
+            </div>
+            <p class="processing-tip" id="processingTip"><i data-lucide="lightbulb" class="lucide-sm"></i> Isso pode levar alguns minutos dependendo do tamanho do vídeo</p>
+        </div>
+    </div>
+    
+    <script>
+        // Estado da aplicação
+        let selectedVideo = null;
+        let isProcessing = false;
+        let lottieAnimation = null;
+        
+        // Animação Lottie (Loading)
+        const loadingAnimationData = {"nm":"Loading 11","ddd":0,"h":1080,"w":1080,"meta":{"g":"@lottiefiles/toolkit-js 0.33.2"},"layers":[{"ty":4,"nm":"Shape Layer 1","sr":1,"st":0,"op":91,"ip":0,"hd":false,"ddd":0,"bm":0,"hasMask":false,"ao":0,"ks":{"a":{"a":0,"k":[0,0,0],"ix":1},"s":{"a":0,"k":[100,100,100],"ix":6},"sk":{"a":0,"k":0},"p":{"a":0,"k":[540,540,0],"ix":2},"r":{"a":0,"k":0,"ix":10},"sa":{"a":0,"k":0},"o":{"a":0,"k":100,"ix":11}},"ef":[],"shapes":[{"ty":"gr","bm":0,"hd":false,"mn":"ADBE Vector Group","nm":"Group 1","ix":1,"cix":2,"np":3,"it":[{"ty":"gr","bm":0,"hd":false,"mn":"ADBE Vector Group","nm":"Group 2","ix":1,"cix":2,"np":1,"it":[{"ty":"gr","bm":0,"hd":false,"mn":"ADBE Vector Group","nm":"Ellipse 1","ix":1,"cix":2,"np":1,"it":[{"ty":"el","bm":0,"hd":false,"mn":"ADBE Vector Shape - Ellipse","nm":"Ellipse Path 1","d":1,"p":{"a":0,"k":[0,0],"ix":3},"s":{"a":0,"k":[562.894,562.894],"ix":2}},{"ty":"tr","a":{"a":0,"k":[0,0],"ix":1},"s":{"a":1,"k":[{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[100,100],"t":0},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[0,100],"t":22.5},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[100,100],"t":45},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[0,100],"t":67.5},{"s":[100,100],"t":90}],"ix":3},"sk":{"a":0,"k":0,"ix":4},"p":{"a":0,"k":[0,0],"ix":2},"r":{"a":1,"k":[{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[0],"t":0},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[90],"t":45},{"s":[180],"t":90}],"ix":6},"sa":{"a":0,"k":0,"ix":5},"o":{"a":0,"k":100,"ix":7}}]},{"ty":"tr","a":{"a":0,"k":[0,0],"ix":1},"s":{"a":0,"k":[100,100],"ix":3},"sk":{"a":0,"k":0,"ix":4},"p":{"a":0,"k":[0,0],"ix":2},"r":{"a":0,"k":-90,"ix":6},"sa":{"a":0,"k":0,"ix":5},"o":{"a":0,"k":100,"ix":7}}]},{"ty":"gr","bm":0,"hd":false,"mn":"ADBE Vector Group","nm":"Group 1","ix":2,"cix":2,"np":1,"it":[{"ty":"gr","bm":0,"hd":false,"mn":"ADBE Vector Group","nm":"Ellipse 1","ix":1,"cix":2,"np":1,"it":[{"ty":"el","bm":0,"hd":false,"mn":"ADBE Vector Shape - Ellipse","nm":"Ellipse Path 1","d":1,"p":{"a":0,"k":[0,0],"ix":3},"s":{"a":0,"k":[562.894,562.894],"ix":2}},{"ty":"tr","a":{"a":0,"k":[0,0],"ix":1},"s":{"a":1,"k":[{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[100,100],"t":0},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[0,100],"t":22.5},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[100,100],"t":45},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[0,100],"t":67.5},{"s":[100,100],"t":90}],"ix":3},"sk":{"a":0,"k":0,"ix":4},"p":{"a":0,"k":[0,0],"ix":2},"r":{"a":1,"k":[{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[0],"t":0},{"o":{"x":0.333,"y":0},"i":{"x":0.667,"y":1},"s":[90],"t":45},{"s":[180],"t":90}],"ix":6},"sa":{"a":0,"k":0,"ix":5},"o":{"a":0,"k":100,"ix":7}}]},{"ty":"tr","a":{"a":0,"k":[0,0],"ix":1},"s":{"a":0,"k":[100,100],"ix":3},"sk":{"a":0,"k":0,"ix":4},"p":{"a":0,"k":[0,0],"ix":2},"r":{"a":0,"k":0,"ix":6},"sa":{"a":0,"k":0,"ix":5},"o":{"a":0,"k":100,"ix":7}}]},{"ty":"st","bm":0,"hd":false,"mn":"ADBE Vector Graphic - Stroke","nm":"Stroke 1","lc":2,"lj":2,"ml":1,"o":{"a":0,"k":100,"ix":4},"w":{"a":0,"k":60,"ix":5},"c":{"a":0,"k":[0,0.96,0.82],"ix":3}},{"ty":"tr","a":{"a":0,"k":[0,0],"ix":1},"s":{"a":0,"k":[100,100],"ix":3},"sk":{"a":0,"k":0,"ix":4},"p":{"a":0,"k":[0,0],"ix":2},"r":{"a":0,"k":0,"ix":6},"sa":{"a":0,"k":0,"ix":5},"o":{"a":0,"k":100,"ix":7}}]}],"ind":1}],"v":"5.12.1","fr":30,"op":91,"ip":0,"assets":[]};
+        
+        // ========== FUNÇÕES DE SEGURANÇA ==========
+        
+        /**
+         * Escapa caracteres HTML para prevenir XSS
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        /**
+         * Valida formato básico de API key
+         */
+        function isValidApiKey(key) {
+            if (!key || typeof key !== 'string') return false;
+            if (key.length < 10 || key.length > 200) return false;
+            return /^[A-Za-z0-9_-]+$/.test(key);
+        }
+        
+        /**
+         * Sanitiza nome de arquivo
+         */
+        function sanitizeFilename(name) {
+            if (!name) return '';
+            // Remove caracteres perigosos
+            return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim();
+        }
+        
+        // Conectar ao Socket.IO
+        const socket = io();
+        
+        socket.on('connect', () => {
+            console.log('Conectado ao servidor');
+            addLog('Conectado ao servidor.', 'success');
+        });
+        
+        socket.on('disconnect', () => {
+            addLog('Desconectado do servidor.', 'warning');
+        });
+        
+        socket.on('log_message', (data) => {
+            addLog(data.message, data.level);
+        });
+        
+        socket.on('progress_update', (data) => {
+            updateProgress(data.text, data.value);
+            // Atualiza também o overlay de processamento
+            if (isProcessing) {
+                updateProcessingStatus(data.text, data.value);
+            }
+        });
+        
+        socket.on('process_complete', (data) => {
+            isProcessing = false;
+            updateButtons();
+            hideProcessingOverlay();
+            
+            if (data.success) {
+                showNotification('Processo Concluído!', `Arquivo salvo: ${data.filename}`, 'success');
+                loadVideoList(); // Atualiza a lista com o novo arquivo
+            } else {
+                showNotification('Erro no Processamento', data.error || 'Ocorreu um erro.', 'error');
+            }
+        });
+        
+        // Verificar status de autenticação
+        fetch('/api/auth/status')
+            .then(res => res.json())
+            .then(data => {
+                if (data.auth_enabled && data.authenticated) {
+                    document.getElementById('logoutBtn').style.display = 'block';
+                }
+            })
+            .catch(() => {});
+        
+        // Verificar status inicial
+        fetch('/api/status')
+            .then(res => res.json())
+            .then(data => {
+                updateApiStatus(data.has_api_key);
+                if (data.selected_video) {
+                    selectedVideo = data.selected_video;
+                    updateSelectedVideo(selectedVideo.split('/').pop());
+                    // Atualiza visual dos itens do explorador
+                    updateExplorerSelection();
+                }
+            })
+            .catch(err => {
+                // Se der 401, redireciona para login
+                if (err.status === 401) {
+                    window.location.href = '/login';
+                }
+            });
+        
+        // Nota: loadFileExplorer é chamado após sua definição
+        
+        // ========== FUNÇÕES DO UI ==========
+        
+        function updateSelectedVideo(filename) {
+            const box = document.getElementById('selectedVideoBox');
+            const text = document.getElementById('selectedVideoText');
+            
+            if (filename) {
+                box.classList.add('has-video');
+                text.textContent = '✅ ' + filename;
+            } else {
+                box.classList.remove('has-video');
+                text.textContent = 'Nenhum vídeo selecionado';
+            }
+        }
+        
+        function updateApiStatus(hasKey) {
+            const status = document.getElementById('apiStatus');
+            const icon = document.getElementById('apiStatusIcon');
+            const text = document.getElementById('apiStatusText');
+            const btn = document.getElementById('configApiBtn');
+            
+            if (hasKey) {
+                status.className = 'api-status configured';
+                icon.textContent = '✅';
+                text.textContent = 'API Key configurada';
+                btn.style.display = 'none';
+            } else {
+                status.className = 'api-status not-configured';
+                icon.textContent = '❌';
+                text.textContent = 'API Key não configurada';
+                btn.style.display = 'block';
+            }
+        }
+        
+        function updateProgress(text, value) {
+            document.getElementById('progressText').textContent = text;
+            document.getElementById('progressFill').style.width = value + '%';
+        }
+        
+        function addLog(message, level = 'info') {
+            const output = document.getElementById('logOutput');
+            const line = document.createElement('div');
+            line.className = 'log-line ' + level;
+            line.textContent = message;
+            output.appendChild(line);
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        function clearLogs() {
+            document.getElementById('logOutput').innerHTML = '';
+            addLog('[Sistema] Console limpo.', 'info');
+        }
+        
+        function updateButtons() {
+            const btns = ['btnCut', 'btnSubtitle', 'btnFull'];
+            btns.forEach(id => {
+                document.getElementById(id).disabled = isProcessing;
+            });
+        }
+        
+        // ========== PROCESSING OVERLAY ==========
+        
+        function showProcessingOverlay(title = 'Processando...', status = 'Aguarde enquanto processamos seu vídeo') {
+            document.body.classList.add('processing');
+            document.getElementById('processingTitle').textContent = title;
+            document.getElementById('processingStatus').textContent = status;
+            document.getElementById('processingProgressBar').style.width = '0%';
+            document.getElementById('processingOverlay').classList.add('active');
+            
+            // Inicializa animação Lottie
+            const container = document.getElementById('lottieContainer');
+            if (container && !lottieAnimation) {
+                container.innerHTML = ''; // Limpa container
+                lottieAnimation = lottie.loadAnimation({
+                    container: container,
+                    renderer: 'svg',
+                    loop: true,
+                    autoplay: true,
+                    animationData: loadingAnimationData
+                });
+            } else if (lottieAnimation) {
+                lottieAnimation.play();
+            }
+            
+            lucide.createIcons();
+        }
+        
+        function hideProcessingOverlay() {
+            document.body.classList.remove('processing');
+            document.getElementById('processingOverlay').classList.remove('active');
+            
+            // Para a animação Lottie
+            if (lottieAnimation) {
+                lottieAnimation.stop();
+            }
+        }
+        
+        function updateProcessingStatus(status, progress = null) {
+            document.getElementById('processingStatus').textContent = status;
+            if (progress !== null) {
+                document.getElementById('processingProgressBar').style.width = progress + '%';
+            }
+        }
+        
+        function updateProcessingTip(tip) {
+            document.getElementById('processingTip').innerHTML = tip;
+        }
+        
+        function showNotification(title, message, type = 'success') {
+            const notif = document.getElementById('notification');
+            document.getElementById('notificationTitle').textContent = title;
+            document.getElementById('notificationMessage').textContent = message;
+            notif.className = 'notification ' + type + ' show';
+            
+            setTimeout(() => {
+                notif.classList.remove('show');
+            }, 5000);
+        }
+        
+        function showApiModal() {
+            document.getElementById('apiModal').classList.add('active');
+        }
+        
+        function hideApiModal() {
+            document.getElementById('apiModal').classList.remove('active');
+        }
+        
+        function saveApiKey() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            
+            // Validação no frontend
+            if (!key) {
+                showNotification('Erro', 'Por favor, insira uma API Key.', 'error');
+                return;
+            }
+            
+            if (!isValidApiKey(key)) {
+                showNotification('Erro', 'API Key inválida. Verifique o formato.', 'error');
+                return;
+            }
+            
+            fetch('/api/set_api_key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: key })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    updateApiStatus(true);
+                    hideApiModal();
+                    // Limpa o input por segurança
+                    document.getElementById('apiKeyInput').value = '';
+                    showNotification('Sucesso!', 'API Key configurada com sucesso.', 'success');
+                    addLog('API Key do Gemini configurada.', 'success');
+                } else {
+                    showNotification('Erro', data.error || 'Falha ao salvar API Key.', 'error');
+                }
+            })
+            .catch(err => {
+                showNotification('Erro', 'Falha na comunicação com o servidor.', 'error');
+                console.error('Erro ao salvar API key:', err);
+            });
+        }
+        
+        // ========== GERENCIAMENTO DE ARQUIVOS ==========
+        
+        let moveFilePath = '';
+        let renameItemPath = '';
+        let renameIsFolder = false;
+        let deleteFolderPath = '';
+        
+        // === CRIAR PASTA ===
+        function showCreateFolderModal() {
+            document.getElementById('newFolderName').value = '';
+            document.getElementById('createFolderModal').classList.add('active');
+            document.getElementById('newFolderName').focus();
+        }
+        
+        function hideCreateFolderModal() {
+            document.getElementById('createFolderModal').classList.remove('active');
+        }
+        
+        function createFolder() {
+            const name = document.getElementById('newFolderName').value.trim();
+            if (!name) {
+                showNotification('Erro', 'Digite um nome para a pasta', 'error');
+                return;
+            }
+            
+            fetch('/api/files/folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent: currentPath, name: name })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    hideCreateFolderModal();
+                    loadFileExplorer(currentPath);
+                    showNotification('Sucesso!', data.message, 'success');
+                    addLog(`Pasta criada: ${name}`, 'success');
+                } else {
+                    showNotification('Erro', data.error, 'error');
+                }
+            })
+            .catch(err => {
+                showNotification('Erro', 'Falha ao criar pasta', 'error');
+            });
+        }
+        
+        // === DELETAR PASTA ===
+        function openDeleteFolderModal(path, name) {
+            deleteFolderPath = path;
+            document.getElementById('deleteFileName').textContent = name;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        
+        // === MOVER ARQUIVO ===
+        function showMoveFileModal(path, name) {
+            moveFilePath = path;
+            document.getElementById('moveFileName').textContent = name;
+            
+            // Carrega lista de pastas
+            loadFoldersForMove();
+            document.getElementById('moveFileModal').classList.add('active');
+        }
+        
+        function hideMoveFileModal() {
+            document.getElementById('moveFileModal').classList.remove('active');
+        }
+        
+        function loadFoldersForMove() {
+            fetch('/api/files?path=')
+                .then(res => res.json())
+                .then(data => {
+                    const select = document.getElementById('moveDestination');
+                    select.innerHTML = '<option value="">/ Raiz (upload/)</option>';
+                    
+                    if (data.folders) {
+                        data.folders.forEach(folder => {
+                            select.innerHTML += `<option value="${folder.path}">→ ${folder.name}</option>`;
+                        });
+                    }
+                });
+        }
+        
+        function moveFile() {
+            const destination = document.getElementById('moveDestination').value;
+            
+            fetch('/api/files/move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: moveFilePath, destination: destination })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    hideMoveFileModal();
+                    loadFileExplorer(currentPath);
+                    showNotification('Sucesso!', data.message, 'success');
+                    addLog(data.message, 'success');
+                } else {
+                    showNotification('Erro', data.error, 'error');
+                }
+            })
+            .catch(err => {
+                showNotification('Erro', 'Falha ao mover arquivo', 'error');
+            });
+        }
+        
+        // === RENOMEAR ===
+        function showRenameModal(path, name, isFolder) {
+            renameItemPath = path;
+            renameIsFolder = isFolder;
+            document.getElementById('renameInput').value = isFolder ? name : name.replace(/\.[^/.]+$/, '');
+            document.getElementById('renameModal').classList.add('active');
+            document.getElementById('renameInput').focus();
+            document.getElementById('renameInput').select();
+        }
+        
+        function hideRenameModal() {
+            document.getElementById('renameModal').classList.remove('active');
+        }
+        
+        function renameItem() {
+            const newName = document.getElementById('renameInput').value.trim();
+            if (!newName) {
+                showNotification('Erro', 'Digite um novo nome', 'error');
+                return;
+            }
+            
+            fetch('/api/files/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: renameItemPath, new_name: newName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    hideRenameModal();
+                    loadFileExplorer(currentPath);
+                    showNotification('Sucesso!', data.message, 'success');
+                    addLog(data.message, 'success');
+                } else {
+                    showNotification('Erro', data.error, 'error');
+                }
+            })
+            .catch(err => {
+                showNotification('Erro', 'Falha ao renomear', 'error');
+            });
+        }
+        
+        function handleLogout() {
+            if (confirm('Deseja realmente sair?')) {
+                window.location.href = '/logout';
+            }
+        }
+        
+        // ========== FILE EXPLORER ==========
+        
+        let currentPath = '';
+        let previewFilePath = '';
+        let deleteFilePath = '';
+        
+        function loadFileExplorer(path = '') {
+            currentPath = path;
+            const content = document.getElementById('explorerContent');
+            
+            content.innerHTML = `
+                <div class="explorer-loading">
+                    <div class="loading-spinner"></div>
+                    <p>Carregando arquivos...</p>
+                </div>
+            `;
+            
+            fetch(`/api/files?path=${encodeURIComponent(path)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        content.innerHTML = `<div class="explorer-empty"><div class="empty-icon"><i data-lucide="alert-circle" class="lucide-xl"></i></div><p>${data.error}</p></div>`;
+                        lucide.createIcons();
+                        return;
+                    }
+                    
+                    // Atualiza breadcrumb
+                    updateBreadcrumb(data.breadcrumb);
+                    
+                    // Atualiza footer
+                    document.getElementById('explorerFooter').innerHTML = `
+                        <span>${data.total_folders} pasta(s), ${data.total_files} vídeo(s)</span>
+                    `;
+                    
+                    // Verifica se está vazio
+                    if (data.folders.length === 0 && data.files.length === 0) {
+                        content.innerHTML = `
+                            <div class="explorer-empty">
+                                <div class="empty-icon"><i data-lucide="folder-open" class="lucide-xl"></i></div>
+                                <p>Pasta vazia</p>
+                                <p style="font-size: 12px; margin-top: 8px;">Clique em "Importar" para adicionar vídeos</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    // Renderiza pastas e arquivos
+                    let html = '<div class="explorer-grid">';
+                    
+                    // Pastas primeiro
+                    data.folders.forEach(folder => {
+                        const isProtected = folder.name === 'processados';
+                        const folderIcon = isProtected ? 'lock' : 'folder';
+                        html += `
+                            <div class="folder-item" onclick="loadFileExplorer('${folder.path}')">
+                                <span class="folder-icon"><i data-lucide="${folderIcon}" class="lucide-lg"></i></span>
+                                <div class="folder-info">
+                                    <div class="folder-name">${folder.name}</div>
+                                    <div class="folder-meta">${folder.items} itens</div>
+                                </div>
+                                <div class="folder-actions" onclick="event.stopPropagation()">
+                                    ${!isProtected ? `
+                                        <button class="file-action-btn" onclick="showRenameModal('${folder.path}', '${folder.name}', true)" title="Renomear"><i data-lucide="pencil" class="lucide-sm"></i></button>
+                                        <button class="file-action-btn delete" onclick="openDeleteFolderModal('${folder.path}', '${folder.name}')" title="Deletar"><i data-lucide="trash-2" class="lucide-sm"></i></button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    // Depois arquivos
+                    data.files.forEach(file => {
+                        const isSelected = selectedVideo === file.full_path;
+                        const thumbId = `thumb_${Math.random().toString(36).substr(2, 9)}`;
+                        html += `
+                            <div class="file-item ${isSelected ? 'selected' : ''}" data-path="${file.full_path}">
+                                <div class="selected-badge"><i data-lucide="check" class="lucide-sm"></i></div>
+                                <div class="file-preview" id="${thumbId}">
+                                    <div class="thumbnail-loading"></div>
+                                    <span class="file-extension">${file.extension.replace('.', '')}</span>
+                                </div>
+                                <div class="file-name" title="${file.name}">${file.name}</div>
+                                <div class="file-meta">${formatFileSize(file.size)}</div>
+                                <div class="file-actions">
+                                    <button class="file-action-btn play" onclick="event.stopPropagation(); openPreview('${file.path}', '${file.name}')" title="Preview"><i data-lucide="play" class="lucide-sm"></i></button>
+                                    <button class="file-action-btn select" onclick="event.stopPropagation(); selectFile('${file.full_path}', '${file.name}')" title="Selecionar"><i data-lucide="check" class="lucide-sm"></i></button>
+                                    <button class="file-action-btn" onclick="event.stopPropagation(); showMoveFileModal('${file.path}', '${file.name}')" title="Mover"><i data-lucide="move" class="lucide-sm"></i></button>
+                                    <button class="file-action-btn" onclick="event.stopPropagation(); showRenameModal('${file.path}', '${file.name}', false)" title="Renomear"><i data-lucide="pencil" class="lucide-sm"></i></button>
+                                    <button class="file-action-btn delete" onclick="event.stopPropagation(); openDeleteModal('${file.path}', '${file.name}')" title="Deletar"><i data-lucide="trash-2" class="lucide-sm"></i></button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Carrega thumbnail de forma assíncrona após renderizar
+                        setTimeout(() => loadThumbnail(thumbId, file.path), 50);
+                    });
+                    
+                    html += '</div>';
+                    content.innerHTML = html;
+                    
+                    // Renderiza os ícones Lucide
+                    lucide.createIcons();
+                })
+                .catch(err => {
+                    content.innerHTML = `<div class="explorer-empty"><div class="empty-icon"><i data-lucide="alert-circle" class="lucide-xl"></i></div><p>Erro ao carregar</p></div>`;
+                    lucide.createIcons();
+                    console.error('Erro:', err);
+                });
+        }
+        
+        function updateBreadcrumb(items) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerHTML = items.map((item, index) => {
+                const isLast = index === items.length - 1;
+                const icon = index === 0 ? '<i data-lucide="home" class="lucide-sm"></i> ' : '<i data-lucide="folder" class="lucide-sm"></i> ';
+                return `
+                    <span class="breadcrumb-item ${isLast ? 'active' : ''}" onclick="loadFileExplorer('${item.path}')">${icon}${item.name}</span>
+                    ${!isLast ? '<span class="breadcrumb-separator"><i data-lucide="chevron-right" class="lucide-sm"></i></span>' : ''}
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+        
+        // Carrega thumbnail de um vídeo
+        function loadThumbnail(elementId, filePath) {
+            const container = document.getElementById(elementId);
+            if (!container) return;
+            
+            const img = new Image();
+            const extension = container.querySelector('.file-extension');
+            const extHtml = extension ? extension.outerHTML : '';
+            
+            img.onload = function() {
+                container.innerHTML = `
+                    <img class="thumbnail" src="${img.src}" alt="Thumbnail">
+                    ${extHtml}
+                `;
+            };
+            
+            img.onerror = function() {
+                container.innerHTML = `
+                    <div class="thumbnail-placeholder">
+                        <i data-lucide="film" class="lucide-lg"></i>
+                    </div>
+                    ${extHtml}
+                `;
+                lucide.createIcons();
+            };
+            
+            img.src = `/api/files/thumbnail/${encodeURIComponent(filePath)}`;
+        }
+        
+        // Atualiza visual de seleção no explorador de arquivos
+        function updateExplorerSelection() {
+            document.querySelectorAll('.file-item').forEach(item => {
+                item.classList.toggle('selected', item.dataset.path === selectedVideo);
+            });
+        }
+        
+        function selectFile(path, name) {
+            // Toggle: se já está selecionado, desseleciona
+            if (selectedVideo === path) {
+                selectedVideo = null;
+                updateSelectedVideo('');
+                addLog(`Vídeo desselecionado: ${name}`, 'info');
+                showNotification('Vídeo Desselecionado', name, 'info');
+                
+                // Remove visual de seleção
+                updateExplorerSelection();
+                return;
+            }
+            
+            fetch('/api/select_video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    selectedVideo = path;
+                    updateSelectedVideo(name);
+                    addLog(`Vídeo selecionado: ${name}`, 'success');
+                    showNotification('Vídeo Selecionado', name, 'success');
+                    
+                    // Atualiza visual
+                    updateExplorerSelection();
+                } else {
+                    showNotification('Erro', data.error, 'error');
+                }
+            });
+        }
+        
+        function openPreview(path, name) {
+            previewFilePath = path;
+            document.getElementById('previewTitle').textContent = name;
+            const video = document.getElementById('previewVideo');
+            video.src = `/api/files/preview/${encodeURIComponent(path)}`;
+            document.getElementById('previewModal').classList.add('active');
+        }
+        
+        function closePreview() {
+            const video = document.getElementById('previewVideo');
+            video.pause();
+            video.src = '';
+            document.getElementById('previewModal').classList.remove('active');
+        }
+        
+        function selectFromPreview() {
+            fetch('/api/workspace').then(r => r.json()).then(d => {
+                const fullPath = d.path + '/' + previewFilePath;
+                selectFile(fullPath, previewFilePath.split('/').pop());
+                closePreview();
+            });
+        }
+        
+        let deleteIsFolder = false;
+        
+        function openDeleteModal(path, name) {
+            deleteFilePath = path;
+            deleteIsFolder = false;
+            document.getElementById('deleteFilename').textContent = name;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        
+        function openDeleteFolderModal(path, name) {
+            deleteFolderPath = path;
+            deleteFilePath = path;
+            deleteIsFolder = true;
+            document.getElementById('deleteFilename').textContent = name + ' (pasta)';
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+            deleteFilePath = '';
+            deleteIsFolder = false;
+        }
+
+        function confirmDelete() {
+            if (!deleteFilePath) return;
+            
+            const endpoint = deleteIsFolder ? '/api/files/folder' : '/api/files/delete';
+            const method = deleteIsFolder ? 'DELETE' : 'POST';
+            const body = deleteIsFolder 
+                ? JSON.stringify({ path: deleteFilePath, force: true })
+                : JSON.stringify({ path: deleteFilePath });
+            
+            fetch(endpoint, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: body
+            })
+            .then(res => res.json())
+            .then(data => {
+                closeDeleteModal();
+                if (data.success) {
+                    const tipo = deleteIsFolder ? 'Pasta excluída' : 'Arquivo excluído';
+                    showNotification(tipo, data.message, 'success');
+                    addLog(`${tipo}: ${deleteFilePath}`, 'warning');
+                    loadFileExplorer(currentPath);
+                    
+                    // Limpa seleção se era o arquivo selecionado
+                    if (selectedVideo && selectedVideo.includes(deleteFilePath)) {
+                        selectedVideo = null;
+                        updateSelectedVideo('');
+                    }
+                } else {
+                    showNotification('Erro', data.error, 'error');
+                }
+            })
+            .catch(err => {
+                closeDeleteModal();
+                showNotification('Erro', 'Falha na comunicação', 'error');
+            });
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Alias para compatibilidade
+        function loadVideoList() {
+            loadFileExplorer(currentPath);
+        }
+        
+        // ========== INICIALIZAÇÃO ==========
+        // Carrega o explorador de arquivos quando a página carrega
+        document.addEventListener('DOMContentLoaded', function() {
+            // Inicializa ícones Lucide
+            lucide.createIcons();
+            loadFileExplorer();
+            
+            // Configura drag and drop no explorador de arquivos
+            const dropZone = document.getElementById('explorerContent');
+            if (dropZone) {
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('drag-over');
+                });
+                
+                dropZone.addEventListener('dragleave', () => {
+                    dropZone.classList.remove('drag-over');
+                });
+                
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('drag-over');
+                    
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('video/')) {
+                        document.getElementById('fileInput').files = e.dataTransfer.files;
+                        handleFileSelect({ target: { files: e.dataTransfer.files } });
+                    }
+                });
+            }
+        });
+        
+        // Também tenta carregar imediatamente caso o DOM já esteja pronto
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            setTimeout(() => {
+                loadFileExplorer();
+            }, 100);
+        }
+        
+        function showHelp() {
+            alert(`🎬 AUTO VIDEO EDITOR - Guia Rápido
+
+📹 FUNCIONALIDADES:
+
+1️⃣ REMOVER SILÊNCIO
+   • Detecta pausas e silêncios automaticamente
+   • Método "Inteligente" usa IA (mais preciso)
+   • Método "Volume" usa detecção por dB (mais rápido)
+
+2️⃣ GERAR LEGENDAS
+   • Transcrição automática com Whisper
+   • Legendas estilo CapCut (karaokê)
+   • Destaque palavra a palavra
+
+3️⃣ PROCESSO COMPLETO
+   • Executa corte + legendas automaticamente
+   • Opcional: Correção ortográfica com IA
+
+⚙️ CONFIGURAÇÕES:
+• Modelo Whisper: tiny (rápido) → large (preciso)
+• Correção IA: Requer API Key do Google Gemini
+
+💡 DICA: Para melhores resultados, use o modelo "small" ou "medium" para legendas.`);
+        }
+        
+        // ========== FILE HANDLING ==========
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                // Sanitiza o nome do arquivo
+                const safeName = sanitizeFilename(file.name);
+                
+                if (!safeName) {
+                    showNotification('Erro', 'Nome de arquivo inválido.', 'error');
+                    return;
+                }
+                
+                // Verifica se é um arquivo de vídeo
+                const allowedExtensions = ['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v'];
+                const ext = safeName.toLowerCase().substring(safeName.lastIndexOf('.'));
+                
+                if (!allowedExtensions.includes(ext)) {
+                    showNotification('Erro', `Formato não suportado: ${ext}`, 'error');
+                    return;
+                }
+                
+                // Primeiro tenta selecionar (caso já esteja no workspace)
+                fetch('/api/select_video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: safeName })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        selectedVideo = safeName;
+                        updateSelectedVideo(safeName);
+                        addLog(`Vídeo selecionado: ${safeName}`, 'success');
+                        showNotification('Vídeo Selecionado', safeName, 'success');
+                        loadVideoList();
+                    } else {
+                        // Não está no workspace - faz upload
+                        uploadVideo(file);
+                    }
+                })
+                .catch(err => {
+                    console.error('Erro ao selecionar vídeo:', err);
+                    // Tenta fazer upload mesmo assim
+                    uploadVideo(file);
+                });
+                
+                // Limpa o input
+                event.target.value = '';
+            }
+        }
+        
+        function uploadVideo(file) {
+            const safeName = sanitizeFilename(file.name);
+            
+            addLog(`📤 Copiando "${safeName}" para o workspace...`, 'info');
+            showNotification('Copiando Vídeo', `Enviando ${formatFileSize(file.size)}...`, 'info');
+            
+            // Mostra progresso
+            updateProgress(`Copiando ${safeName}...`, 0);
+            
+            const formData = new FormData();
+            formData.append('video', file);
+            
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    updateProgress(`Copiando... ${percent.toFixed(0)}%`, percent);
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.success) {
+                        selectedVideo = data.path;
+                        updateSelectedVideo(data.filename);
+                        addLog(`✅ Vídeo copiado e selecionado: ${data.filename}`, 'success');
+                        showNotification('Sucesso!', `Vídeo copiado: ${data.filename}`, 'success');
+                        loadVideoList();
+                        updateProgress('Pronto!', 100);
+                        setTimeout(() => updateProgress('Aguardando início...', 0), 2000);
+                    } else {
+                        addLog(`❌ Erro: ${data.error}`, 'error');
+                        showNotification('Erro', data.error, 'error');
+                        updateProgress('Erro no upload', 0);
+                    }
+                } else {
+                    addLog('❌ Erro ao copiar vídeo', 'error');
+                    showNotification('Erro', 'Falha ao copiar o vídeo', 'error');
+                    updateProgress('Erro no upload', 0);
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                addLog('❌ Erro de conexão', 'error');
+                showNotification('Erro', 'Falha na conexão', 'error');
+                updateProgress('Erro de conexão', 0);
+            });
+            
+            xhr.open('POST', '/api/upload');
+            xhr.send(formData);
+        }
+        
+        // ========== PROCESS FUNCTIONS ==========
+        
+        function getSettings() {
+            return {
+                model: document.getElementById('whisperModel').value,
+                cut_method: document.getElementById('cutMethod').value,
+                language: document.getElementById('language').value,
+                use_ai: document.getElementById('useAI').checked
+            };
+        }
+        
+        function processRemoveSilence() {
+            if (!selectedVideo) {
+                showNotification('Atenção', 'Selecione um vídeo primeiro!', 'error');
+                return;
+            }
+            
+            if (isProcessing) return;
+            
+            isProcessing = true;
+            updateButtons();
+            showProcessingOverlay('✂️ Removendo Silêncio', 'Analisando áudio do vídeo...');
+            updateProcessingTip('💡 O método inteligente (Whisper) é mais preciso, mas demora mais');
+            
+            const settings = getSettings();
+            
+            fetch('/api/process/remove_silence', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ method: settings.cut_method })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    isProcessing = false;
+                    updateButtons();
+                    hideProcessingOverlay();
+                    showNotification('Erro', data.error, 'error');
+                }
+            });
+        }
+        
+        function processAddSubtitles() {
+            if (!selectedVideo) {
+                showNotification('Atenção', 'Selecione um vídeo primeiro!', 'error');
+                return;
+            }
+            
+            if (isProcessing) return;
+            
+            isProcessing = true;
+            updateButtons();
+            showProcessingOverlay('📝 Gerando Legendas', 'Carregando modelo Whisper...');
+            updateProcessingTip('💡 Modelos maiores são mais precisos mas demoram mais');
+            
+            const settings = getSettings();
+            
+            fetch('/api/process/add_subtitles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    isProcessing = false;
+                    updateButtons();
+                    hideProcessingOverlay();
+                    showNotification('Erro', data.error, 'error');
+                }
+            });
+        }
+        
+        function processFullPipeline() {
+            if (!selectedVideo) {
+                showNotification('Atenção', 'Selecione um vídeo primeiro!', 'error');
+                return;
+            }
+            
+            if (isProcessing) return;
+            
+            isProcessing = true;
+            updateButtons();
+            showProcessingOverlay('⚡ Processo Completo', 'Iniciando pipeline de edição...');
+            updateProcessingTip('💡 Este processo executa corte de silêncio + legendas automaticamente');
+            
+            const settings = getSettings();
+            
+            fetch('/api/process/full', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    isProcessing = false;
+                    updateButtons();
+                    hideProcessingOverlay();
+                    showNotification('Erro', data.error, 'error');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+

@@ -38,3 +38,15 @@ auto-editor
 *.avi
 *.mov
 
+# Database local
+data.db
+*.db
+
+# Thumbnail cache
+.thumbnails/
+
+# Upload folder (videos uploaded by users)
+upload/
+!upload/.gitkeep
+!upload/processados/.gitkeep
+
