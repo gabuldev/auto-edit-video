@@ -1105,8 +1105,11 @@ def process_remove_silence():
     
     data = request.json or {}
     method = data.get('method', 'speech')
+    padding = float(data.get('padding', 0.25))
+    min_silence = float(data.get('min_silence', 0.5))
     
     def process():
+        video_path = app_state["selected_video"]
         try:
             app_state["is_processing"] = True
             emit_log("Iniciando remoção de silêncio...", "info")
@@ -1114,14 +1117,13 @@ def process_remove_silence():
             
             from remove_silence import remover_silencio
             
-            video_path = app_state["selected_video"]
             output_path = get_output_path(video_path, '_cut')
             
             emit_progress("Analisando áudio...", 0.3)
-            emit_log(f"Usando método de corte: {method.upper()}", "info")
+            emit_log(f"Usando método de corte: {method.upper()} (Margem: {padding}s, Silêncio min: {min_silence}s)", "info")
             
             start_time = time.time()
-            success = remover_silencio(video_path, output_path, method=method)
+            success = remover_silencio(video_path, output_path, method=method, min_duration=min_silence, padding=padding)
             duration = time.time() - start_time
             
             if success:
@@ -1155,6 +1157,123 @@ def process_remove_silence():
     return jsonify({"success": True, "message": "Processamento iniciado"})
 
 
+@app.route('/api/process/preview_subtitle', methods=['POST'])
+@api_login_required
+def preview_subtitle():
+    """Gera um preview da legenda com as configurações atuais"""
+    data = request.json or {}
+    
+    if not app_state["selected_video"]:
+        return jsonify({"success": False, "error": "Nenhum vídeo selecionado"}), 400
+        
+    video_path = app_state["selected_video"]
+    
+    # Configurações de estilo
+    highlight_color = data.get('highlight_color')
+    text_color = data.get('text_color')
+    outline_color = data.get('outline_color')
+    highlight_width = float(data.get('highlight_width', 5.0))
+    outline_width = float(data.get('outline_width', 1.5))
+    font_name = data.get('font_name', 'Prohibition')
+    font_size = float(data.get('font_size', 10))
+    
+    try:
+        from auto_caption import gerar_ass_capcut
+        import subprocess
+        from flask import send_file
+        
+        # 1. Gera thumbnail temporária (ou usa cache)
+        # Reusa lógica de cache de thumbnails
+        THUMBNAIL_CACHE_DIR.mkdir(exist_ok=True)
+        import hashlib
+        file_stat = Path(video_path).stat()
+        cache_key = f"{video_path}_{file_stat.st_mtime}"
+        thumb_hash = hashlib.md5(cache_key.encode()).hexdigest()
+        thumb_path = THUMBNAIL_CACHE_DIR / f"{thumb_hash}.jpg"
+        
+        if not thumb_path.exists():
+            # Gera thumbnail
+            cmd = [
+                'ffmpeg', '-i', video_path, '-ss', '00:00:05', 
+                '-vframes', '1', '-vf', 'scale=640:-1', '-q:v', '3', '-y', str(thumb_path)
+            ]
+            subprocess.run(cmd, capture_output=True, check=False)
+            
+        if not thumb_path.exists():
+             return jsonify({"success": False, "error": "Falha ao gerar base para preview"}), 500
+             
+        # 2. Cria ASS de preview
+        preview_ass = THUMBNAIL_CACHE_DIR / f"preview_{thumb_hash}.ass"
+        preview_img = THUMBNAIL_CACHE_DIR / f"preview_{thumb_hash}.jpg"
+        
+        # Mock de segmentos para gerar o ASS
+        # "PREVIEW DA LEGENDA"
+        mock_segments = [{
+            "words": [
+                {"word": "PREVIEW", "start": 0.0, "end": 0.5},
+                {"word": "DA", "start": 0.5, "end": 0.8},
+                {"word": "LEGENDA", "start": 0.8, "end": 1.5}
+            ]
+        }]
+        
+        gerar_ass_capcut(
+            mock_segments, 
+            str(preview_ass), 
+            highlight_color=highlight_color,
+            text_color=text_color,
+            outline_color=outline_color,
+            highlight_width=highlight_width,
+            outline_width=outline_width,
+            font_name=font_name,
+            font_size=font_size
+        )
+        
+        # 3. Queima a legenda na imagem
+        # ffmpeg -i thumb.jpg -vf "subtitles=preview.ass" -y preview.jpg
+        # Precisamos normalizar o caminho do ASS para o ffmpeg
+        ass_norm = str(preview_ass).replace("\\", "/")
+        
+        # Definimos um tempo fictício onde a legenda aparece (ex: 0.2s) para renderizar o frame correto?
+        # Na verdade, o ASS tem tempos absolutos. O ffmpeg aplicaria o ASS como se a imagem fosse um vídeo começando em 0.
+        # Nossos segmentos começam em 0.0.
+        # Precisamos dizer ao ffmpeg para renderizar o frame em um tempo específico onde a legenda existe.
+        # Como é uma imagem estática, o filtro subtitles aplica no timestamp 0 por padrão se não animado?
+        # O filtro subtitles assume o tempo do vídeo. Sendo imagem, é um stream de 1 frame (ou loop).
+        # Vamos tentar aplicar direto.
+        
+        # Para garantir que a legenda apareça (ela tem tempos definidos), vamos forçar o timestamp do filtro
+        # Mas gerar_ass_capcut define tempos. "PREVIEW" (0-0.5s), "DA" (0.5-0.8), "LEGENDA" (0.8-1.5).
+        # O ideal é pegar um frame onde "LEGENDA" (destaque) esteja visível ou algo assim.
+        # O gerar_ass_capcut itera palavra por palavra e gera eventos.
+        # Vamos simplificar: vamos gerar um ASS onde todas as palavras aparecem ao mesmo tempo ou 
+        # ajustar o tempo para cobrir o "instante" que o ffmpeg vai renderizar.
+        
+        # Melhor: Vamos usar apenas "PREVIEW" como highlight para testar, no tempo 0.
+        
+        cmd_burn = [
+            'ffmpeg', '-y',
+            '-loop', '1', '-i', str(thumb_path), # Loop image input
+            '-vf', f"subtitles='{ass_norm}'",
+            '-t', '0.1', # Duração curta
+            '-vframes', '1', # Apenas 1 frame
+            str(preview_img)
+        ]
+        
+        # OBS: O filtro subtitles com imagem estática pode ser chato com tempos.
+        # Uma alternativa é gerar o ASS com tempo 00:00:00 -> 00:00:10 e renderizar o frame 0.
+        # O mock acima começa em 0.0. A primeira palavra "PREVIEW" será highlight.
+        
+        subprocess.run(cmd_burn, capture_output=True, check=True)
+        
+        if preview_img.exists():
+            return send_file(str(preview_img), mimetype='image/jpeg')
+        else:
+            return jsonify({"success": False, "error": "Erro ao gerar imagem de preview"}), 500
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/process/add_subtitles', methods=['POST'])
 @api_login_required
 def process_add_subtitles():
@@ -1170,7 +1289,18 @@ def process_add_subtitles():
     language = data.get('language', 'pt')
     use_ai = data.get('use_ai', True)
     
+    # Configurações de estilo
+    highlight_color = data.get('highlight_color')
+    text_color = data.get('text_color')
+    outline_color = data.get('outline_color')
+    highlight_width = float(data.get('highlight_width', 5.0))
+    outline_width = float(data.get('outline_width', 1.5))
+    font_name = data.get('font_name', 'Prohibition')
+    font_size = float(data.get('font_size', 10))
+    preview_mode = data.get('preview_mode', False)
+    
     def process():
+        video_path = app_state["selected_video"]
         try:
             app_state["is_processing"] = True
             emit_log("Iniciando processo de legendagem...", "info")
@@ -1178,7 +1308,6 @@ def process_add_subtitles():
             
             from auto_caption import processar_legenda_completo
             
-            video_path = app_state["selected_video"]
             output_path = get_output_path(video_path, '_legendado')
             
             gemini_key = app_state["api_key"] if use_ai else None
@@ -1187,28 +1316,44 @@ def process_add_subtitles():
             emit_log(f"Usando modelo Whisper: {model}", "info")
             
             start_time = time.time()
-            processar_legenda_completo(
+            result_path = processar_legenda_completo(
                 video_path,
                 output_path,
                 model_name=model,
                 language=language,
-                gemini_key=gemini_key
+                gemini_key=gemini_key,
+                highlight_color=highlight_color,
+                text_color=text_color,
+                outline_color=outline_color,
+                highlight_width=highlight_width,
+                outline_width=outline_width,
+                font_name=font_name,
+                font_size=font_size,
+                only_generate=preview_mode
             )
             duration = time.time() - start_time
             
-            emit_progress("Concluído!", 1.0)
-            emit_log(f"✅ Vídeo legendado salvo em: {os.path.basename(output_path)}", "success")
-            
-            # Registra no banco
-            file_size = os.path.getsize(output_path) / (1024 * 1024) if os.path.exists(output_path) else 0
-            db.add_video_history(video_path, output_path, "add_subtitles", True, file_size)
-            db.add_log(os.path.basename(video_path), "add_subtitles", "success", f"Modelo: {model}, Idioma: {language}", duration)
-            
-            socketio.emit('process_complete', {
-                'success': True,
-                'output': output_path,
-                'filename': os.path.basename(output_path)
-            })
+            if preview_mode:
+                emit_progress("Legendas geradas para revisão!", 1.0)
+                emit_log(f"✅ Legendas geradas. Pronto para edição.", "success")
+                socketio.emit('subtitle_generated', {
+                    'success': True,
+                    'video_path': video_path
+                })
+            else:
+                emit_progress("Concluído!", 1.0)
+                emit_log(f"✅ Vídeo legendado salvo em: {os.path.basename(output_path)}", "success")
+                
+                # Registra no banco
+                file_size = os.path.getsize(output_path) / (1024 * 1024) if os.path.exists(output_path) else 0
+                db.add_video_history(video_path, output_path, "add_subtitles", True, file_size)
+                db.add_log(os.path.basename(video_path), "add_subtitles", "success", f"Modelo: {model}, Idioma: {language}", duration)
+                
+                socketio.emit('process_complete', {
+                    'success': True,
+                    'output': output_path,
+                    'filename': os.path.basename(output_path)
+                })
             
         except Exception as e:
             emit_log(f"❌ Erro: {str(e)}", "error")
@@ -1220,6 +1365,134 @@ def process_add_subtitles():
     
     threading.Thread(target=process, daemon=True).start()
     return jsonify({"success": True, "message": "Processamento iniciado"})
+
+
+@app.route('/api/subtitles/get', methods=['GET'])
+@api_login_required
+def get_subtitles():
+    """Retorna os segmentos de legenda (JSON) do vídeo selecionado"""
+    if not app_state["selected_video"]:
+        return jsonify({"success": False, "error": "Nenhum vídeo selecionado"}), 400
+        
+    video_path = app_state["selected_video"]
+    base, _ = os.path.splitext(video_path)
+    json_path = f"{base}.json"
+    
+    if not os.path.exists(json_path):
+        return jsonify({"success": False, "error": "Legendas não encontradas. Gere primeiro."}), 404
+        
+    try:
+        from auto_caption import carregar_segmentos_json
+        segments = carregar_segmentos_json(json_path)
+        return jsonify({"success": True, "segments": segments})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/subtitles/save', methods=['POST'])
+@api_login_required
+def save_subtitles():
+    """Salva segmentos editados e regenera o ASS"""
+    if not app_state["selected_video"]:
+        return jsonify({"success": False, "error": "Nenhum vídeo selecionado"}), 400
+        
+    data = request.json or {}
+    segments = data.get('segments', [])
+    
+    # Configurações de estilo (opcionais, usa padrão se não vier)
+    highlight_color = data.get('highlight_color')
+    text_color = data.get('text_color')
+    outline_color = data.get('outline_color')
+    highlight_width = float(data.get('highlight_width', 5.0))
+    outline_width = float(data.get('outline_width', 1.5))
+    font_name = data.get('font_name', 'Prohibition')
+    font_size = float(data.get('font_size', 10))
+    
+    video_path = app_state["selected_video"]
+    base, _ = os.path.splitext(video_path)
+    json_path = f"{base}.json"
+    ass_path = f"{base}.ass"
+    
+    try:
+        from auto_caption import salvar_segmentos_json, gerar_ass_capcut
+        
+        # 1. Salva JSON atualizado
+        salvar_segmentos_json(segments, json_path)
+        
+        # 2. Regenera ASS
+        gerar_ass_capcut(
+            segments, 
+            ass_path,
+            highlight_color=highlight_color,
+            text_color=text_color,
+            outline_color=outline_color,
+            highlight_width=highlight_width,
+            outline_width=outline_width,
+            font_name=font_name,
+            font_size=font_size
+        )
+        
+        return jsonify({"success": True, "message": "Legendas salvas e atualizadas"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/subtitles/burn', methods=['POST'])
+@api_login_required
+def burn_subtitles():
+    """Queima a legenda atual (.ass) no vídeo"""
+    if app_state["is_processing"]:
+        return jsonify({"success": False, "error": "Processamento em andamento"}), 400
+        
+    if not app_state["selected_video"]:
+        return jsonify({"success": False, "error": "Nenhum vídeo selecionado"}), 400
+        
+    video_path = app_state["selected_video"]
+    base, _ = os.path.splitext(video_path)
+    ass_path = f"{base}.ass"
+    
+    if not os.path.exists(ass_path):
+        return jsonify({"success": False, "error": "Arquivo de legenda (.ass) não encontrado"}), 404
+        
+    def process():
+        try:
+            app_state["is_processing"] = True
+            emit_log("Iniciando queima de legendas...", "info")
+            emit_progress("Renderizando vídeo...", 0.1)
+            
+            from auto_caption import queimar_legenda
+            
+            output_path = get_output_path(video_path, '_legendado')
+            start_time = time.time()
+            
+            queimar_legenda(video_path, ass_path, output_path)
+            
+            duration = time.time() - start_time
+            
+            emit_progress("Concluído!", 1.0)
+            emit_log(f"✅ Vídeo legendado salvo em: {os.path.basename(output_path)}", "success")
+            
+            # Registra no banco
+            file_size = os.path.getsize(output_path) / (1024 * 1024) if os.path.exists(output_path) else 0
+            db.add_video_history(video_path, output_path, "burn_subtitles", True, file_size)
+            db.add_log(os.path.basename(video_path), "burn_subtitles", "success", f"Manual Burn", duration)
+            
+            socketio.emit('process_complete', {
+                'success': True,
+                'output': output_path,
+                'filename': os.path.basename(output_path)
+            })
+            
+        except Exception as e:
+            emit_log(f"❌ Erro: {str(e)}", "error")
+            db.add_log(os.path.basename(video_path), "burn_subtitles", "error", str(e))
+            socketio.emit('process_complete', {'success': False, 'error': str(e)})
+        finally:
+            app_state["is_processing"] = False
+            emit_progress("Aguardando início...", 0)
+            
+    threading.Thread(target=process, daemon=True).start()
+    return jsonify({"success": True, "message": "Renderização iniciada"})
 
 
 @app.route('/api/process/full', methods=['POST'])
@@ -1237,6 +1510,17 @@ def process_full():
     language = data.get('language', 'pt')
     cut_method = data.get('cut_method', 'speech')
     use_ai = data.get('use_ai', True)
+    padding = float(data.get('padding', 0.25))
+    min_silence = float(data.get('min_silence', 0.5))
+    
+    # Configurações de estilo
+    highlight_color = data.get('highlight_color')
+    text_color = data.get('text_color')
+    outline_color = data.get('outline_color')
+    highlight_width = float(data.get('highlight_width', 5.0))
+    outline_width = float(data.get('outline_width', 1.5))
+    font_name = data.get('font_name', 'Prohibition')
+    font_size = float(data.get('font_size', 10))
     
     def process():
         video_path = app_state["selected_video"]
@@ -1251,11 +1535,11 @@ def process_full():
             from auto_caption import processar_legenda_completo
             
             # Passo 1: Cortar silêncio
-            emit_log("📌 Passo 1/2: Removendo silêncio...", "info")
+            emit_log(f"📌 Passo 1/2: Removendo silêncio (Margem: {padding}s)...", "info")
             emit_progress("Analisando áudio...", 0.2)
             
             cut_path = get_output_path(video_path, '_cut')
-            success = remover_silencio(video_path, cut_path, method=cut_method)
+            success = remover_silencio(video_path, cut_path, method=cut_method, min_duration=min_silence, padding=padding)
             
             video_to_caption = cut_path if success else video_path
             
@@ -1271,7 +1555,14 @@ def process_full():
                 final_path,
                 model_name=model,
                 language=language,
-                gemini_key=gemini_key
+                gemini_key=gemini_key,
+                highlight_color=highlight_color,
+                text_color=text_color,
+                outline_color=outline_color,
+                highlight_width=highlight_width,
+                outline_width=outline_width,
+                font_name=font_name,
+                font_size=font_size
             )
             
             duration = time.time() - start_time
