@@ -1,0 +1,599 @@
+manifest:
+  version: "0.1.3"
+  schema: https://a2as.org/cert/schema
+  subject:
+    name: gabuldev/auto-edit-video
+    source: https://github.com/gabuldev/auto-edit-video
+    branch: main
+    commit: "be56f649"
+    scope: [agent/agent.py, agent/tools.py, web_app.py]
+  issued:
+    by: A2AS.org
+    at: '2026-02-11T16:37:46Z'
+    url: https://a2as.org/certified/agents/gabuldev/auto-edit-video
+  signatures:
+    digest: sha256:VisvvZytt2Rcowe8P1GgKpThTtPQeHCDrNvC01G6jwA
+    key: ed25519:c6e-77MbZVDGrD0_oTz9qQ1tkIzbREFDgJzho6GgzsA
+    sig: ed25519:KlhwnClnFq0ZJTTshojVMdGTrg8ndXrzEjbUC_cBGZYP1TUAzqx7ncIJf3wxUbZ0AmXLCohiwpVcyODuPq40Aw
+
+agents:
+  captioner_agent:
+    type: instance
+    models: [gemini-3-flash-preview]
+    tools: [add_subtitles_tool]
+    params:
+      name: captioner_agent
+      description: Especialista em transcrever e legendar vídeos.
+      instruction: [Você é um especialista em legendagem., Sua função é adicionar legendas estilosas (estilo CapCut) aos vídeos.,
+        Use a ferramenta 'add_subtitles_tool'., 'Se o usuário não especificar o modelo, use ''small''.', 'Se tiver algo escrito
+          GABU, substitua por GABUL.']
+  cutter_agent:
+    type: instance
+    models: [gemini-3-flash-preview]
+    tools: [remove_silence_tool]
+    params:
+      name: cutter_agent
+      description: Especialista em remover silêncio de vídeos.
+      instruction: [Você é um editor de vídeo especialista em remover silêncio (jumpcuts)., Sua única função é receber um
+          vídeo e usar a ferramenta 'remove_silence_tool' para processá-lo., Sempre informe o usuário sobre o resultado.]
+  reviewer_agent:
+    type: instance
+    models: [gemini-3-flash-preview]
+    tools: [analyze_takes_tool, cut_segments_tool]
+    params:
+      name: reviewer_agent
+      description: Especialista em validar conteúdo e remover erros de gravação.
+      instruction: [Você é um revisor de conteúdo de vídeo., Seu trabalho é identificar quando o orador erra uma frase e a
+          repete logo em seguida., 'Processo:', 1. Use 'analyze_takes_tool' para obter a lista de erros/redundâncias no vídeo.,
+        '2. Analise a resposta. Se houver erros, informe ao usuário o que foi encontrado (ex: "Encontrei 2 tentativas falhas
+          entre 0:10 e 0:15").', '3. Pergunte se o usuário quer proceder com os cortes OU, se o usuário já deu carta branca,
+          prossiga.', 4. Use 'cut_segments_tool' passando o JSON exato retornado pela análise para remover os trechos ruins.]
+  root_agent:
+    type: instance
+    models: [gemini-3-flash-preview]
+    tools: [list_videos]
+    params:
+      name: root_agent
+      description: Gerente da equipe de edição de vídeo.
+      instruction: [Você é o gerente de uma equipe de pós-produção de vídeo., 'Você tem acesso a agentes especialistas:',
+        '- cutter_agent: Remove silêncio automaticamente.', '- reviewer_agent: Analisa o conteúdo, remove erros de fala e
+          takes ruins.', '- captioner_agent: Adiciona legendas.', 'E ferramentas:', '- list_videos: Para ver quais arquivos
+          estão disponíveis.', 'Fluxo de trabalho sugerido para "Processo Completo":', 1. Remover Silêncio (cutter_agent).,
+        2. Validar Conteúdo/Remover Erros (reviewer_agent) no vídeo cortado., 3. Legendar (captioner_agent) o vídeo final
+          limpo., Sempre coordene o fluxo passando o nome do arquivo resultante de um passo para o próximo.]
+      sub_agents: [cutter_agent, captioner_agent, reviewer_agent]
+
+models:
+  gemini-3-flash-preview:
+    type: literal
+    agents: [cutter_agent, captioner_agent, reviewer_agent, root_agent]
+
+tools:
+  add_subtitles_tool:
+    type: wrapper
+    agents: [captioner_agent]
+    params:
+      wrapper: FunctionTool
+      wraps: add_subtitles_tool
+  analyze_takes_tool:
+    type: wrapper
+    agents: [reviewer_agent]
+    params:
+      wrapper: FunctionTool
+      wraps: analyze_takes_tool
+      description: |-
+        Analisa a transcrição do vídeo para encontrar takes repetidos ou errados.
+        Retorna uma análise em texto sugerindo intervalos para remover.
+  cut_segments_tool:
+    type: wrapper
+    agents: [reviewer_agent]
+    params:
+      wrapper: FunctionTool
+      wraps: cut_segments_tool
+      description: |-
+        Corta segmentos específicos do vídeo.
+        remove_intervals_json deve ser uma string JSON com lista de objetos {start, end}.
+  list_videos:
+    type: wrapper
+    agents: [root_agent]
+    params:
+      wrapper: FunctionTool
+      wraps: list_videos
+      description: |-
+        Lista vídeos disponíveis no diretório de trabalho.
+        Por segurança, só lista arquivos dentro do workspace.
+  remove_silence_tool:
+    type: wrapper
+    agents: [cutter_agent]
+    params:
+      wrapper: FunctionTool
+      wraps: remove_silence_tool
+
+teams:
+  root_agent:
+    type: hierarchy
+    agents: [root_agent, cutter_agent, captioner_agent, reviewer_agent]
+
+imports:
+  abort: flask.abort
+  add_subtitles_tool: tools.add_subtitles_tool
+  agent: agent
+  Agent: google.adk.agents.Agent
+  analyze_takes_tool: tools.analyze_takes_tool
+  app: web_app.app
+  argparse: argparse
+  check_password_hash: werkzeug.security.check_password_hash
+  corrigir_palavras_com_adk: adk_correction.corrigir_palavras_com_adk
+  cut_segments_tool: tools.cut_segments_tool
+  datetime: datetime.datetime
+  db: database
+  emit: flask_socketio.emit
+  Flask: flask.Flask
+  flask: flask
+  flask_socketio: flask_socketio
+  FunctionTool: google.adk.tools.FunctionTool
+  genai: google.generativeai
+  generate_password_hash: werkzeug.security.generate_password_hash
+  glob: glob
+  hashlib: hashlib
+  json: json
+  jsonify: flask.jsonify
+  list_videos: tools.list_videos
+  load_dotenv: dotenv.load_dotenv
+  numba: numba
+  os: os
+  Path: pathlib.Path
+  processar_legenda_completo: auto_caption.processar_legenda_completo
+  pysubs2: pysubs2
+  re: re
+  redirect: flask.redirect
+  remove_silence_tool: tools.remove_silence_tool
+  remover_silencio: remove_silence.remover_silencio
+  render_template: flask.render_template
+  request: flask.request
+  Response: flask.Response
+  secrets: secrets
+  send_file: flask.send_file
+  session: flask.session
+  shutil: shutil
+  socket: socket
+  SocketIO: flask_socketio.SocketIO
+  socketio: web_app.socketio
+  subprocess: subprocess
+  sys: sys
+  threading: threading
+  time: time
+  timedelta: datetime.timedelta
+  traceback: traceback
+  transcrever: auto_caption.transcrever
+  types: types
+  url_for: flask.url_for
+  webbrowser: webbrowser
+  whisper: whisper
+  wraps: functools.wraps
+
+functions:
+  add_subtitles_tool:
+    type: sync
+    module: agent.tools
+    args: [video_path, model]
+    params:
+      returns: str
+  analyze_takes_tool:
+    type: sync
+    module: agent.tools
+    args: [video_path]
+    params:
+      returns: str
+  api_login_required:
+    type: sync
+    module: web_app
+    args: [f]
+  auth_status:
+    type: sync
+    module: web_app
+  bad_request:
+    type: sync
+    module: web_app
+    args: [error]
+  check_dependencies:
+    type: sync
+    module: start_gui
+  clear_logs:
+    type: sync
+    module: web_app
+  corrigir_palavras_com_adk:
+    type: sync
+    module: adk_correction
+    args: [words_list, api_key]
+  create_folder:
+    type: sync
+    module: web_app
+  cut_segments_tool:
+    type: sync
+    module: agent.tools
+    args: [video_path, remove_intervals_json]
+    params:
+      returns: str
+  decorated_function:
+    type: sync
+    module: web_app
+  decorator:
+    type: sync
+    module: agent.tools
+    args: [func]
+  delete_file:
+    type: sync
+    module: web_app
+  delete_folder:
+    type: sync
+    module: web_app
+  detect_silence_ffmpeg:
+    type: sync
+    module: remove_silence
+    args: [input_file, threshold_db, min_duration]
+  detect_speech_intervals:
+    type: sync
+    module: remove_silence
+    args: [input_file, model_name, language, padding, min_silence, word_threshold]
+  emit_log:
+    type: sync
+    module: web_app
+    args: [message, level]
+  emit_progress:
+    type: sync
+    module: web_app
+    args: [text, value]
+  gerar_ass_capcut:
+    type: sync
+    module: auto_caption
+    args: [segments, ass_path]
+  get_history:
+    type: sync
+    module: web_app
+  get_local_ip:
+    type: sync
+    module: web_app
+  get_logs:
+    type: sync
+    module: web_app
+  get_output_path:
+    type: sync
+    module: web_app
+    args: [input_path, suffix]
+    params:
+      returns: str
+  get_settings:
+    type: sync
+    module: web_app
+  get_stats:
+    type: sync
+    module: web_app
+  get_status:
+    type: sync
+    module: web_app
+  get_thumbnail:
+    type: sync
+    module: web_app
+    args: [file_path]
+  get_videos:
+    type: sync
+    module: web_app
+  handle_connect:
+    type: sync
+    module: web_app
+  index:
+    type: sync
+    module: web_app
+  install_dependencies:
+    type: sync
+    module: start_gui
+  internal_error:
+    type: sync
+    module: web_app
+    args: [error]
+  is_safe_path:
+    type: sync
+    module: web_app
+    args: [path, base_dir]
+    params:
+      returns: bool
+  jit:
+    type: sync
+    module: agent.tools
+  list_files:
+    type: sync
+    module: web_app
+  list_videos:
+    type: sync
+    module: web_app
+    args: [directory]
+    params:
+      returns: list
+  log_security_event:
+    type: sync
+    module: web_app
+    args: [event_type, details, request_info]
+  login_page:
+    type: sync
+    module: web_app
+  login_required:
+    type: sync
+    module: web_app
+    args: [f]
+  login_submit:
+    type: sync
+    module: web_app
+  logout:
+    type: sync
+    module: web_app
+  main:
+    type: sync
+    module: start_gui
+  move_file:
+    type: sync
+    module: web_app
+  not_found:
+    type: sync
+    module: web_app
+    args: [error]
+  open_browser:
+    type: sync
+    module: start_gui
+  preview_file:
+    type: sync
+    module: web_app
+    args: [file_path]
+  process:
+    type: sync
+    module: web_app
+  process_add_subtitles:
+    type: sync
+    module: web_app
+  process_full:
+    type: sync
+    module: web_app
+  process_remove_silence:
+    type: sync
+    module: web_app
+  processar_legenda_completo:
+    type: sync
+    module: auto_caption
+    args: [video_path, output_path, model_name, language, gemini_key]
+  queimar_legenda:
+    type: sync
+    module: auto_caption
+    args: [video_path, ass_path, output_path]
+  remove_silence_tool:
+    type: sync
+    module: agent.tools
+    args: [video_path, method]
+    params:
+      returns: str
+  remover_silencio:
+    type: sync
+    module: remove_silence
+    args: [input_file, output_file, method, threshold_db, min_duration]
+  rename_file:
+    type: sync
+    module: web_app
+  request_entity_too_large:
+    type: sync
+    module: web_app
+    args: [error]
+  sanitize_filename:
+    type: sync
+    module: web_app
+    args: [filename]
+    params:
+      returns: str
+  save_settings:
+    type: sync
+    module: web_app
+  sec_to_ms:
+    type: sync
+    module: auto_caption
+    args: [t]
+  select_video:
+    type: sync
+    module: web_app
+  set_api_key:
+    type: sync
+    module: web_app
+  transcrever:
+    type: sync
+    module: auto_caption
+    args: [video_path, model_name, language]
+  upload_video:
+    type: sync
+    module: web_app
+  validate_video_path:
+    type: sync
+    module: web_app
+    args: [video_path]
+    params:
+      returns: tuple
+
+variables:
+  ACCESS_PASSWORD:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  ACCESS_PASSWORD_HASH:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  FLASK_DEBUG:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  FLASK_SECRET_KEY:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  GEMINI_API_KEY:
+    type: env
+    params:
+      caller: [os.environ.get, os.environ]
+      path: [agent.tools, auto_caption, 'os.path.join(parent_dir, ''.env'')']
+  GOOGLE_API_KEY:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [agent.tools, auto_caption, 'os.path.join(parent_dir, ''.env'')']
+  HOST:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  PORT:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  SESSION_LIFETIME_HOURS:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+  WORKSPACE_DIR:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: ['os.path.join(parent_dir, ''.env'')']
+
+files:
+  '. ':
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.path.basename]
+  ./:
+    type: pattern
+    actions: [read]
+    params:
+      patterns: ['*{...}']
+      links: [pattern]
+      caller: [list_videos]
+  .env:
+    type: literal
+    actions: [read]
+    params:
+      caller: [processar_legenda_completo, os.path.join]
+  .jpg:
+    type: literal
+    actions: [read]
+    params:
+      caller: [get_thumbnail]
+      path: [THUMBNAIL_CACHE_DIR]
+  .thumbnails:
+    type: literal
+    actions: [read]
+    params:
+      path: [PROJECT_DIR]
+  current_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.path.dirname]
+  ext/:
+    type: variable
+    actions: [read]
+    params:
+      links: [ext]
+      caller: [list_videos]
+  full_path:
+    type: variable
+    actions: [read, delete]
+    params:
+      caller: [os.path.exists, os.path.basename, full_path.unlink, full_path.iterdir, full_path.rmdir]
+  input_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.path.isfile, os.path.basename]
+  path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path]
+  PROCESSED_DIR:
+    type: variable
+    actions: [write]
+    params:
+      caller: [PROCESSED_DIR.mkdir]
+  PROJECT_DIR:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path.parent.resolve()]
+  proposed_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path.resolve()]
+  rel_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path]
+  resolved_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path.resolve()]
+  safe_name:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path]
+  script_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path.parent.absolute()]
+  search_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [search_dir.glob]
+  target_dir:
+    type: variable
+    actions: [read, write]
+    params:
+      caller: [target_dir.iterdir, target_dir.mkdir]
+  THUMBNAIL_CACHE_DIR:
+    type: variable
+    actions: [write]
+    params:
+      caller: [THUMBNAIL_CACHE_DIR.mkdir]
+  UPLOAD_DIR:
+    type: variable
+    actions: [write]
+    params:
+      caller: [UPLOAD_DIR.mkdir]
+  video_path:
+    type: pattern
+    actions: [read]
+    params:
+      caller: [os.path.join, os.path.isfile, Path, os.path.basename]
+      pattern: [os.path.dirname(), video_path]
+  WORKSPACE_DIR:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path.resolve()]
+
+processes:
+  python:
+    type: shell
+    actions: [exec]
+    args: [[-m, pip, install, -q, flask, flask-socketio]]
+    params:
+      caller: [subprocess.run]
+      shell: ["False"]
+      ref: sys.executable
