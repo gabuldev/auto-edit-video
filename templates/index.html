@@ -75,6 +75,45 @@
         .lucide-md { width: 18px; height: 18px; }
         .lucide-lg { width: 24px; height: 24px; }
         .lucide-xl { width: 32px; height: 32px; }
+
+        /* ========== RANGE SLIDER ========== */
+        .range-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .range-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: var(--bg-secondary);
+            height: 4px;
+            border-radius: 2px;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent-purple);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(155, 93, 229, 0.4);
+            transition: transform 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
         
         /* ========== SCROLLBAR GLOBAL (Dark Theme) ========== */
         * {
@@ -1797,6 +1836,41 @@
                     <option value="volume">Volume (dB)</option>
                 </select>
             </div>
+
+            <div class="config-group" id="cutSettingsGroup">
+                <label class="label-with-help">
+                    Ajuste de Corte
+                    <span class="help-icon">
+                        ?
+                        <div class="tooltip">
+                            <h5><i data-lucide="sliders" class="lucide-sm"></i> Ajuste Fino</h5>
+                            <p><strong>Margem:</strong> Tempo extra mantido antes/depois da fala.</p>
+                            <p><strong>Silêncio Min:</strong> Menor pausa para considerar corte.</p>
+                            <div class="tooltip-note">
+                                <i data-lucide="info" class="lucide-sm"></i>
+                                Seco: Menor margem/silêncio<br>
+                                Suave: Maior margem
+                            </div>
+                        </div>
+                    </span>
+                </label>
+                
+                <div class="range-container">
+                    <label class="range-label">
+                        <span>Margem (Padding)</span>
+                        <span id="paddingValue">0.25s</span>
+                    </label>
+                    <input type="range" id="paddingRange" min="0" max="1" step="0.05" value="0.25">
+                </div>
+                
+                <div class="range-container" style="margin-top: 10px;">
+                    <label class="range-label">
+                        <span>Silêncio Mínimo</span>
+                        <span id="minSilenceValue">0.5s</span>
+                    </label>
+                    <input type="range" id="minSilenceRange" min="0.1" max="2" step="0.1" value="0.5">
+                </div>
+            </div>
             
             <div class="config-group">
                 <label>Idioma do Áudio</label>
@@ -1949,8 +2023,8 @@
                     <div class="card-icon"><i data-lucide="subtitles" class="lucide-lg"></i></div>
                     <h4>Gerar Legendas</h4>
                     <p>Transcreve o áudio e adiciona legendas dinâmicas estilo CapCut (karaokê)</p>
-                    <button class="action-btn" onclick="processAddSubtitles()" id="btnSubtitle">
-                        Gerar Legendas
+                    <button class="action-btn" onclick="openSubtitleConfigModal()" id="btnSubtitle">
+                        Configurar e Gerar
                     </button>
                 </div>
                 
@@ -1992,6 +2066,132 @@
                 </div>
             </div>
         </main>
+    </div>
+    
+    <!-- Modal Configuração Legendas -->
+    <div class="modal-overlay" id="subtitleConfigModal">
+        <div class="modal" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column;">
+            <h3><i data-lucide="palette" class="lucide-md"></i> Configurar Legendas</h3>
+            
+            <div style="flex: 1; overflow-y: auto; padding-right: 4px; padding-bottom: 10px;">
+                <div style="display: flex; gap: 16px; margin-bottom: 20px;">
+                    <div style="flex: 1;">
+                        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-secondary);">Destaque</label>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="color" id="subHighlightColor" value="#ff4500" style="width: 40px; height: 30px; border: none; padding: 0; background: none; cursor: pointer;">
+                            <span id="subHighlightColorVal" style="font-size: 12px; font-family: monospace;">#ff4500</span>
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-secondary);">Texto</label>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="color" id="subTextColor" value="#ffffff" style="width: 40px; height: 30px; border: none; padding: 0; background: none; cursor: pointer;">
+                            <span id="subTextColorVal" style="font-size: 12px; font-family: monospace;">#ffffff</span>
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-secondary);">Borda</label>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="color" id="subOutlineColor" value="#000000" style="width: 40px; height: 30px; border: none; padding: 0; background: none; cursor: pointer;">
+                            <span id="subOutlineColorVal" style="font-size: 12px; font-family: monospace;">#000000</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tamanho da Fonte -->
+                <div style="margin-bottom: 20px;">
+                    <div class="range-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="font-size: 12px; color: var(--text-secondary);">Tamanho da Fonte</label>
+                        <span id="fontSizeValue" style="font-size: 11px; font-family: monospace;">10pt</span>
+                    </div>
+                    <input type="range" id="fontSizeRange" min="5" max="30" step="1" value="10" style="width: 100%;">
+                    <p style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Padrão: 10pt (Ajuste conforme necessário)</p>
+                </div>
+
+                <!-- Sliders para ajustes finos -->
+                <div style="margin-bottom: 20px;">
+                    <div style="display: flex; gap: 16px;">
+                        <div style="flex: 1;">
+                            <div class="range-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <label style="font-size: 12px; color: var(--text-secondary);">Tamanho do Destaque</label>
+                                <span id="highlightWidthValue" style="font-size: 11px; font-family: monospace;">5.0</span>
+                            </div>
+                            <input type="range" id="highlightWidthRange" min="0" max="15" step="0.5" value="5" style="width: 100%;">
+                        </div>
+                        <div style="flex: 1;">
+                             <div class="range-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <label style="font-size: 12px; color: var(--text-secondary);">Borda do Texto</label>
+                                <span id="outlineWidthValue" style="font-size: 11px; font-family: monospace;">1.5</span>
+                            </div>
+                            <input type="range" id="outlineWidthRange" min="0" max="5" step="0.1" value="1.5" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Seletor de Fonte -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-secondary);">Fonte</label>
+                    <select id="fontSelector" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 13px;">
+                        <option value="Prohibition" selected>Prohibition (Padrão)</option>
+                        <option value="Arial">Arial</option>
+                        <option value="Arial Black">Arial Black</option>
+                        <option value="Montserrat">Montserrat</option>
+                        <option value="Roboto">Roboto</option>
+                        <option value="Helvetica">Helvetica</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Impact">Impact</option>
+                        <option value="Courier New">Courier New</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 10px; text-align: center; background: #000; border-radius: 8px; overflow: hidden; position: relative; min-height: 150px; display: flex; align-items: center; justify-content: center;">
+                    <img id="subtitlePreviewImg" src="" alt="Preview" style="max-width: 100%; max-height: 300px; height: auto; display: none;">
+                    <div id="subtitlePreviewPlaceholder" style="padding: 40px; color: #666;">
+                        <i data-lucide="image" class="lucide-xl"></i>
+                        <p style="margin-top: 10px; font-size: 12px;">Clique em "Atualizar Preview"</p>
+                    </div>
+                    <div id="subtitlePreviewLoading" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; color: white;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color); flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="previewModeCheckbox" checked>
+                    <label for="previewModeCheckbox" style="font-size: 13px; color: var(--text-primary); cursor: pointer;">Editar antes de queimar</label>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="modal-btn" onclick="updateSubtitlePreview()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary);"><i data-lucide="refresh-cw" class="lucide-sm" style="margin-right: 6px;"></i> Preview</button>
+                    <button class="modal-btn cancel" onclick="hideSubtitleConfigModal()">Cancelar</button>
+                    <button class="modal-btn confirm" onclick="confirmSubtitleGeneration()">Gerar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editor de Legendas -->
+    <div class="modal-overlay" id="subtitleEditorModal">
+        <div class="modal" style="max-width: 900px; width: 90%; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3><i data-lucide="edit-3" class="lucide-md"></i> Editor de Legendas</h3>
+                <div style="display: flex; gap: 10px;">
+                    <button class="modal-btn" onclick="saveSubtitles()" style="background: var(--accent-blue);">Salvar Rascunho</button>
+                    <button class="modal-btn confirm" onclick="burnSubtitles()">Queimar Legendas</button>
+                    <button class="modal-btn cancel" onclick="hideSubtitleEditorModal()">Fechar</button>
+                </div>
+            </div>
+            
+            <div style="flex: 1; overflow-y: auto; background: var(--bg-secondary); border-radius: 8px; padding: 10px;" id="subtitleEditorContainer">
+                <p style="text-align: center; color: var(--text-secondary); margin-top: 20px;">Carregando legendas...</p>
+            </div>
+            
+            <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between;">
+                <span>Dica: Edite o texto e os tempos. Clique em Salvar antes de Queimar.</span>
+                <span id="subtitleCount">0 segmentos</span>
+            </div>
+        </div>
     </div>
     
     <!-- Modal API Key -->
@@ -2151,6 +2351,17 @@
                 loadVideoList(); // Atualiza a lista com o novo arquivo
             } else {
                 showNotification('Erro no Processamento', data.error || 'Ocorreu um erro.', 'error');
+            }
+        });
+
+        socket.on('subtitle_generated', (data) => {
+            isProcessing = false;
+            updateButtons();
+            hideProcessingOverlay();
+            
+            if (data.success) {
+                showNotification('Legendas Geradas!', 'Abrindo editor...', 'success');
+                showSubtitleEditorModal();
             }
         });
         
@@ -2801,6 +3012,23 @@
             lucide.createIcons();
             loadFileExplorer();
             
+            // Sliders listeners
+            const paddingRange = document.getElementById('paddingRange');
+            const paddingValue = document.getElementById('paddingValue');
+            if (paddingRange && paddingValue) {
+                paddingRange.addEventListener('input', (e) => {
+                    paddingValue.textContent = e.target.value + 's';
+                });
+            }
+
+            const minSilenceRange = document.getElementById('minSilenceRange');
+            const minSilenceValue = document.getElementById('minSilenceValue');
+            if (minSilenceRange && minSilenceValue) {
+                minSilenceRange.addEventListener('input', (e) => {
+                    minSilenceValue.textContent = e.target.value + 's';
+                });
+            }
+            
             // Configura drag and drop no explorador de arquivos
             const dropZone = document.getElementById('explorerContent');
             if (dropZone) {
@@ -2967,12 +3195,353 @@
         
         // ========== PROCESS FUNCTIONS ==========
         
+        let subtitleSettings = {
+            highlight_color: '#ff4500',
+            text_color: '#ffffff',
+            outline_color: '#000000'
+        };
+
+        let previewDebounceTimer;
+        function debouncedUpdatePreview() {
+            clearTimeout(previewDebounceTimer);
+            previewDebounceTimer = setTimeout(() => {
+                updateSubtitlePreview();
+            }, 500);
+        }
+
+        function openSubtitleConfigModal() {
+            if (!selectedVideo) {
+                showNotification('Atenção', 'Selecione um vídeo primeiro!', 'error');
+                return;
+            }
+            document.getElementById('subtitleConfigModal').classList.add('active');
+            
+            // Listeners for color inputs
+            ['subHighlightColor', 'subTextColor', 'subOutlineColor'].forEach(id => {
+                const el = document.getElementById(id);
+                const valEl = document.getElementById(id + 'Val');
+                
+                // Remove listener anterior para evitar duplicação se abrir/fechar várias vezes
+                el.oninput = null;
+                
+                el.oninput = (e) => {
+                    valEl.textContent = e.target.value;
+                    debouncedUpdatePreview();
+                };
+                // Init value
+                valEl.textContent = el.value;
+            });
+            
+            // Listeners for sliders
+            const hwRange = document.getElementById('highlightWidthRange');
+            const hwVal = document.getElementById('highlightWidthValue');
+            if(hwRange) {
+                hwRange.oninput = null;
+                hwRange.oninput = (e) => {
+                    hwVal.textContent = e.target.value;
+                    debouncedUpdatePreview();
+                };
+                hwVal.textContent = hwRange.value;
+            }
+            
+            const owRange = document.getElementById('outlineWidthRange');
+            const owVal = document.getElementById('outlineWidthValue');
+            if(owRange) {
+                owRange.oninput = null;
+                owRange.oninput = (e) => {
+                    owVal.textContent = e.target.value;
+                    debouncedUpdatePreview();
+                };
+                owVal.textContent = owRange.value;
+            }
+
+            const fsRange = document.getElementById('fontSizeRange');
+            const fsVal = document.getElementById('fontSizeValue');
+            if(fsRange) {
+                fsRange.oninput = null;
+                fsRange.oninput = (e) => {
+                    fsVal.textContent = e.target.value + 'pt';
+                    debouncedUpdatePreview();
+                };
+                fsVal.textContent = fsRange.value + 'pt';
+            }
+
+            const fontSel = document.getElementById('fontSelector');
+            if(fontSel) {
+                fontSel.onchange = null;
+                fontSel.onchange = () => debouncedUpdatePreview();
+            }
+            
+            lucide.createIcons();
+            
+            // Auto update preview on first open if empty
+            const img = document.getElementById('subtitlePreviewImg');
+            if (!img.src || img.style.display === 'none' || img.src.endsWith('undefined')) {
+                updateSubtitlePreview();
+            }
+        }
+
+        function hideSubtitleConfigModal() {
+            document.getElementById('subtitleConfigModal').classList.remove('active');
+        }
+
+        // ========== SUBTITLE EDITOR ==========
+
+        function showSubtitleEditorModal() {
+            document.getElementById('subtitleEditorModal').classList.add('active');
+            loadSubtitleSegments();
+        }
+
+        function hideSubtitleEditorModal() {
+            document.getElementById('subtitleEditorModal').classList.remove('active');
+        }
+
+        function loadSubtitleSegments() {
+            const container = document.getElementById('subtitleEditorContainer');
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); margin-top: 20px;">Carregando legendas...</p>';
+            
+            fetch('/api/subtitles/get')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        renderSegments(data.segments);
+                    } else {
+                        container.innerHTML = `<p style="text-align: center; color: var(--accent-red); margin-top: 20px;">Erro: ${data.error}</p>`;
+                    }
+                })
+                .catch(err => {
+                    container.innerHTML = `<p style="text-align: center; color: var(--accent-red); margin-top: 20px;">Erro de conexão</p>`;
+                });
+        }
+
+        function renderSegments(segments) {
+            const container = document.getElementById('subtitleEditorContainer');
+            const countEl = document.getElementById('subtitleCount');
+            if (countEl) countEl.textContent = `${segments.length} segmentos`;
+            
+            if (!segments || segments.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); margin-top: 20px;">Nenhuma legenda encontrada.</p>';
+                return;
+            }
+            
+            let html = '<div class="segments-list">';
+            segments.forEach((seg, index) => {
+                html += `
+                    <div class="segment-item" style="background: rgba(0,0,0,0.2); padding: 10px; margin-bottom: 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <div style="display: flex; gap: 10px; margin-bottom: 5px;">
+                            <div style="flex: 0 0 80px;">
+                                <label style="font-size: 10px; color: var(--text-secondary);">Início</label>
+                                <input type="number" step="0.1" class="segment-start" data-index="${index}" value="${seg.start}" style="width: 100%; background: var(--bg-primary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 4px; border-radius: 4px;">
+                            </div>
+                            <div style="flex: 0 0 80px;">
+                                <label style="font-size: 10px; color: var(--text-secondary);">Fim</label>
+                                <input type="number" step="0.1" class="segment-end" data-index="${index}" value="${seg.end}" style="width: 100%; background: var(--bg-primary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 4px; border-radius: 4px;">
+                            </div>
+                            <div style="flex: 1; text-align: right;">
+                                <button onclick="deleteSegment(${index})" style="background: none; border: none; color: var(--text-secondary); cursor: pointer;" title="Excluir"><i data-lucide="trash-2" class="lucide-sm"></i></button>
+                            </div>
+                        </div>
+                        <div>
+                             <textarea class="segment-text" data-index="${index}" style="width: 100%; background: var(--bg-primary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px; border-radius: 4px; min-height: 60px; resize: vertical;">${seg.text}</textarea>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            // Add "Add Segment" button
+            html += `
+                <div style="text-align: center; margin-top: 15px;">
+                    <button onclick="addSegment()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                        <i data-lucide="plus" class="lucide-sm"></i> Adicionar Segmento
+                    </button>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        function collectSegments() {
+            const items = document.querySelectorAll('.segment-item');
+            const segments = [];
+            items.forEach(item => {
+                const start = parseFloat(item.querySelector('.segment-start').value);
+                const end = parseFloat(item.querySelector('.segment-end').value);
+                const text = item.querySelector('.segment-text').value;
+                segments.push({ start, end, text });
+            });
+            return segments;
+        }
+
+        function deleteSegment(index) {
+           const segments = collectSegments();
+           segments.splice(index, 1);
+           renderSegments(segments);
+        }
+        
+        function addSegment() {
+           const segments = collectSegments();
+           const last = segments[segments.length - 1];
+           const start = last ? last.end : 0;
+           segments.push({ start: start, end: start + 2.0, text: "Nova Legenda" });
+           renderSegments(segments);
+        }
+
+        function saveSubtitles(silent = false) {
+            const segments = collectSegments();
+            const settings = getSettings();
+            
+            const payload = {
+                segments: segments,
+                highlight_color: settings.highlight_color,
+                text_color: settings.text_color,
+                outline_color: settings.outline_color,
+                highlight_width: settings.highlight_width,
+                outline_width: settings.outline_width,
+                font_name: settings.font_name,
+                font_size: settings.font_size
+            };
+
+            if (!silent) showProcessingOverlay('Salvando', 'Atualizando legendas...');
+            
+            return fetch('/api/subtitles/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!silent) hideProcessingOverlay();
+                if (data.success) {
+                    if (!silent) showNotification('Salvo', 'Legendas atualizadas com sucesso', 'success');
+                } else {
+                    if (!silent) showNotification('Erro', data.error, 'error');
+                    throw new Error(data.error);
+                }
+                return data;
+            })
+            .catch(err => {
+                if (!silent) {
+                    hideProcessingOverlay();
+                    showNotification('Erro', 'Falha ao salvar', 'error');
+                }
+                throw err;
+            });
+        }
+
+        function burnSubtitles() {
+            if (!confirm('Deseja queimar as legendas no vídeo? Esta ação não pode ser desfeita (será criado um novo arquivo).')) return;
+            
+            hideSubtitleEditorModal();
+            isProcessing = true;
+            updateButtons();
+            showProcessingOverlay('Queimando Legendas', 'Salvando e renderizando...');
+
+            // Primeiro salva, depois queima
+            saveSubtitles(true)
+                .then(() => {
+                    return fetch('/api/subtitles/burn', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.success) {
+                        isProcessing = false;
+                        updateButtons();
+                        hideProcessingOverlay();
+                        showNotification('Erro', data.error, 'error');
+                    }
+                    // Success will be handled by socket.on('process_complete')
+                })
+                .catch(err => {
+                    isProcessing = false;
+                    updateButtons();
+                    hideProcessingOverlay();
+                    console.error(err);
+                    showNotification('Erro', 'Falha ao iniciar renderização', 'error');
+                });
+        }
+
+        function updateSubtitlePreview() {
+            if (!selectedVideo) return;
+            
+            const highlight = document.getElementById('subHighlightColor').value;
+            const text = document.getElementById('subTextColor').value;
+            const outline = document.getElementById('subOutlineColor').value;
+            const highlightWidth = document.getElementById('highlightWidthRange').value;
+            const outlineWidth = document.getElementById('outlineWidthRange').value;
+            const fontName = document.getElementById('fontSelector').value;
+            const fontSize = document.getElementById('fontSizeRange').value;
+            
+            document.getElementById('subtitlePreviewLoading').style.display = 'flex';
+            
+            fetch('/api/process/preview_subtitle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    highlight_color: highlight,
+                    text_color: text,
+                    outline_color: outline,
+                    highlight_width: highlightWidth,
+                    outline_width: outlineWidth,
+                    font_name: fontName,
+                    font_size: fontSize
+                })
+            })
+            .then(res => {
+                if (!res.ok) throw new Error('Falha no preview');
+                return res.blob();
+            })
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const img = document.getElementById('subtitlePreviewImg');
+                img.onload = () => {
+                    document.getElementById('subtitlePreviewLoading').style.display = 'none';
+                    img.style.display = 'block';
+                    document.getElementById('subtitlePreviewPlaceholder').style.display = 'none';
+                };
+                img.src = url;
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('subtitlePreviewLoading').style.display = 'none';
+                showNotification('Erro', 'Falha ao gerar preview. Verifique se o vídeo é válido.', 'error');
+            });
+        }
+
+        function confirmSubtitleGeneration() {
+            hideSubtitleConfigModal();
+            processAddSubtitles();
+        }
+
         function getSettings() {
+            const highlight = document.getElementById('subHighlightColor') ? document.getElementById('subHighlightColor').value : '#ff4500';
+            const text = document.getElementById('subTextColor') ? document.getElementById('subTextColor').value : '#ffffff';
+            const outline = document.getElementById('subOutlineColor') ? document.getElementById('subOutlineColor').value : '#000000';
+            const highlightWidth = document.getElementById('highlightWidthRange') ? document.getElementById('highlightWidthRange').value : 5;
+            const outlineWidth = document.getElementById('outlineWidthRange') ? document.getElementById('outlineWidthRange').value : 1.5;
+            const fontName = document.getElementById('fontSelector') ? document.getElementById('fontSelector').value : 'Prohibition';
+            const fontSize = document.getElementById('fontSizeRange') ? document.getElementById('fontSizeRange').value : 10;
+            const previewMode = document.getElementById('previewModeCheckbox') ? document.getElementById('previewModeCheckbox').checked : false;
+
             return {
                 model: document.getElementById('whisperModel').value,
                 cut_method: document.getElementById('cutMethod').value,
                 language: document.getElementById('language').value,
-                use_ai: document.getElementById('useAI').checked
+                use_ai: document.getElementById('useAI').checked,
+                padding: parseFloat(document.getElementById('paddingRange').value),
+                min_silence: parseFloat(document.getElementById('minSilenceRange').value),
+                highlight_color: highlight,
+                text_color: text,
+                outline_color: outline,
+                highlight_width: highlightWidth,
+                outline_width: outlineWidth,
+                font_name: fontName,
+                font_size: fontSize,
+                preview_mode: previewMode
             };
         }
         
@@ -2994,7 +3563,11 @@
             fetch('/api/process/remove_silence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ method: settings.cut_method })
+                body: JSON.stringify({ 
+                    method: settings.cut_method,
+                    padding: settings.padding,
+                    min_silence: settings.min_silence
+                })
             })
             .then(res => res.json())
             .then(data => {

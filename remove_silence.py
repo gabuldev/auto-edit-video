@@ -131,7 +131,7 @@ def detect_silence_ffmpeg(input_file, threshold_db=-40, min_duration=0.5):
     return keep_intervals
 
 
-def remover_silencio(input_file, output_file, method="speech", threshold_db=-40, min_duration=0.5):
+def remover_silencio(input_file, output_file, method="speech", threshold_db=-40, min_duration=0.5, padding=0.25):
     """
     Orquestrador de remoção de silêncio.
     method: 'speech' (Whisper) ou 'volume' (ffmpeg)
@@ -143,7 +143,7 @@ def remover_silencio(input_file, output_file, method="speech", threshold_db=-40,
     if method == "speech":
         # Usa Whisper (mais inteligente, ignora ruído)
         # Usamos modelo 'tiny' ou 'base' aqui para ser rápido, já que é só para cortar
-        keep_intervals = detect_speech_intervals(input_file, model_name="base", min_silence=min_duration)
+        keep_intervals = detect_speech_intervals(input_file, model_name="base", min_silence=min_duration, padding=padding)
     else:
         # Usa Volume (mais rápido, mas pode pegar respiração/ruído)
         keep_intervals = detect_silence_ffmpeg(input_file, threshold_db, min_duration)

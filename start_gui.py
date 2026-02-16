@@ -16,17 +16,25 @@ def check_dependencies():
     try:
         import flask
         import flask_socketio
+        import whisper
+        import pysubs2
         return True
     except ImportError:
         return False
 
 def install_dependencies():
     """Instala as dependências necessárias"""
-    print("📦 Instalando dependências...")
-    subprocess.run([
-        sys.executable, "-m", "pip", "install", "-q",
-        "flask", "flask-socketio"
-    ])
+    print("📦 Instalando dependências (Isso pode demorar um pouco na primeira vez)...")
+    try:
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", 
+            "flask", "flask-socketio", "openai-whisper", "pysubs2", "python-dotenv", "requests"
+        ])
+        print("✅ Dependências instaladas!")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Erro ao instalar dependências: {e}")
+        print("Tente instalar manualmente: pip install -r requirements.txt")
+        sys.exit(1)
 
 def main():
     print("""
@@ -70,6 +78,7 @@ def main():
     threading.Thread(target=open_browser, daemon=True).start()
     
     # Importar e iniciar o app
+    print(f"   • Python: {sys.executable}")
     from web_app import app, socketio
     socketio.run(app, host='0.0.0.0', port=3001, debug=False, allow_unsafe_werkzeug=True)
 
