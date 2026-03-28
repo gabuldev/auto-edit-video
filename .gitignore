@@ -38,11 +38,8 @@ auto-editor
 *.avi
 *.mov
 
-# Green-screen overlay clips — ONLY here (canonical). Do not rely on root overlays/.
-# Un-ignore so Git + IDEs index them; pipeline reads assets/overlays/*.mp4 by name.
-!assets/overlays/
-!assets/overlays/*.mp4
-!assets/overlays/*.MP4
+# Assets (overlay clips, media files — not tracked)
+assets/
 
 # Database local
 data.db
