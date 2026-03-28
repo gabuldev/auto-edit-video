@@ -185,7 +185,12 @@ def caption(workspace: Path) -> None:
     _generate_ass(groups, ass_path, style)
     print(f"[captioner] ASS written → {ass_path}")
 
-    # 4. Burn captions into video
+    # 4. Generate SRT file
+    srt_path = workspace / "captions.srt"
+    _generate_srt(groups, srt_path)
+    print(f"[captioner] SRT written → {srt_path}")
+
+    # 5. Burn captions into video
     output = workspace / "captioned_video.mp4"
     _burn_captions(edited_video, ass_path, output)
     print(f"[captioner] Done → {output}")
@@ -254,6 +259,36 @@ def _group_words(words: list[dict]) -> list[list[dict]]:
         groups.append(current)
 
     return groups
+
+
+# ── SRT generation ────────────────────────────────────────────────────────────
+
+
+def _generate_srt(groups: list[list[dict]], srt_path: Path) -> None:
+    """Generate SRT subtitle file from word groups."""
+    lines = []
+    for i, group in enumerate(groups, 1):
+        if not group:
+            continue
+        start = group[0]["start"]
+        end = group[-1]["end"]
+        text = " ".join(w["word"] for w in group)
+
+        lines.append(str(i))
+        lines.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+        lines.append(text)
+        lines.append("")  # blank line separator
+
+    srt_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _format_srt_time(seconds: float) -> str:
+    """Convert seconds to SRT timestamp format: HH:MM:SS,mmm"""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 # ── ASS generation ────────────────────────────────────────────────────────────

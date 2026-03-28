@@ -83,6 +83,8 @@ def _run_pipeline(
     caption_style: Optional[dict] = None,
     cli: Optional[str] = None,
     cli_fallback: Optional[str] = None,
+    dry_run: bool = False,
+    language: str = "pt",
 ) -> None:
     if not video.exists():
         console.print(f"[red]Error:[/red] File not found: {video}")
@@ -105,20 +107,25 @@ def _run_pipeline(
             whisper_model=whisper_model,
             max_iterations=max_iterations,
             caption_style=caption_style or {},
+            language=language,
         )
 
     console.print(f"[cyan]Type:[/cyan] {video_type}")
     console.print(f"[cyan]Context:[/cyan] {context or '(none)'}")
     console.print(f"[cyan]Whisper model:[/cyan] {whisper_model}")
+    console.print(f"[cyan]Language:[/cyan] {language}")
     console.print(f"[cyan]Workspace:[/cyan] {ws}")
     primary, fb = _resolve_llm(cli, cli_fallback)
     env = os.environ.copy()
     env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
+    env["AUTO_EDIT_LANGUAGE"] = language
     env["AUTO_EDIT_LLM"] = primary
     if fb:
         env["AUTO_EDIT_LLM_FALLBACK"] = fb
     else:
         env.pop("AUTO_EDIT_LLM_FALLBACK", None)
+    if dry_run:
+        env["AUTO_EDIT_DRY_RUN"] = "1"
     console.print(
         f"[cyan]LLM:[/cyan] {primary}"
         + (f" [dim](fallback: {fb})[/dim]" if fb else "")
@@ -168,6 +175,8 @@ def short(
     highlight_border: float = typer.Option(2.5, "--highlight-border", help="Highlight word border thickness (default 2.5)"),
     highlight_color: str = typer.Option("&H0045FF&", "--highlight-color", help="Highlight color in ASS format &HBBGGRR& (default orange)"),
     font_size: int = typer.Option(14, "--font-size", help="Caption font size (default 14)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run only through review stage — shows cut plan without executing FFmpeg."),
+    language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
 ) -> None:
     """Edit a short-form video (adds captions, generates Reels/Shorts metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -188,6 +197,8 @@ def short(
         caption_style,
         cli=cli,
         cli_fallback=cli_fallback,
+        dry_run=dry_run,
+        language=language,
     )
 
 
@@ -208,6 +219,8 @@ def long(
         "--cli-fallback",
         help="If primary fails or returns invalid JSON after retry, try this CLI. Default: $AUTO_EDIT_LLM_FALLBACK.",
     ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run only through review stage — shows cut plan without executing FFmpeg."),
+    language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -222,6 +235,8 @@ def long(
         resume_from,
         cli=cli,
         cli_fallback=cli_fallback,
+        dry_run=dry_run,
+        language=language,
     )
 
 
@@ -242,6 +257,7 @@ def batch(
         "--cli-fallback",
         help="Fallback CLI if primary fails. Default: $AUTO_EDIT_LLM_FALLBACK.",
     ),
+    language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
 ) -> None:
     """Process all videos in a folder sequentially."""
     if video_type not in ("short", "long"):
@@ -270,6 +286,7 @@ def batch(
                 None,
                 cli=cli,
                 cli_fallback=cli_fallback,
+                language=language,
             )
         except SystemExit:
             failed.append(video.name)
@@ -302,6 +319,7 @@ def merge(
     highlight_border: float = typer.Option(2.5, "--highlight-border"),
     highlight_color: str = typer.Option("&H0045FF&", "--highlight-color"),
     font_size: int = typer.Option(14, "--font-size"),
+    language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
 ) -> None:
     """Concatenate all videos in a folder into one, then run the pipeline."""
     if video_type not in ("short", "long"):
@@ -362,6 +380,7 @@ def merge(
         caption_style,
         cli=cli,
         cli_fallback=cli_fallback,
+        language=language,
     )
 
 
@@ -549,4 +568,5 @@ def resume(
         resume_from=from_stage,
         cli=cli,
         cli_fallback=cli_fallback,
+        language=p.get("language", "pt"),
     )

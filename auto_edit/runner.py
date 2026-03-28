@@ -183,10 +183,12 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             _read_json_optional(workspace / "post_cut_transcription.json")
             or _read_json(workspace / "transcription.json")
         )
+        language = pipeline.get("language", "pt")
         sections += [
             "\n## Video Information",
             f"- Type: {video_type}",
             f"- Context: {context or '(no context provided)'}",
+            f"- Language: {language}",
             "\n## Final Video Transcription",
             "```json",
             json.dumps(transcript, indent=2, ensure_ascii=False),

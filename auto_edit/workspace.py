@@ -21,6 +21,7 @@ def init_workspace(
     whisper_model: str = "base",
     max_iterations: int = 3,
     caption_style: dict | None = None,
+    language: str = "pt",
 ) -> Path:
     """Create workspace directory and initial pipeline.json. Returns workspace path."""
     ws = get_workspace(video_path)
@@ -34,6 +35,7 @@ def init_workspace(
         whisper_model=whisper_model,
         max_iterations=max_iterations,
         caption_style=caption_style or {},
+        language=language,
     )
     return ws
 

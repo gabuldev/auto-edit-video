@@ -27,6 +27,7 @@ def init(
     whisper_model: str = "base",
     max_iterations: int = 3,
     caption_style: dict | None = None,
+    language: str = "pt",
 ) -> dict:
     """Create initial pipeline.json. Returns the pipeline dict."""
     stages = {}
@@ -46,6 +47,7 @@ def init(
         "type": video_type,
         "context": context,
         "whisper_model": whisper_model,
+        "language": language,
         "iteration": 1,
         "max_iterations": max_iterations,
         "current_stage": "extract",
@@ -159,6 +161,13 @@ def finalize(workspace: Path) -> Path:
     video_name = pipeline["video_name"]
     video_dst = output_dir / f"{video_name}_final.mp4"
     shutil.copy2(video_src, video_dst)
+
+    # Copy SRT if available
+    srt_src = workspace / "captions.srt"
+    if srt_src.exists():
+        srt_dst = output_dir / f"{video_name}.srt"
+        shutil.copy2(srt_src, srt_dst)
+        print(f"[finalize] SRT → {srt_dst}")
 
     # Write metadata txt
     metadata_path = workspace / "metadata.json"

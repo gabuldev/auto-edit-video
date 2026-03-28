@@ -287,6 +287,24 @@ while true; do
             ;;
 
         execute)
+            if [ "${AUTO_EDIT_DRY_RUN:-}" = "1" ]; then
+                log "Dry-run mode — stopping before execute."
+                log "Review the cut plan at: $WORKSPACE/reviewed_plan.json"
+                # Show summary
+                "$PYTHON" -c "
+import json
+from pathlib import Path
+ws = Path('$WORKSPACE')
+plan = json.loads((ws / 'reviewed_plan.json').read_text())
+cuts = plan.get('cuts', [])
+kept = plan.get('kept_segments', [])
+print(f'[dry-run] Cuts planned: {len(cuts)}')
+print(f'[dry-run] Segments to keep: {len(kept)}')
+total_cut = sum(float(c[\"end\"]) - float(c[\"start\"]) for c in cuts)
+print(f'[dry-run] Total time to cut: {total_cut:.1f}s')
+"
+                break
+            fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
             ;;
 

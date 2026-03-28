@@ -9,6 +9,8 @@ from tools.captioner import (
     _build_kept_intervals,
     _remap_words,
     _group_words,
+    _generate_srt,
+    _format_srt_time,
 )
 
 
@@ -131,3 +133,41 @@ class TestGroupWords:
 
     def test_empty_input(self):
         assert _group_words([]) == []
+
+
+# ── SRT export ──────────────────────────────────────────────────────────────
+
+
+class TestSrtExport:
+    def test_format_srt_time_zero(self):
+        assert _format_srt_time(0.0) == "00:00:00,000"
+
+    def test_format_srt_time_seconds(self):
+        assert _format_srt_time(1.5) == "00:00:01,500"
+
+    def test_format_srt_time_minutes(self):
+        assert _format_srt_time(65.123) == "00:01:05,123"
+
+    def test_format_srt_time_hours(self):
+        assert _format_srt_time(3661.0) == "01:01:01,000"
+
+    def test_generate_srt(self, tmp_path):
+        groups = [
+            [{"word": "hello", "start": 0.0, "end": 0.5},
+             {"word": "world", "start": 0.6, "end": 1.0}],
+            [{"word": "test", "start": 2.0, "end": 2.5}],
+        ]
+        srt_path = tmp_path / "test.srt"
+        _generate_srt(groups, srt_path)
+
+        content = srt_path.read_text()
+        assert "1\n" in content
+        assert "hello world" in content
+        assert "00:00:00,000 --> 00:00:01,000" in content
+        assert "2\n" in content
+        assert "test" in content
+
+    def test_generate_srt_empty(self, tmp_path):
+        srt_path = tmp_path / "empty.srt"
+        _generate_srt([], srt_path)
+        assert srt_path.read_text() == ""
