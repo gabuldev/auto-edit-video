@@ -38,6 +38,9 @@ auto-editor
 *.avi
 *.mov
 
+# Assets (overlay clips, media files — not tracked)
+assets/
+
 # Database local
 data.db
 *.db
@@ -49,4 +52,8 @@ data.db
 upload/
 !upload/.gitkeep
 !upload/processados/.gitkeep
+
+# Pipeline workspaces and output (generated per video)
+workspace/
+output/
 
