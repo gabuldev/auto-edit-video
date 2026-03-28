@@ -1,337 +1,217 @@
-# 🎬 Auto Video Editor
+# Auto Edit Video
 
-Este projeto é uma ferramenta de automação para edição de vídeo que utiliza inteligência artificial para remover silêncio, gerar legendas estilizadas (estilo CapCut) e corrigir erros de fala.
+Pipeline de edição automatizada de vídeo usando IA. Transcreve, planeja cortes, executa, adiciona legendas e gera metadata — tudo via CLI, sem intervenção manual.
 
-![Interface Web](https://img.shields.io/badge/Interface-Web-brightgreen) ![Python](https://img.shields.io/badge/Python-3.8+-blue) ![Whisper](https://img.shields.io/badge/AI-Whisper-orange) ![Gemini](https://img.shields.io/badge/AI-Gemini-purple) ![SQLite](https://img.shields.io/badge/Database-SQLite-003B57) ![Lottie](https://img.shields.io/badge/Animation-Lottie-00DDB3)
+## Como funciona
 
-## ✨ Funcionalidades
+O pipeline é uma state machine de 9 stages orquestrada por agentes LLM (Claude) e ferramentas FFmpeg:
 
-### Processamento de Vídeo
-- 🔇 **Remoção de Silêncio**: Detecta e remove pausas e silêncios automaticamente
-  - Modo Inteligente (Whisper): Detecta fala com IA
-  - Modo Volume (dB): Corta por threshold de áudio
-- 📝 **Auto Legenda**: Gera legendas precisas usando OpenAI Whisper
-- 🎨 **Estilo CapCut**: Legendas com destaque palavra a palavra (karaokê/highlight)
-- 🤖 **Correção com IA**: Google Gemini corrige ortografia e pontuação
-- 🧠 **Edição Inteligente**: Identifica e corta "takes" ruins ou repetições
+```
+extract → plan → review → execute → overlay → caption → evaluate → metadata → done
+  │         │       │        │         │          │          │          │
+Whisper   Claude  Claude   FFmpeg   FFmpeg     FFmpeg    Claude     Claude
++ Claude                                      + ASS
+```
 
-### Interface & Design
-- 🎯 **Design Moderno**: Interface cyberpunk com tema escuro elegante
-- 🎬 **Lucide Icons**: Ícones profissionais em toda a interface
-- ⚡ **Lottie Animations**: Animações fluidas durante o processamento
-- 📁 **File Explorer**: Gerenciador de arquivos estilo Windows
-- 🖼️ **Thumbnails de Vídeo**: Pré-visualização gerada automaticamente via FFmpeg
-- 🔒 **Loading Overlay**: Bloqueia interação durante processamento
-- 💡 **Tooltips Informativos**: Ajuda contextual nas configurações
+| Stage | O que faz | Tipo |
+|-------|-----------|------|
+| **extract** | Transcreve o áudio (Whisper `small`) + mapa de energia + correção com Claude | Python |
+| **plan** | Analisa transcrição e planeja os cortes (silêncios, false starts, filler) | LLM Agent |
+| **review** | QA do plano de cortes (valida, adiciona cortes faltando, merge) | LLM Agent |
+| **execute** | Aplica os cortes no vídeo via FFmpeg com normalização de áudio | Python |
+| **overlay** | Compõe overlays gráficos com chroma key (apenas long-form) | LLM + Python |
+| **caption** | Gera legendas estilo CapCut com destaque por palavra (apenas shorts) | Python |
+| **evaluate** | Avalia qualidade do resultado; rejeita e volta ao plan se necessário | LLM Agent |
+| **metadata** | Gera título, descrição e hashtags para publicação | LLM Agent |
 
-## 🖥️ Interface Gráfica
+Se o avaliador rejeitar, o pipeline volta ao `plan` com feedback — até 3 iterações.
 
-O projeto conta com uma **interface web moderna, responsiva e com design profissional**!
+## Instalação
 
-### 🎨 Design System
+### Pré-requisitos
 
-A interface foi desenvolvida com foco em **UX/UI profissional**:
+- Python 3.11+
+- FFmpeg
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instalado e autenticado
 
-| Aspecto | Tecnologia/Abordagem |
-|---------|---------------------|
-| **Tema** | Dark Cyberpunk com gradientes suaves |
-| **Ícones** | Lucide Icons (biblioteca profissional) |
-| **Animações** | Lottie para loading fluido |
-| **Layout** | Responsivo com sidebar fixa |
-| **Tipografia** | SF Pro Display, Inter (fallback) |
-| **Cores** | Ciano, roxo e verde neon em fundo escuro |
-
-### 📂 File Explorer
-
-Gerenciador de arquivos integrado com:
-- 🗂️ Navegação por pastas (breadcrumbs)
-- 🖼️ Thumbnails automáticos de vídeos
-- ▶️ Preview/reprodução de vídeos
-- ➕ Criar novas pastas
-- 🔄 Mover arquivos entre pastas
-- ✏️ Renomear arquivos e pastas
-- 🗑️ Deletar com confirmação
-- 📤 Importar vídeos do computador
-
-### 🚀 Iniciar Interface
+### Setup
 
 ```bash
-# Método 1: Script de inicialização (recomendado)
-python start_gui.py
+git clone https://github.com/gabuldev/auto-edit-video.git
+cd auto-edit-video
 
-# Método 2: Diretamente
-python web_app.py
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+pip install -e ".[test]"
 ```
 
-Acesse: **http://localhost:3001**
-
-### Screenshots
-
-A interface inclui:
-- 🎯 **Explorador de Arquivos** - Navegue e gerencie seus vídeos
-- ⚙️ **Painel de Configurações** - Modelo Whisper, método de corte, idioma
-- 📊 **Console em Tempo Real** - Progresso via Socket.IO
-- 🔄 **Loading com Animação** - Feedback visual durante processamento
-- 🎨 **Design Cyberpunk** - Tema escuro moderno com ícones Lucide
-
-## 📋 Pré-requisitos
-
-### 1. Sistema
-- **Python 3.8+**
-- **FFmpeg**: Essencial para manipulação de vídeo e áudio
-  - *Mac*: `brew install ffmpeg`
-  - *Windows*: Baixe e adicione ao PATH
-  - *Linux*: `sudo apt install ffmpeg`
-
-### 2. API Keys (Opcional)
-Para usar a correção ortográfica com IA, você precisará de uma chave do Google Gemini.
-
-## 🚀 Instalação
-
-1. **Clone o repositório:**
-   ```bash
-   git clone https://github.com/gabuldev/auto-edit-video.git
-   cd auto-edit-video
-   ```
-
-2. **Crie e ative um ambiente virtual:**
-   ```bash
-   python -m venv .venv
-   
-   # Mac/Linux:
-   source .venv/bin/activate
-   
-   # Windows:
-   .venv\Scripts\activate
-   ```
-
-3. **Instale as dependências:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## ⚙️ Configuração
-
-### API Key do Google Gemini (Opcional)
-
-Para habilitar a correção ortográfica com IA, configure sua API Key:
-
-**Opção 1: Arquivo .env**
-```env
-GEMINI_API_KEY=sua_chave_aqui
+FFmpeg via Homebrew (macOS):
+```bash
+brew install ffmpeg
 ```
 
-**Opção 2: Via Interface Web**
-- Acesse a interface e clique em "Configurar API Key"
+Ou via Nix:
+```bash
+nix develop  # usa o flake.nix do projeto
+```
 
-> 💡 Obtenha sua chave em: https://aistudio.google.com/apikey
+## Uso
 
-## 📖 Como Usar
-
-### 🌐 Interface Web (Recomendado)
+### Editar um short (vertical, com legendas)
 
 ```bash
-python start_gui.py
+auto-edit short upload/meu-video.mp4 \
+  --context "Review de produto tech, tom casual" \
+  --whisper-model small
 ```
 
-A interface oferece:
-1. **Explorar Arquivos**: Navegue pela pasta `upload/` e suas subpastas
-2. **Selecionar Vídeo**: Clique em um vídeo para selecioná-lo
-3. **Configurar**: Ajuste modelo Whisper, método de corte e idioma
-4. **Processar**: Escolha entre:
-   - ✂️ **Remover Silêncio** - Corta pausas automaticamente
-   - 📝 **Gerar Legendas** - Adiciona legendas estilo CapCut
-   - ⚡ **Processo Completo** - Faz tudo de uma vez
-
-### 📁 Estrutura de Pastas
-
-O projeto usa uma estrutura fixa para organização:
-
-```
-upload/                    # Pasta principal de trabalho
-├── processados/           # Vídeos processados automaticamente
-├── minhas-pastas/         # Crie suas próprias pastas
-└── video.mp4              # Seus vídeos para editar
-```
-
-> 💡 Você pode criar pastas, mover e organizar arquivos diretamente pela interface!
-
-### 💻 Menu Interativo (CLI)
+### Editar long-form (horizontal, com overlays, sem legendas)
 
 ```bash
-python cli.py
+auto-edit long upload/meu-video.mp4 \
+  --context "Tutorial de programação em Python"
 ```
 
-### 📟 Linha de Comando
+### Batch (processar vários vídeos)
 
 ```bash
-python edit_video.py "caminho/do/video.mp4" --output "final.mp4"
+auto-edit batch upload/pasta-de-videos/ --type short \
+  --context "Vlogs de viagem, energia alta"
 ```
 
-**Argumentos opcionais:**
-| Argumento | Descrição | Padrão |
-|-----------|-----------|--------|
-| `--model` | Modelo Whisper (tiny, base, small, medium, large) | `small` |
-| `--language` | Idioma do áudio (pt, en, es, etc.) | `pt` |
-| `--silence-method` | Método de corte (`speech` ou `volume`) | `speech` |
-| `--silence-threshold` | Nível de dB para corte (modo volume) | `-40` |
-
-## 🔒 Segurança
-
-Este projeto foi desenvolvido para **uso local**, **rede interna** ou **internet com proteção por senha**.
-
-### 🔐 Proteção por Senha
-
-Para expor na internet, ative a autenticação com senha única:
+### Merge (concatenar + editar)
 
 ```bash
-# Opção 1: Senha em texto (converte para hash automaticamente)
-echo "ACCESS_PASSWORD=minha_senha_secreta" >> .env
-
-# Opção 2: Hash da senha (mais seguro para produção)
-python -c "from werkzeug.security import generate_password_hash; print('ACCESS_PASSWORD_HASH=' + generate_password_hash('minha_senha_secreta'))" >> .env
+auto-edit merge upload/clips/ --name video-final --type long \
+  --context "Compilação de dicas de produtividade"
 ```
 
-**Com senha configurada:**
-- ✅ Tela de login protege toda a aplicação
-- ✅ Sessão expira após 24h (configurável)
-- ✅ CORS liberado (protegido pela senha)
-- ✅ Pode expor na internet (com HTTPS recomendado)
-
-**Sem senha configurada:**
-- ⚠️ Acesso livre (apenas localhost/rede local)
-
-### ⚠️ Modos de Uso
-
-| Modo | Senha | Internet | Segurança |
-|------|-------|----------|-----------|
-| **Local** | ❌ | ❌ | ✅ OK |
-| **Rede Interna** | Opcional | ❌ | ✅ OK |
-| **Internet** | ✅ Obrigatória | ✅ | ⚠️ Use HTTPS |
-
-### 🛡️ Medidas de Segurança Implementadas
-
-- **Autenticação por Senha**: Hash seguro com werkzeug
-- **Path Traversal**: Bloqueio de acesso a diretórios fora do workspace
-- **Validação de Arquivos**: Apenas extensões de vídeo permitidas
-- **Sanitização**: Remoção de caracteres perigosos em nomes de arquivos
-- **Secret Key**: Geração automática de chave secreta
-- **Logs de Auditoria**: Registro de eventos de segurança
-- **Sessões Seguras**: Expiração configurável
-
-### 📝 Configuração Completa
+### Retomar de um stage específico
 
 ```bash
-# Copie o arquivo de exemplo
-cp env.sample .env
-
-# Gere uma chave secreta para sessões
-python -c "import secrets; print('FLASK_SECRET_KEY=' + secrets.token_hex(32))" >> .env
-
-# Configure a senha de acesso (para internet)
-echo "ACCESS_PASSWORD=sua_senha_forte" >> .env
-
-# Tempo de sessão (opcional, padrão 24h)
-echo "SESSION_LIFETIME_HOURS=48" >> .env
+auto-edit resume upload/meu-video.mp4 --from plan
+auto-edit resume upload/meu-video.mp4 --from extract --whisper-model medium
 ```
 
-### 🚨 Para Uso em Produção na Internet
-
-1. **Obrigatório**: Configure `ACCESS_PASSWORD` ou `ACCESS_PASSWORD_HASH`
-2. **Recomendado**: Use proxy reverso (nginx, Caddy) com HTTPS
-3. **Recomendado**: Use `gunicorn` em vez do servidor de desenvolvimento
-4. **Opcional**: Configure firewall e rate limiting no proxy
-
-## 🗄️ Banco de Dados Local (SQLite)
-
-O projeto usa SQLite para armazenar dados localmente:
-
-- **Configurações persistentes** - Salvam automaticamente (modelo Whisper, idioma, etc.)
-- **API Key** - Não precisa configurar toda vez
-- **Histórico de vídeos** - Registro de todos os processamentos
-- **Logs de atividade** - Para auditoria e debug
+### Ver status do pipeline
 
 ```bash
-# O banco é criado automaticamente em:
-data.db
-
-# APIs disponíveis:
-GET  /api/settings     # Configurações salvas
-POST /api/settings     # Salvar configurações
-GET  /api/history      # Histórico de vídeos
-GET  /api/logs         # Logs de atividade
-GET  /api/stats        # Estatísticas de uso
+auto-edit status upload/meu-video.mp4
 ```
 
-## 📁 Estrutura do Projeto
+## Claude Code Skills
+
+O projeto inclui slash commands para usar dentro do Claude Code:
+
+| Comando | O que faz |
+|---------|-----------|
+| `/edit-video` | Guia interativo para iniciar uma edição |
+| `/edit-status` | Dashboard de todos os pipelines ativos |
+| `/edit-preview` | Preview textual do que vai ser cortado |
+| `/review-cuts` | Aprovar/editar o cut plan antes de executar |
+| `/fix-stage` | Diagnostica e corrige um stage com falha |
+
+## Opções
+
+### Modelo Whisper
+
+| Modelo | Velocidade | Precisão | Uso |
+|--------|-----------|----------|-----|
+| `tiny` | Muito rápido | Básica | Áudio limpo, fala clara |
+| `base` | Rápido | Boa | Testes rápidos |
+| **`small`** | **Moderado** | **Muito boa** | **Recomendado (default)** |
+| `medium` | Lento | Excelente | Áudio ruidoso, múltiplos falantes |
+| `large` | Muito lento | Máxima | Quando precisão é crítica |
+
+### Legendas (shorts)
+
+```bash
+auto-edit short video.mp4 \
+  --highlight-color "&H0045FF&"  # cor ASS (BBGGRR) — padrão: laranja
+  --highlight-border 2.5         # espessura do destaque
+  --font-size 14                 # tamanho da fonte
+```
+
+### LLM Backend
+
+```bash
+# Usar Claude (default)
+auto-edit short video.mp4
+
+# Usar Cursor Agent como fallback
+auto-edit short video.mp4 --cli claude --cli-fallback cursor
+
+# Via variáveis de ambiente
+export AUTO_EDIT_LLM=claude
+export AUTO_EDIT_LLM_FALLBACK=cursor
+export AUTO_EDIT_LLM_TIMEOUT=600  # timeout em segundos (default: 10min)
+```
+
+## Arquitetura
 
 ```
 auto-edit-video/
-├── 🖥️ web_app.py          # Interface web (Flask + Socket.IO)
-├── 🗄️ database.py         # Banco de dados SQLite
-├── 🚀 start_gui.py         # Script de inicialização da GUI
-├── 📋 cli.py               # Menu interativo CLI
-├── 🔇 remove_silence.py    # Módulo de remoção de silêncio
-├── 📝 auto_caption.py      # Módulo de legendas
-├── ✏️ edit_video.py        # Pipeline de linha de comando
-├── 🤖 adk_correction.py    # Correção com Google Gemini
-├── 📂 templates/           # Templates HTML
-│   ├── index.html          # Interface web principal (Lucide + Lottie)
-│   └── login.html          # Página de login
-├── 📂 upload/              # Pasta de trabalho (workspace)
-│   └── processados/        # Vídeos processados
-├── 📂 agent/               # Agentes autônomos (experimental)
-├── 🎬 Loading.json         # Animação Lottie do loading
-├── 📄 env.sample           # Exemplo de configuração
-├── 📄 data.db              # Banco de dados local (auto-gerado)
-└── 📄 requirements.txt     # Dependências
+├── auto_edit/              # Core do pipeline
+│   ├── cli.py              # CLI (Typer) — 8 comandos
+│   ├── pipeline.py         # State machine (9 stages)
+│   ├── runner.py           # Builder de prompts + invocação LLM
+│   └── workspace.py        # Gestão de workspaces
+├── agents/                 # Prompts dos agentes LLM (markdown)
+│   ├── planner.md          # Regras de planejamento de cortes
+│   ├── reviewer.md         # Regras de QA dos cortes
+│   ├── evaluator.md        # Regras de avaliação de qualidade
+│   ├── overlayer.md        # Regras de posicionamento de overlays
+│   └── metadata.md         # Regras de geração de metadados
+├── tools/                  # Ferramentas Python (FFmpeg/Whisper)
+│   ├── extract.py          # Transcrição + energia + correção IA
+│   ├── executor.py         # Cortes FFmpeg + loudnorm
+│   ├── captioner.py        # Legendas ASS + burn FFmpeg
+│   └── overlayer.py        # Composição de overlays + chroma key
+├── ralph.sh                # Loop engine (orquestra stages)
+├── tests/                  # Test suite (pytest)
+├── .claude/commands/       # Claude Code skills
+├── workspace/              # Workspaces por vídeo (auto-gerados)
+└── output/                 # Vídeos finalizados
 ```
 
-## 🎨 Stack de Frontend
+### Fluxo de dados por stage
 
-| Tecnologia | Uso |
-|------------|-----|
-| **Tailwind CSS** | Estilização via CDN |
-| **Lucide Icons** | Ícones vetoriais profissionais |
-| **Lottie Web** | Animações JSON fluidas |
-| **Socket.IO** | Comunicação em tempo real |
-| **Vanilla JS** | Sem frameworks pesados |
+```
+upload/video.mp4
+  → workspace/video/
+      transcription.json      ← extract (Whisper + energia + correção Claude)
+      cut_plan.json            ← plan (agente LLM)
+      reviewed_plan.json       ← review (agente LLM)
+      edited_video.mp4         ← execute (FFmpeg trim + concat + loudnorm)
+      overlaid_video.mp4       ← overlay (FFmpeg chroma key) [long only]
+      captions.ass             ← caption (ASS gerado)
+      captioned_video.mp4      ← caption (FFmpeg subtitles burn) [short only]
+      post_cut_transcription.json ← caption (timestamps remapeados)
+      assessment.json          ← evaluate (agente LLM)
+      metadata.json            ← metadata (agente LLM)
+  → output/video_final.mp4    ← done (cópia + cleanup)
+  → output/video.txt          ← done (título + descrição + hashtags)
+```
 
-## ⚡ Modelos Whisper
+## Funcionalidades técnicas
 
-| Modelo | Velocidade | Precisão | VRAM |
-|--------|------------|----------|------|
-| `tiny` | ⚡⚡⚡⚡⚡ | ⭐⭐ | ~1 GB |
-| `base` | ⚡⚡⚡⚡ | ⭐⭐⭐ | ~1 GB |
-| `small` | ⚡⚡⚡ | ⭐⭐⭐⭐ | ~2 GB |
-| `medium` | ⚡⚡ | ⭐⭐⭐⭐⭐ | ~5 GB |
-| `large` | ⚡ | ⭐⭐⭐⭐⭐ | ~10 GB |
+- **Codec fallback**: `h264_videotoolbox` → `libx264` → `libx265` (cross-platform)
+- **Normalização de áudio**: EBU R128 (`loudnorm`) após cortes para volume consistente
+- **Validação de cut plans**: Verifica bounds antes do FFmpeg; rejeita intervalos sub-frame
+- **Correção de transcrição com IA**: Claude revisa output do Whisper (corrige alucinações, termos técnicos)
+- **Timestamps remapeados**: Captioner reutiliza transcrição original sem re-rodar Whisper
+- **Timeout em chamadas LLM**: Configurável via `AUTO_EDIT_LLM_TIMEOUT` (default: 600s)
+- **Persistência de erros**: Falhas salvas no `pipeline.json` com mensagem de erro
+- **Progresso em tempo real**: Output dos tools Python e FFmpeg visível durante execução
 
-> 💡 **Recomendação**: Use `small` para a maioria dos casos. Ele oferece o melhor equilíbrio entre velocidade e qualidade.
+## Testes
 
-## 🎨 Personalização das Legendas
+```bash
+pip install -e ".[test]"
+python -m pytest tests/ -v
+```
 
-As legendas são geradas no formato `.ass` com:
-- Fonte: Prohibition (ou fallback para Montserrat/Arial)
-- Destaque: Palavra atual em laranja/vermelho
-- Posição: Centro inferior
-- Máximo: 4 palavras por linha
+## Licença
 
-## 📝 Notas
-
-- O processo de transcrição pode ser pesado em modelos maiores
-- Modelos `medium` e `large` requerem GPU para performance adequada
-- As fontes personalizadas funcionam ao "queimar" a legenda no vídeo
-- Thumbnails de vídeos são gerados e cacheados em `.thumbnails/`
-
-## 🤝 Contribuindo
-
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou pull requests.
-
-## 📄 Licença
-
-Este projeto está sob a licença MIT.
-
----
-
-**Feito com ❤️ e IA** | [Whisper](https://github.com/openai/whisper) • [Google Gemini](https://ai.google.dev/) • [Lucide Icons](https://lucide.dev/) • [Lottie](https://airbnb.io/lottie/)
+MIT
