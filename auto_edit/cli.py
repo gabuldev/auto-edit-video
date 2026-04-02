@@ -24,7 +24,16 @@ app = typer.Typer(
 )
 console = Console()
 
-RALPH_SCRIPT = Path(__file__).parent.parent / "ralph.sh"
+def _repo_root() -> Path:
+    """Resolve the repo root. AUTO_EDIT_REPO_ROOT env var takes priority (set by install wrapper)."""
+    env = os.environ.get("AUTO_EDIT_REPO_ROOT")
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parent.parent
+
+
+REPO_ROOT = _repo_root()
+RALPH_SCRIPT = REPO_ROOT / "ralph.sh"
 VALID_MODELS = ["tiny", "base", "small", "medium", "large"]
 CLI_EPILOG = "claude, cursor, or agent (agent = Cursor)"
 
@@ -570,3 +579,81 @@ def resume(
         cli_fallback=cli_fallback,
         language=p.get("language", "pt"),
     )
+
+
+# ── Maintenance commands ─────────────────────────────────────────────────────
+
+
+@app.command()
+def doctor() -> None:
+    """Check that all dependencies are installed and available."""
+    import shutil
+
+    checks = [
+        ("python", sys.executable, f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"),
+    ]
+
+    # ffmpeg / ffprobe
+    for tool in ("ffmpeg", "ffprobe"):
+        path = shutil.which(tool)
+        if path:
+            checks.append((tool, path, "[green]OK[/green]"))
+        else:
+            checks.append((tool, "NOT FOUND", "[red]MISSING[/red]"))
+
+    # Python packages
+    for pkg, import_name in [("openai-whisper", "whisper"), ("pysubs2", "pysubs2"), ("typer", "typer"), ("rich", "rich")]:
+        try:
+            __import__(import_name)
+            checks.append((pkg, "", "[green]OK[/green]"))
+        except ImportError:
+            checks.append((pkg, "", "[red]MISSING[/red]"))
+
+    # ralph.sh
+    if RALPH_SCRIPT.exists():
+        checks.append(("ralph.sh", str(RALPH_SCRIPT), "[green]OK[/green]"))
+    else:
+        checks.append(("ralph.sh", str(RALPH_SCRIPT), "[red]MISSING[/red]"))
+
+    # agents/ and tools/ dirs
+    for d in ("agents", "tools"):
+        p = REPO_ROOT / d
+        checks.append((f"{d}/", str(p), "[green]OK[/green]" if p.is_dir() else "[red]MISSING[/red]"))
+
+    # LLM CLI
+    for cli_name in ("claude", "cursor"):
+        path = shutil.which(cli_name)
+        if path:
+            checks.append((cli_name, path, "[green]OK[/green]"))
+            break
+    else:
+        checks.append(("claude/cursor", "NOT FOUND", "[yellow]WARN[/yellow] (needed for agent stages)"))
+
+    table = Table(title="auto-edit doctor", show_header=True)
+    table.add_column("Component", style="bold")
+    table.add_column("Path / Info")
+    table.add_column("Status")
+    for name, info, status in checks:
+        table.add_row(name, info, status)
+
+    console.print(table)
+    console.print(f"\n[dim]Repo root:[/dim] {REPO_ROOT}")
+
+
+@app.command()
+def update() -> None:
+    """Update auto-edit-video to the latest version."""
+    if not (REPO_ROOT / ".git").is_dir():
+        console.print("[red]Not a git repo — cannot auto-update.[/red]")
+        raise typer.Exit(1)
+
+    console.print("[cyan]Pulling latest changes...[/cyan]")
+    result = subprocess.run(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"], capture_output=True, text=True)
+    if result.returncode != 0:
+        console.print(f"[red]git pull failed:[/red]\n{result.stderr}")
+        raise typer.Exit(1)
+    console.print(result.stdout.strip())
+
+    console.print("[cyan]Reinstalling package...[/cyan]")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(REPO_ROOT), "-q"], check=True)
+    console.print("[green]Updated successfully.[/green]")
