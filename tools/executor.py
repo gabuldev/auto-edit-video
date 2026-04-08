@@ -14,8 +14,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Seconds added to each kept segment end (avoids chopping word tails). Lower = snappier.
-END_PADDING = float(os.environ.get("AUTO_EDIT_END_PADDING", "0.2"))
 FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MAX)
 MIN_INTERVAL_DURATION = 1.0 / 30  # 1 frame at 30fps ≈ 0.033s
 
@@ -102,9 +100,11 @@ def _validate_plan(plan: dict, duration: float) -> None:
 def _build_keep_intervals(plan: dict, duration: float) -> list[tuple[float, float]]:
     """
     Convert kept_segments from reviewed_plan.json into (start, end) tuples.
-    Applies END_PADDING to each segment end (not start) to avoid cutting word tails.
+    Applies end-padding (default 0.2s, override AUTO_EDIT_END_PADDING) to each
+    segment end (not start) to avoid cutting word tails.
     Clamps to video duration and merges overlapping intervals.
     """
+    end_padding = float(os.environ.get("AUTO_EDIT_END_PADDING", "0.2"))
     raw = plan.get("kept_segments", [])
     if not raw:
         # Fallback: invert the cuts list
@@ -114,7 +114,7 @@ def _build_keep_intervals(plan: dict, duration: float) -> list[tuple[float, floa
     padded: list[tuple[float, float]] = []
     for seg in raw:
         start = max(0.0, float(seg["start"]))
-        end = min(duration, float(seg["end"]) + END_PADDING)
+        end = min(duration, float(seg["end"]) + end_padding)
         if end > start:
             padded.append((start, end))
 
