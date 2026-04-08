@@ -1,10 +1,8 @@
 """Tests for tools/captioner.py — remap, interval building, word grouping."""
-import os
 import sys
 from pathlib import Path
 
-# Disable end-padding so interval tests use exact boundary values
-os.environ["AUTO_EDIT_END_PADDING"] = "0"
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -53,6 +51,12 @@ class TestRemap:
 
 
 # ── _build_kept_intervals ───────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _zero_end_padding(monkeypatch):
+    """Disable end-padding so interval tests use exact boundary values."""
+    monkeypatch.setenv("AUTO_EDIT_END_PADDING", "0")
 
 
 class TestBuildKeptIntervals:
