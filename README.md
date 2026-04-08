@@ -28,32 +28,46 @@ Se o avaliador rejeitar, o pipeline volta ao `plan` com feedback — até 3 iter
 
 ## Instalação
 
+### Quick Start
+
+```bash
+curl -sSL https://raw.githubusercontent.com/gabuldev/auto-edit-video/main/install.sh | bash
+```
+
+Isso instala o `auto-edit` em `~/.auto-edit-video/` e cria o comando global `auto-edit`. Funciona de qualquer pasta.
+
+Depois de instalar, valide o setup:
+
+```bash
+auto-edit doctor
+```
+
+Para atualizar:
+
+```bash
+auto-edit update
+```
+
+Para desinstalar:
+
+```bash
+bash ~/.auto-edit-video/uninstall.sh
+```
+
 ### Pré-requisitos
 
-- Python 3.11+
-- FFmpeg
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instalado e autenticado
+- **Python 3.11+**
+- **FFmpeg** — `brew install ffmpeg` (macOS) ou `sudo apt install ffmpeg` (Linux)
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code`
 
-### Setup
+### Desenvolvimento (Nix)
+
+Se preferir o ambiente de dev completo com Nix:
 
 ```bash
 git clone https://github.com/gabuldev/auto-edit-video.git
 cd auto-edit-video
-
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-pip install -e ".[test]"
-```
-
-FFmpeg via Homebrew (macOS):
-```bash
-brew install ffmpeg
-```
-
-Ou via Nix:
-```bash
-nix develop  # usa o flake.nix do projeto
+nix develop  # ou: make setup
 ```
 
 ## Uso

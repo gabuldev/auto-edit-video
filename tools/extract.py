@@ -65,12 +65,12 @@ def extract(workspace: Path) -> None:
     print(f"[extract] Energy buckets: {len(energy_db)}")
 
     # 4. Whisper transcription com word_timestamps
+    context = pipeline.get("context", "")
     print(f"[extract] Running Whisper ({model_name})...")
-    words, segments = _transcribe(audio_path, model_name, language)
+    words, segments = _transcribe(audio_path, model_name, language, context)
     print(f"[extract] Words: {len(words)}, Segments: {len(segments)}")
 
     # 5. Correção da transcrição com Claude (corrige alucinações e erros do Whisper)
-    context = pipeline.get("context", "")
     words, segments = _correct_transcription(words, segments, context, language)
 
     # 6. Montar transcription.json
@@ -161,7 +161,7 @@ def _compute_energy_map(audio: Path, duration: float) -> list[float]:
 
 # ── Whisper transcription ─────────────────────────────────────────────────────
 
-def _transcribe(audio: Path, model_name: str, language: str) -> tuple[list[dict], list[dict]]:
+def _transcribe(audio: Path, model_name: str, language: str, context: str = "") -> tuple[list[dict], list[dict]]:
     """
     Roda Whisper com word_timestamps=True.
     Filtra palavras com confiança baixa e segmentos sem fala.
@@ -170,12 +170,17 @@ def _transcribe(audio: Path, model_name: str, language: str) -> tuple[list[dict]
     print(f"[extract] Loading Whisper model '{model_name}'...")
     model = whisper.load_model(model_name)
     print("[extract] Transcribing audio (this may take a while)...")
-    result = model.transcribe(
-        str(audio),
+    transcribe_kwargs: dict = dict(
         language=language,
         word_timestamps=True,
         verbose=False,
     )
+    if context:
+        # Format as a glossary hint so Whisper primes vocabulary without
+        # treating it as preceding speech (which causes hallucinated continuations)
+        transcribe_kwargs["initial_prompt"] = f"Termos relevantes: {context}."
+        print(f"[extract] Using initial_prompt from context ({len(context)} chars)")
+    result = model.transcribe(str(audio), **transcribe_kwargs)
 
     words: list[dict] = []
     segments: list[dict] = []
@@ -257,7 +262,7 @@ REGRAS — leia com atenção:
 2. Se uma palavra EXISTE em {language} (mesmo que pareça estranha no contexto), NÃO corrija — pode ser gíria, informalidade ou estilo do falante
 3. Se não souber com certeza a correção correta de uma palavra desconhecida, IGNORE-a — não invente
 4. Palavras que parecem incompletas (começam no meio de uma sílaba, sem maiúscula), IGNORE-as — são cortes de áudio
-5. Marcas e produtos citados no contexto: corrija para o nome exato como aparece no contexto
+5. Marcas, produtos e siglas citados no contexto (ex: PLA, Matte): NÃO troque uns pelos outros — são termos distintos que podem coexistir na mesma frase
 6. NÃO altere concordância, pontuação, gênero ou número — só erros do Whisper
 7. NÃO use palavras de outros idiomas como correção
 8. Se não houver nada a corrigir com certeza, retorne {{"corrections": []}}

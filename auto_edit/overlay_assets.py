@@ -4,11 +4,15 @@ Optional mirror: <repo>/overlays/ — run sync-overlays to copy into assets/over
 """
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
 
 def default_repo_root() -> Path:
+    env = os.environ.get("AUTO_EDIT_REPO_ROOT")
+    if env:
+        return Path(env)
     return Path(__file__).resolve().parent.parent
 
 

@@ -9,6 +9,7 @@ Usage: python tools/captioner.py <workspace_dir>
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -61,22 +62,43 @@ def _remap(original_ts: float, kept: list[tuple[float, float]]) -> float | None:
 
 
 def _build_kept_intervals(reviewed_plan: dict, duration: float) -> list[tuple[float, float]]:
-    """Build (start, end) kept intervals from reviewed_plan, inverting cuts if needed."""
+    """Build (start, end) kept intervals from reviewed_plan, inverting cuts if needed.
+    Applies the same END_PADDING as executor.py so timestamps match the actual edited video."""
+    end_padding = float(os.environ.get("AUTO_EDIT_END_PADDING", "0.2"))
     segs = reviewed_plan.get("kept_segments", [])
-    if segs:
-        return [(float(s["start"]), float(s["end"])) for s in segs]
-    # Invert cuts to find kept intervals
-    cuts = sorted(reviewed_plan.get("cuts", []), key=lambda c: c["start"])
-    intervals: list[tuple[float, float]] = []
-    prev = 0.0
-    for cut in cuts:
-        s = float(cut["start"])
-        if s > prev:
-            intervals.append((prev, s))
-        prev = float(cut["end"])
-    if prev < duration:
-        intervals.append((prev, duration))
-    return intervals
+    if not segs:
+        # Invert cuts to find kept intervals
+        cuts = sorted(reviewed_plan.get("cuts", []), key=lambda c: c["start"])
+        segs = []
+        prev = 0.0
+        for cut in cuts:
+            s = float(cut["start"])
+            if s > prev:
+                segs.append({"start": prev, "end": s})
+            prev = float(cut["end"])
+        if prev < duration:
+            segs.append({"start": prev, "end": duration})
+
+    # Apply end_padding and clamp, matching executor._build_keep_intervals
+    padded: list[tuple[float, float]] = []
+    for s in segs:
+        start = max(0.0, float(s["start"]))
+        end = min(duration, float(s["end"]) + end_padding)
+        if end > start:
+            padded.append((start, end))
+
+    # Merge overlapping intervals (same as executor)
+    if not padded:
+        return []
+    padded.sort()
+    merged = [padded[0]]
+    for s, e in padded[1:]:
+        ps, pe = merged[-1]
+        if s <= pe:
+            merged[-1] = (ps, max(pe, e))
+        else:
+            merged.append((s, e))
+    return merged
 
 
 def _remap_words(
@@ -108,7 +130,23 @@ def _remap_words(
             continue
         if new_start is None or new_end is None:
             continue
-        remapped_segs.append({**seg, "start": new_start, "end": new_end})
+        # Remap words within the segment too
+        seg_words = []
+        for sw in seg.get("words", []):
+            try:
+                sw_start = _remap(float(sw["start"]), kept)
+                sw_end = _remap(float(sw["end"]), kept)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if sw_start is not None and sw_end is not None:
+                seg_words.append({**sw, "start": sw_start, "end": sw_end})
+        remapped_segs.append({
+            **seg,
+            "start": new_start,
+            "end": new_end,
+            "words": seg_words,
+            "text": " ".join(w["word"] for w in seg_words),
+        })
 
     return remapped_words, remapped_segs
 
@@ -145,15 +183,18 @@ def caption(workspace: Path) -> None:
         try:
             reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
             original_transcription = json.loads((workspace / "transcription.json").read_text())
-            duration = _get_duration(edited_video)
-            kept = _build_kept_intervals(reviewed_plan, duration)
+            # Use original video duration for building kept intervals
+            # (kept_segments timestamps are in the original timeline, not the edited one)
+            original_duration = original_transcription.get("duration", _get_duration(edited_video))
+            kept = _build_kept_intervals(reviewed_plan, original_duration)
 
             orig_words = original_transcription.get("words", [])
             orig_segments = original_transcription.get("segments", [])
             words, segments = _remap_words(orig_words, orig_segments, kept)
 
+            edited_duration = _get_duration(edited_video)
             post_cut = {
-                "duration": duration,
+                "duration": edited_duration,
                 "words": words,
                 "segments": segments,
                 "language": original_transcription.get("language", language),
@@ -162,7 +203,8 @@ def caption(workspace: Path) -> None:
         except (FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
             # Fallback: re-transcribe with Whisper (original behavior)
             print(f"[captioner] Remap failed ({exc}), falling back to Whisper re-transcription (model={model_name})...")
-            words, segments = _transcribe(edited_video, model_name, language)
+            context = pipeline.get("context", "")
+            words, segments = _transcribe(edited_video, model_name, language, context)
             post_cut = {
                 "duration": _get_duration(edited_video),
                 "words": words,
@@ -198,14 +240,17 @@ def caption(workspace: Path) -> None:
 
 # ── Transcription ─────────────────────────────────────────────────────────────
 
-def _transcribe(video: Path, model_name: str, language: str) -> tuple[list[dict], list[dict]]:
+def _transcribe(video: Path, model_name: str, language: str, context: str = "") -> tuple[list[dict], list[dict]]:
     model = whisper.load_model(model_name)
-    result = model.transcribe(
-        str(video),
+    transcribe_kwargs: dict = dict(
         language=language,
         word_timestamps=True,
         verbose=False,
     )
+    if context:
+        transcribe_kwargs["initial_prompt"] = f"Termos relevantes: {context}."
+        print(f"[captioner] Using initial_prompt from context ({len(context)} chars)")
+    result = model.transcribe(str(video), **transcribe_kwargs)
     words: list[dict] = []
     segments: list[dict] = []
 
