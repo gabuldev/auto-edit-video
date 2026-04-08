@@ -11,8 +11,60 @@
       let
         pkgs = import nixpkgs { inherit system; };
         python = pkgs.python313;
+
+        # ── Installable package ──────────────────────────────────────────
+        # Wraps auto-edit with ffmpeg + python in PATH.
+        # Python deps (whisper, torch) are pip-installed into a user-local
+        # venv on first run — this avoids Nix-building PyTorch from source.
+        auto-edit-pkg = pkgs.stdenv.mkDerivation {
+          pname = "auto-edit-video";
+          version = "0.1.0";
+          src = ./.;
+
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+
+          dontBuild = true;
+
+          installPhase = ''
+            runHook preInstall
+
+            # Copy Python source + launcher
+            mkdir -p $out/share/auto-edit-video $out/bin
+            cp -r auto_edit $out/share/auto-edit-video/
+            cp pyproject.toml $out/share/auto-edit-video/
+            cp scripts/auto-edit-launcher.sh $out/bin/auto-edit
+            chmod +x $out/bin/auto-edit
+
+            # Wrap with Nix-provided ffmpeg + python in PATH
+            wrapProgram $out/bin/auto-edit \
+              --prefix PATH : ${pkgs.lib.makeBinPath [
+                python
+                pkgs.ffmpeg-full
+                pkgs.git
+              ]}
+
+            runHook postInstall
+          '';
+
+          meta = with pkgs.lib; {
+            description = "AI-powered video editing CLI";
+            license = licenses.mit;
+            platforms = platforms.unix;
+            mainProgram = "auto-edit";
+          };
+        };
       in
       {
+        # nix profile install github:gabuldev/auto-edit-video
+        packages.default = auto-edit-pkg;
+
+        # nix run github:gabuldev/auto-edit-video -- short video.mp4 --context "..."
+        apps.default = {
+          type = "app";
+          program = "${auto-edit-pkg}/bin/auto-edit";
+        };
+
+        # nix develop (for contributors)
         devShells.default = pkgs.mkShell {
           name = "auto-edit-video";
 

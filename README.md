@@ -28,41 +28,58 @@ Se o avaliador rejeitar, o pipeline volta ao `plan` com feedback — até 3 iter
 
 ## Instalação
 
-### Quick Start
+### Opção 1 — Nix (recomendada, zero dependências manuais)
+
+Nix instala Python, FFmpeg e todas as deps automaticamente. Nada precisa estar pré-instalado.
+
+```bash
+# Instalar Nix (uma vez, se ainda não tiver)
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+
+# Instalar auto-edit (com tudo incluso)
+nix profile install github:gabuldev/auto-edit-video
+```
+
+Na primeira execução, o auto-edit cria um venv e instala as deps Python (~2 GB com PyTorch). Depois disso, executa instantaneamente.
+
+Ou rode sem instalar:
+
+```bash
+nix run github:gabuldev/auto-edit-video -- short video.mp4 --context "..."
+```
+
+### Opção 2 — curl | bash (instala deps do sistema automaticamente)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/gabuldev/auto-edit-video/main/install.sh | bash
 ```
 
-Isso instala o `auto-edit` em `~/.auto-edit-video/` e cria o comando global `auto-edit`. Funciona de qualquer pasta.
+O script detecta e instala automaticamente o que falta (Python, FFmpeg, git) via Homebrew (macOS), apt, dnf ou pacman (Linux). Instala o `auto-edit` em `~/.auto-edit-video/`.
 
-Depois de instalar, valide o setup:
-
-```bash
-auto-edit doctor
-```
-
-Para atualizar:
+### Pós-instalação
 
 ```bash
-auto-edit update
+auto-edit doctor    # valida o setup
+auto-edit update    # atualiza para última versão
 ```
 
 Para desinstalar:
 
 ```bash
+# Nix
+nix profile remove auto-edit-video
+
+# curl | bash
 bash ~/.auto-edit-video/uninstall.sh
 ```
 
-### Pré-requisitos
+### Dependência opcional
 
-- **Python 3.11+**
-- **FFmpeg** — `brew install ffmpeg` (macOS) ou `sudo apt install ffmpeg` (Linux)
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code`
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code` (necessário para stages de IA)
 
 ### Desenvolvimento (Nix)
 
-Se preferir o ambiente de dev completo com Nix:
+Para contribuidores:
 
 ```bash
 git clone https://github.com/gabuldev/auto-edit-video.git
