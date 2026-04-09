@@ -640,6 +640,13 @@ def doctor() -> None:
     console.print(f"\n[dim]Repo root:[/dim] {REPO_ROOT}")
 
 
+@app.command("mcp-server")
+def mcp_server() -> None:
+    """Start the MCP server for Claude Code integration (stdio transport)."""
+    from auto_edit.mcp_server import main as run_mcp
+    run_mcp()
+
+
 @app.command()
 def update() -> None:
     """Update auto-edit-video to the latest version."""

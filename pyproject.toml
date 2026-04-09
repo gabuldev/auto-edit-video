@@ -20,6 +20,7 @@ auto-edit = "auto_edit.cli:app"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+mcp = ["mcp>=1.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -131,9 +131,32 @@ auto-edit resume upload/meu-video.mp4 --from extract --whisper-model medium
 auto-edit status upload/meu-video.mp4
 ```
 
-## Claude Code Skills
+## Claude Code Extension
 
-O projeto inclui slash commands para usar dentro do Claude Code:
+### MCP Server (recomendado)
+
+O auto-edit-video funciona como extensão do Claude Code via MCP. Adicione ao seu `~/.claude.json` ou `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "auto-edit-video": {
+      "command": "auto-edit",
+      "args": ["mcp-server"]
+    }
+  }
+}
+```
+
+Requer a dependência MCP: `pip install auto-edit-video[mcp]`
+
+Depois disso, o Claude Code ganha acesso direto a tools como `edit_short`, `edit_long`, `pipeline_status`, `resume_pipeline` e `doctor`. Basta conversar normalmente:
+
+> "Edita esse vídeo como short, contexto é review de produto tech"
+
+### Slash Commands
+
+O projeto também inclui slash commands para usar dentro do Claude Code (quando estiver no diretório do projeto):
 
 | Comando | O que faz |
 |---------|-----------|
