@@ -152,7 +152,7 @@ Requer a dependência MCP: `pip install auto-edit-video[mcp]`
 
 Depois disso, o Claude Code ganha acesso direto a tools como `edit_short`, `edit_long`, `pipeline_status`, `resume_pipeline` e `doctor`. Basta conversar normalmente:
 
-> "Edita esse vídeo como short, contexto é review de produto tech"
+> "Edita o vídeo video.mp4 como short, contexto é review de produto tech"
 
 ### Slash Commands
 

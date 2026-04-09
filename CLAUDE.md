@@ -85,4 +85,4 @@ Para usar o auto-edit como extensão do Claude Code:
 }
 ```
 
-Isso expõe tools como `edit_short`, `edit_long`, `pipeline_status`, `doctor` diretamente no Claude Code.
+Isso expõe tools como `edit_short`, `edit_long`, `pipeline_status`, `resume_pipeline` e `doctor` diretamente no Claude Code.

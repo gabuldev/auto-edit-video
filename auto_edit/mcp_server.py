@@ -17,6 +17,7 @@ Configure in Claude Code settings:
 """
 from __future__ import annotations
 
+import importlib.metadata
 import os
 import subprocess
 import sys
@@ -29,7 +30,7 @@ from auto_edit.workspace import get_workspace, get_status_table
 
 mcp = FastMCP(
     "auto-edit-video",
-    version="0.1.0",
+    version=importlib.metadata.version("auto-edit-video"),
 )
 
 
@@ -104,7 +105,7 @@ def _run_pipeline(
         return (
             f"Pipeline failed at stage: {stage}\n"
             f"Workspace: {ws}\n"
-            f"stderr: {result.stderr[-500:] if result.stderr else '(empty)'}\n"
+            f"stderr: {result.stderr if result.stderr else '(empty)'}\n"
             f"Use resume_from='{stage}' to retry."
         )
 
