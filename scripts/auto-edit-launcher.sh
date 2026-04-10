@@ -37,4 +37,5 @@ if [ ! -f "$VENV_DIR/.pkg_path" ] || [ "$(cat "$VENV_DIR/.pkg_path" 2>/dev/null)
   echo ""
 fi
 
+export AUTO_EDIT_REPO_ROOT="$PKG_DIR"
 exec "$VENV_DIR/bin/auto-edit" "$@"
