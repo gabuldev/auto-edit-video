@@ -28,10 +28,11 @@
           installPhase = ''
             runHook preInstall
 
-            # Copy Python source + launcher
+            # Copy full project (pipeline needs tools/, agents/, ralph.sh, assets/)
             mkdir -p $out/share/auto-edit-video $out/bin
-            cp -r auto_edit $out/share/auto-edit-video/
-            cp pyproject.toml $out/share/auto-edit-video/
+            cp -r auto_edit tools agents assets $out/share/auto-edit-video/
+            cp pyproject.toml ralph.sh $out/share/auto-edit-video/
+            chmod +x $out/share/auto-edit-video/ralph.sh
             cp scripts/auto-edit-launcher.sh $out/bin/auto-edit
             chmod +x $out/bin/auto-edit
 
