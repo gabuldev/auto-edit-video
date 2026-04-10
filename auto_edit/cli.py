@@ -651,8 +651,28 @@ def mcp_server() -> None:
 @app.command()
 def update() -> None:
     """Update auto-edit-video to the latest version."""
+    import shutil
+
+    # Nix install: REPO_ROOT is in /nix/store (read-only, no .git)
+    if "/nix/store" in str(REPO_ROOT) or (
+        not (REPO_ROOT / ".git").is_dir() and shutil.which("nix")
+    ):
+        console.print("[cyan]Nix installation detected — upgrading via nix profile...[/cyan]")
+        result = subprocess.run(
+            ["nix", "profile", "upgrade", "auto-edit-video"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]nix profile upgrade failed:[/red]\n{result.stderr}")
+            console.print("[dim]Try manually: nix profile upgrade auto-edit-video[/dim]")
+            raise typer.Exit(1)
+        console.print("[green]Updated successfully via Nix.[/green]")
+        return
+
     if not (REPO_ROOT / ".git").is_dir():
         console.print("[red]Not a git repo — cannot auto-update.[/red]")
+        console.print("[dim]Set AUTO_EDIT_REPO_ROOT to the project root, or check your installation.[/dim]")
         raise typer.Exit(1)
 
     console.print("[cyan]Pulling latest changes...[/cyan]")
