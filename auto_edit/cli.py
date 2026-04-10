@@ -654,9 +654,11 @@ def update() -> None:
     import shutil
 
     # Nix install: REPO_ROOT is in /nix/store (read-only, no .git)
-    if "/nix/store" in str(REPO_ROOT) or (
-        not (REPO_ROOT / ".git").is_dir() and shutil.which("nix")
-    ):
+    if "/nix/store" in str(REPO_ROOT):
+        if not shutil.which("nix"):
+            console.print("[red]Nix installation detected but 'nix' command not found.[/red]")
+            raise typer.Exit(1)
+
         console.print("[cyan]Nix installation detected — upgrading via nix profile...[/cyan]")
         result = subprocess.run(
             ["nix", "profile", "upgrade", "auto-edit-video"],
