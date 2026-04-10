@@ -143,7 +143,7 @@ def _run_pipeline(
 
     if not RALPH_SCRIPT.exists():
         console.print(f"[red]Error:[/red] ralph.sh not found at {RALPH_SCRIPT}")
-        console.print("[dim]Set AUTO_EDIT_REPO_ROOT to the cloned repo path, or re-install via install.sh[/dim]")
+        console.print("[dim]Set AUTO_EDIT_REPO_ROOT to the project root, or check your installation.[/dim]")
         raise typer.Exit(1)
 
     console.print("[bold green]Starting pipeline...[/bold green]")
