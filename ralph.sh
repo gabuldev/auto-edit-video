@@ -329,6 +329,10 @@ print(f'[dry-run] Total time to cut: {total_cut:.1f}s')
             run_agent "metadata" "$WORKSPACE/metadata.json" "$AGENTS_DIR/metadata.md"
             ;;
 
+        thumbnail)
+            run_python_tool "thumbnail" "$TOOLS_DIR/thumbnailer.py"
+            ;;
+
         done)
             log "Pipeline complete. Writing output..."
             $PYTHON -m auto_edit.pipeline finalize "$WORKSPACE"

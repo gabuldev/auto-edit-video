@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "done"]
+STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail", "done"]
 
 # Stages that are skipped per video type
 SKIP_FOR_LONG = {"caption"}
@@ -168,6 +168,13 @@ def finalize(workspace: Path) -> Path:
         srt_dst = output_dir / f"{video_name}.srt"
         shutil.copy2(srt_src, srt_dst)
         print(f"[finalize] SRT → {srt_dst}")
+
+    # Copy thumbnail if available
+    thumb_src = workspace / "thumbnail.png"
+    if thumb_src.exists():
+        thumb_dst = output_dir / f"{video_name}_thumbnail.png"
+        shutil.copy2(thumb_src, thumb_dst)
+        print(f"[finalize] Thumbnail → {thumb_dst}")
 
     # Write metadata txt
     metadata_path = workspace / "metadata.json"
