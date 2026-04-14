@@ -34,6 +34,25 @@ def _repo_root() -> Path:
 
 REPO_ROOT = _repo_root()
 RALPH_SCRIPT = REPO_ROOT / "ralph.sh"
+
+_CODEC_PREFERENCE: list[tuple[str, list[str]]] = [
+    ("h264_videotoolbox", ["-q:v", "50"]),       # macOS HW
+    ("h264_nvenc",        ["-cq", "23"]),         # NVIDIA HW
+    ("h264_vaapi",        ["-qp", "23"]),         # Linux VA-API
+    ("libx264",           ["-crf", "23", "-preset", "fast"]),
+]
+
+
+def _get_merge_codec() -> tuple[str, list[str]]:
+    """Return (codec_name, extra_flags) for the best available H.264 encoder."""
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-encoders"],
+        capture_output=True, text=True,
+    )
+    for codec, flags in _CODEC_PREFERENCE:
+        if codec in result.stdout:
+            return codec, flags
+    return "libx264", ["-crf", "23", "-preset", "fast"]
 VALID_MODELS = ["tiny", "base", "small", "medium", "large"]
 CLI_EPILOG = "claude, cursor, or agent (agent = Cursor)"
 
@@ -359,6 +378,9 @@ def merge(
              "-of", "csv=p=0:s=x", str(v)],
             capture_output=True, text=True,
         )
+        if probe.returncode != 0 or not probe.stdout.strip():
+            console.print(f"[red]Error probing {v.name}:[/red] {probe.stderr}")
+            raise typer.Exit(1)
         w, h = (int(x) for x in probe.stdout.strip().split("x"))
         resolutions.append((w, h))
         aspect = f"{w/h:.2f}"
@@ -406,14 +428,14 @@ def merge(
                 # Different aspect — crop to target AR then scale
                 if ar < target_ar:
                     # Taller than target (e.g. vertical) — crop top/bottom
-                    crop_h = int(w / target_ar)
+                    crop_h = int(w / target_ar) // 2 * 2
                     filters.append(
                         f"[{i}:v]crop={w}:{crop_h}:{0}:(ih-{crop_h})/2,"
                         f"scale={target_w}:{target_h},setsar=1[v{i}]"
                     )
                 else:
                     # Wider than target — crop left/right
-                    crop_w = int(h * target_ar)
+                    crop_w = int(h * target_ar) // 2 * 2
                     filters.append(
                         f"[{i}:v]crop={crop_w}:{h}:(iw-{crop_w})/2:{0},"
                         f"scale={target_w}:{target_h},setsar=1[v{i}]"
@@ -424,9 +446,11 @@ def merge(
         filters.append(f"{concat_inputs}concat=n={len(videos)}:v=1:a=1[outv][outa]")
         filter_complex = ";\n".join(filters)
 
+        # Auto-select best available encoder (same logic as executor.py)
+        codec, codec_flags = _get_merge_codec()
         cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex,
                "-map", "[outv]", "-map", "[outa]",
-               "-c:v", "h264_videotoolbox", "-q:v", "50",
+               "-c:v", codec, *codec_flags,
                "-c:a", "aac", "-b:a", "192k",
                str(merged_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)
