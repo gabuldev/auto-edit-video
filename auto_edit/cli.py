@@ -350,23 +350,86 @@ def merge(
     merged_path = folder / f"{output_name}.mp4"
     console.print(f"\n[cyan]Merging into:[/cyan] {merged_path}")
 
-    # Write FFmpeg concat list
-    concat_list = folder / ".concat_list.txt"
-    concat_list.write_text(
-        "\n".join(f"file '{v.resolve()}'" for v in videos) + "\n"
-    )
+    # Probe each video's resolution to decide merge strategy
+    resolutions: list[tuple[int, int]] = []
+    for v in videos:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height",
+             "-of", "csv=p=0:s=x", str(v)],
+            capture_output=True, text=True,
+        )
+        w, h = (int(x) for x in probe.stdout.strip().split("x"))
+        resolutions.append((w, h))
+        aspect = f"{w/h:.2f}"
+        console.print(f"  {v.name}: {w}x{h} (aspect {aspect})")
 
-    result = subprocess.run(
-        [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", str(concat_list),
-            "-c", "copy",
-            str(merged_path),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    concat_list.unlink(missing_ok=True)
+    needs_normalize = len(set(resolutions)) > 1
+    if needs_normalize:
+        console.print("\n[yellow]Mixed resolutions detected — normalizing with crop+scale[/yellow]")
+
+    if not needs_normalize:
+        # Fast path: all same resolution, use concat demuxer (stream copy)
+        concat_list = folder / ".concat_list.txt"
+        concat_list.write_text(
+            "\n".join(f"file '{v.resolve()}'" for v in videos) + "\n"
+        )
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+             "-i", str(concat_list), "-c", "copy", str(merged_path)],
+            capture_output=True, text=True,
+        )
+        concat_list.unlink(missing_ok=True)
+    else:
+        # Slow path: mixed resolutions — use concat filter with crop+scale
+        # Target: largest 16:9 resolution present, or 1920x1080 default
+        target_w, target_h = 1920, 1080
+        for w, h in resolutions:
+            ar = w / h
+            if 1.7 < ar < 1.8 and w > target_w:  # ~16:9
+                target_w, target_h = w, h
+        console.print(f"  Target resolution: [bold]{target_w}x{target_h}[/bold]")
+
+        inputs = []
+        filters = []
+        for i, v in enumerate(videos):
+            inputs.extend(["-i", str(v)])
+            w, h = resolutions[i]
+            ar = w / h
+            target_ar = target_w / target_h
+            if abs(ar - target_ar) < 0.05:
+                # Same aspect ratio — just scale
+                filters.append(
+                    f"[{i}:v]scale={target_w}:{target_h},setsar=1[v{i}]"
+                )
+            else:
+                # Different aspect — crop to target AR then scale
+                if ar < target_ar:
+                    # Taller than target (e.g. vertical) — crop top/bottom
+                    crop_h = int(w / target_ar)
+                    filters.append(
+                        f"[{i}:v]crop={w}:{crop_h}:{0}:(ih-{crop_h})/2,"
+                        f"scale={target_w}:{target_h},setsar=1[v{i}]"
+                    )
+                else:
+                    # Wider than target — crop left/right
+                    crop_w = int(h * target_ar)
+                    filters.append(
+                        f"[{i}:v]crop={crop_w}:{h}:(iw-{crop_w})/2:{0},"
+                        f"scale={target_w}:{target_h},setsar=1[v{i}]"
+                    )
+            filters.append(f"[{i}:a]aresample=44100[a{i}]")
+
+        concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(videos)))
+        filters.append(f"{concat_inputs}concat=n={len(videos)}:v=1:a=1[outv][outa]")
+        filter_complex = ";\n".join(filters)
+
+        cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex,
+               "-map", "[outv]", "-map", "[outa]",
+               "-c:v", "h264_videotoolbox", "-q:v", "50",
+               "-c:a", "aac", "-b:a", "192k",
+               str(merged_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
         console.print(f"[red]FFmpeg merge failed:[/red]\n{result.stderr}")
