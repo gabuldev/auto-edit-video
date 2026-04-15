@@ -146,6 +146,7 @@ def _run_pipeline(
     primary, fb = _resolve_llm(cli, cli_fallback)
     env = os.environ.copy()
     env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
+    env["PYTHON"] = sys.executable
     env["AUTO_EDIT_LANGUAGE"] = language
     env["AUTO_EDIT_LLM"] = primary
     if fb:
