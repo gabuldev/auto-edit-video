@@ -124,16 +124,16 @@ def _find_logo_assets(names: list[str] | None = None) -> list[Path]:
     if not all_logos:
         return []
 
-    if names:
-        matched = []
-        for name in names:
-            for logo in all_logos:
-                if name.lower() in logo.stem.lower():
-                    matched.append(logo)
-                    break
-        return matched
+    if not names:
+        return []
 
-    return all_logos
+    matched = []
+    for name in names:
+        for logo in all_logos:
+            if name.lower() in logo.stem.lower():
+                matched.append(logo)
+                break
+    return matched
 
 
 def _composite_logos(
@@ -599,7 +599,7 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     logo_names = thumb_data.get("logos")
     logo_paths = _find_logo_assets(logo_names)
     if logo_paths:
-        img = _composite_logos(Image.fromarray(np.array(img)), logo_paths, "top-left")
+        img = _composite_logos(img, logo_paths, "top-left")
         img = img.convert("RGB")
 
     output = workspace / "thumbnail.png"
@@ -672,7 +672,7 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     logo_paths = _find_logo_assets(logo_names)
     if logo_paths:
         logo_pos = "top-left" if has_face else "top-right"
-        img_rgb = _composite_logos(img_rgb.convert("RGBA"), logo_paths, logo_pos)
+        img_rgb = _composite_logos(img_rgb, logo_paths, logo_pos)
         img_rgb = img_rgb.convert("RGB")
 
     output = workspace / "thumbnail.png"
