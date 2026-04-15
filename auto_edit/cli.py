@@ -728,6 +728,219 @@ def doctor() -> None:
     console.print(f"\n[dim]Repo root:[/dim] {REPO_ROOT}")
 
 
+_VALID_TARGETS = ("claude", "gemini", "cursor")
+
+
+@app.command()
+def setup(
+    target: str = typer.Argument(
+        None,
+        help=f"Which AI CLI to configure: {', '.join(_VALID_TARGETS)}, or omit for --all.",
+    ),
+    all_targets: bool = typer.Option(False, "--all", help="Configure all supported AI CLIs."),
+) -> None:
+    """Configure AI coding assistants to understand auto-edit commands."""
+    if all_targets or target is None:
+        targets = list(_VALID_TARGETS)
+    else:
+        t = target.lower().strip()
+        if t not in _VALID_TARGETS:
+            console.print(f"[red]Unknown target:[/red] {t}. Choose from: {', '.join(_VALID_TARGETS)}")
+            raise typer.Exit(1)
+        targets = [t]
+
+    for t in targets:
+        console.rule(f"[bold]{t}[/bold]")
+        _SETUP_HANDLERS[t]()
+        console.print()
+
+    console.print("[bold green]Done![/bold green] Restart your AI CLI for changes to take effect.")
+
+
+def _setup_claude() -> None:
+    import json
+    import shutil
+
+    claude_dir = Path.home() / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+
+    # 1. Write AUTO_EDIT.md instructions
+    instructions_file = claude_dir / "AUTO_EDIT.md"
+    instructions_file.write_text(_AUTO_EDIT_INSTRUCTIONS)
+    console.print(f"[green]✓[/green] Wrote {instructions_file}")
+
+    # 2. Add @AUTO_EDIT.md to CLAUDE.md if not present
+    claude_md = claude_dir / "CLAUDE.md"
+    tag = "@AUTO_EDIT.md"
+    if claude_md.exists():
+        content = claude_md.read_text()
+        if tag not in content:
+            claude_md.write_text(content.rstrip() + f"\n{tag}\n")
+            console.print(f"[green]✓[/green] Added {tag} to {claude_md}")
+        else:
+            console.print(f"[dim]✓ {tag} already in {claude_md}[/dim]")
+    else:
+        claude_md.write_text(f"{tag}\n")
+        console.print(f"[green]✓[/green] Created {claude_md} with {tag}")
+
+    # 3. Configure MCP server if auto-edit is in PATH
+    auto_edit_path = shutil.which("auto-edit")
+    if auto_edit_path:
+        settings_file = claude_dir / "settings.json"
+        settings: dict = {}
+        if settings_file.exists():
+            try:
+                settings = json.loads(settings_file.read_text())
+            except json.JSONDecodeError:
+                pass
+
+        mcp_servers = settings.setdefault("mcpServers", {})
+        if "auto-edit-video" not in mcp_servers:
+            mcp_servers["auto-edit-video"] = {
+                "command": "auto-edit",
+                "args": ["mcp-server"],
+            }
+            settings_file.write_text(json.dumps(settings, indent=2) + "\n")
+            console.print(f"[green]✓[/green] Added MCP server to {settings_file}")
+        else:
+            console.print(f"[dim]✓ MCP server already configured in {settings_file}[/dim]")
+    else:
+        console.print(
+            "[yellow]⚠[/yellow] auto-edit not in PATH — skipping MCP server. "
+            "Add to PATH and re-run [bold]auto-edit setup claude[/bold]."
+        )
+
+
+def _setup_gemini() -> None:
+    gemini_dir = Path.home() / ".gemini"
+    gemini_dir.mkdir(exist_ok=True)
+
+    gemini_md = gemini_dir / "GEMINI.md"
+    begin = "<!-- BEGIN auto-edit -->"
+    end = "<!-- END auto-edit -->"
+    block = f"{begin}\n{_AUTO_EDIT_INSTRUCTIONS}{end}\n"
+
+    if gemini_md.exists():
+        content = gemini_md.read_text()
+        if begin in content and end in content:
+            before = content.split(begin)[0].rstrip()
+            after = content.split(end)[1]
+            gemini_md.write_text((before + "\n\n" if before else "") + block + after.lstrip("\n"))
+            console.print(f"[green]✓[/green] Updated auto-edit section in {gemini_md}")
+        elif begin not in content:
+            gemini_md.write_text(content.rstrip() + "\n\n" + block)
+            console.print(f"[green]✓[/green] Appended auto-edit instructions to {gemini_md}")
+        else:
+            console.print(f"[yellow]⚠[/yellow] Found {begin} but no {end} in {gemini_md} — please fix manually")
+    else:
+        gemini_md.write_text(block)
+        console.print(f"[green]✓[/green] Created {gemini_md}")
+
+
+def _setup_cursor() -> None:
+    cursor_rules_dir = Path.home() / ".cursor" / "rules"
+    cursor_rules_dir.mkdir(parents=True, exist_ok=True)
+
+    rules_file = cursor_rules_dir / "auto-edit.mdc"
+    frontmatter = (
+        "---\n"
+        "description: auto-edit-video CLI for AI-powered video editing\n"
+        "globs:\n"
+        "alwaysApply: true\n"
+        "---\n\n"
+    )
+    rules_file.write_text(frontmatter + _AUTO_EDIT_INSTRUCTIONS)
+    console.print(f"[green]✓[/green] Wrote {rules_file}")
+    console.print("[dim]Cursor loads .mdc rules globally from ~/.cursor/rules/[/dim]")
+
+
+_SETUP_HANDLERS = {
+    "claude": _setup_claude,
+    "gemini": _setup_gemini,
+    "cursor": _setup_cursor,
+}
+
+
+_AUTO_EDIT_INSTRUCTIONS = """\
+# auto-edit — AI Video Editing CLI
+
+**What it does**: Automated video editing pipeline — transcribes, plans cuts, executes via FFmpeg, adds captions, and generates metadata. All powered by AI agents.
+
+## Commands
+
+```bash
+# Edit a short (vertical, with captions — Reels/Shorts)
+auto-edit short video.mp4 --context "review de produto tech"
+
+# Edit a long (horizontal, no captions — YouTube)
+auto-edit long video.mp4 --context "tutorial de Python"
+
+# Merge multiple clips into one, then edit
+auto-edit merge folder/ --name "final" --type short --context "vlogs"
+
+# Batch process all videos in a folder
+auto-edit batch folder/ --type short --context "vlogs de viagem"
+
+# Check pipeline status
+auto-edit status video.mp4
+
+# Resume from a specific stage
+auto-edit resume video.mp4 --from plan
+
+# Health check
+auto-edit doctor
+```
+
+## Common Options
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--context` | `-c` | What the video is about (helps AI plan cuts) |
+| `--whisper-model` | `-m` | Whisper model: tiny, base, small, medium, large (default: small) |
+| `--language` | `-l` | Audio language: pt, en, es, etc. (default: pt) |
+| `--max-iter` | | Max evaluator feedback loops (default: 3) |
+| `--dry-run` | | Preview cut plan without running FFmpeg |
+| `--cli` | | Agent CLI: claude, cursor, agent (default: $AUTO_EDIT_LLM or claude) |
+| `--cli-fallback` | | Fallback CLI if primary fails |
+
+## Caption Options (short only)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--font-size` | 14 | Caption font size |
+| `--highlight-color` | `&H0045FF&` | Highlight color in ASS `&HBBGGRR&` format |
+| `--highlight-border` | 2.5 | Highlight word border thickness |
+
+## Pipeline Stages
+
+```
+extract → plan → review → execute → overlay → caption → evaluate → metadata → done
+Whisper   Claude  Claude   FFmpeg   FFmpeg    FFmpeg    Claude     Claude
+```
+
+- **short**: skips overlay, runs caption (CapCut-style subtitles)
+- **long**: runs overlay, skips caption
+- If evaluator rejects, pipeline loops back to `plan` with feedback (up to max-iter)
+
+## Environment Variables
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `AUTO_EDIT_LLM` | `claude` | Primary CLI for agent stages |
+| `AUTO_EDIT_LLM_FALLBACK` | — | Fallback CLI if primary fails |
+| `AUTO_EDIT_END_PADDING` | `0.2` | Seconds added to end of each kept segment |
+| `AUTO_EDIT_LANGUAGE` | `pt` | Audio language for transcription |
+| `GEMINI_API_KEY` | — | API key for Gemini text correction |
+
+## Troubleshooting
+
+- Run `auto-edit doctor` to check all dependencies
+- If a stage fails: `auto-edit resume video.mp4 --from <stage>`
+- Use `--dry-run` to preview cuts before executing
+- Check status: `auto-edit status video.mp4`
+"""
+
+
 @app.command("mcp-server")
 def mcp_server() -> None:
     """Start the MCP server for Claude Code integration (stdio transport)."""
