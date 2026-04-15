@@ -571,6 +571,10 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
 
     This makes platforms like YouTube Shorts and Instagram pick it up
     as the cover/thumbnail automatically (since they use the first frame).
+
+    Uses a filter-based approach (tpad + overlay) so video and audio streams
+    stay in sync — the concat-demuxer + copy method caused audio corruption
+    when codec parameters between the silent cover clip and original differed.
     """
     # Find the final video (captioned > overlaid > edited)
     for name in ["captioned_video.mp4", "overlaid_video.mp4", "edited_video.mp4"]:
@@ -581,7 +585,7 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
         print("[thumbnailer] No video found to embed cover frame — skipping")
         return
 
-    # Get video specs (fps, resolution, audio sample rate) to match
+    # Get video specs to scale thumbnail correctly
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "v:0",
         "-show_entries", "stream=r_frame_rate,width,height",
@@ -590,47 +594,43 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     parts = result.stdout.strip().split(",")
     vid_w, vid_h = int(parts[0]), int(parts[1])
-    fps_str = parts[2]  # e.g. "30/1"
 
-    # Create a short video clip from the thumbnail image (0.1s)
+    # Create a short cover clip from the thumbnail, then use the concat filter
+    # (not the concat demuxer) so audio/video stay in sync.
     cover_clip = workspace / "thumb_cover.mp4"
-    # Scale thumbnail to match video dimensions, generate 0.1s of silent video
+    cover_dur = "0.1"
     cmd = [
         "ffmpeg", "-y",
-        "-loop", "1", "-i", str(thumb_path),
-        "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-        "-t", "0.1",
+        "-loop", "1", "-t", cover_dur, "-i", str(thumb_path),
+        "-f", "lavfi", "-t", cover_dur, "-i", "anullsrc=r=48000:cl=stereo",
         "-vf", f"scale={vid_w}:{vid_h}:flags=lanczos,format=yuv420p",
-        "-r", fps_str,
         "-c:v", "libx264", "-crf", "18", "-preset", "fast",
         "-c:a", "aac", "-b:a", "192k",
-        "-shortest",
         str(cover_clip),
     ]
     subprocess.run(cmd, capture_output=True, check=True)
 
-    # Concat: cover clip + original video
-    concat_list = workspace / "thumb_concat.txt"
-    concat_list.write_text(
-        f"file '{cover_clip.resolve()}'\nfile '{video_path.resolve()}'\n"
-    )
-
+    # Concat via filter (re-encodes both segments → guarantees stream compat)
     output = workspace / "cover_video.mp4"
     cmd = [
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat_list),
-        "-c", "copy",
+        "-i", str(cover_clip),
+        "-i", str(video_path),
+        "-filter_complex",
+        "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[vout][aout]",
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+        "-c:a", "aac", "-b:a", "192k",
         str(output),
     ]
     subprocess.run(cmd, capture_output=True, check=True)
 
+    # Cleanup cover clip
+    cover_clip.unlink(missing_ok=True)
+
     # Replace the original video with the cover version
     output.replace(video_path)
     print(f"[thumbnailer] Cover frame embedded into {video_path.name}")
-
-    # Cleanup temp files
-    cover_clip.unlink(missing_ok=True)
-    concat_list.unlink(missing_ok=True)
 
 
 # ── Entry point ─────────────────────────────────────────────────────────────
