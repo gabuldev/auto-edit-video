@@ -962,7 +962,7 @@ def update() -> None:
 
         console.print("[cyan]Nix installation detected — upgrading via nix profile...[/cyan]")
         result = subprocess.run(
-            ["nix", "profile", "upgrade", "auto-edit-video"],
+            ["nix", "profile", "upgrade", "--refresh", "auto-edit-video"],
             capture_output=True,
             text=True,
         )
