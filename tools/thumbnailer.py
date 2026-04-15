@@ -32,24 +32,28 @@ STYLE_MAP = {
     "bold-energy": {
         "text": (255, 255, 255),
         "outline": (0, 0, 0),
+        "accent": (255, 220, 0),
         "tint": (255, 50, 0, 80),
         "gradient": ((200, 30, 0), (255, 100, 0)),
     },
     "clean-minimal": {
         "text": (255, 255, 255),
         "outline": (40, 40, 40),
+        "accent": (0, 255, 140),
         "tint": (0, 0, 0, 60),
         "gradient": ((30, 30, 50), (60, 60, 80)),
     },
     "dramatic": {
         "text": (255, 255, 255),
         "outline": (0, 0, 0),
+        "accent": (255, 50, 50),
         "tint": (0, 0, 0, 120),
         "gradient": ((10, 10, 30), (40, 20, 60)),
     },
     "fun-colorful": {
         "text": (255, 255, 255),
         "outline": (0, 0, 0),
+        "accent": (255, 150, 0),
         "tint": (255, 200, 0, 80),
         "gradient": ((255, 100, 50), (255, 200, 0)),
     },
@@ -101,6 +105,76 @@ def _find_font() -> Path | None:
                 return f
 
     return sorted(all_fonts)[0]
+
+
+def _find_logo_assets(names: list[str] | None = None) -> list[Path]:
+    """Find logo PNGs in assets/thumbnails/logos/. If names given, return only matching."""
+    dirs = []
+    env = os.environ.get("AUTO_EDIT_ASSETS_LOGOS")
+    if env:
+        dirs.append(Path(env))
+    dirs.append(_repo_root() / "assets" / "thumbnails" / "logos")
+
+    all_logos: list[Path] = []
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        all_logos.extend(sorted(d.glob("*.png")))
+
+    if not all_logos:
+        return []
+
+    if names:
+        matched = []
+        for name in names:
+            for logo in all_logos:
+                if name.lower() in logo.stem.lower():
+                    matched.append(logo)
+                    break
+        return matched
+
+    return all_logos
+
+
+def _composite_logos(
+    img: Image.Image, logo_paths: list[Path], position: str = "top-left",
+) -> Image.Image:
+    """Composite logo icons onto the thumbnail."""
+    if not logo_paths:
+        return img
+
+    img = img.convert("RGBA")
+    w, h = img.size
+    logo_size = int(h * 0.08)
+    padding = int(logo_size * 0.4)
+    margin = int(w * 0.03)
+
+    logos = []
+    for lp in logo_paths:
+        logo = Image.open(lp).convert("RGBA")
+        ratio = logo.width / logo.height
+        lw = int(logo_size * ratio)
+        logo = logo.resize((lw, logo_size), Image.LANCZOS)
+        logos.append(logo)
+
+    total_w = sum(l.width for l in logos) + padding * (len(logos) - 1)
+
+    if "right" in position:
+        x = w - margin - total_w
+    else:
+        x = margin
+
+    if "bottom" in position:
+        y = h - margin - logo_size
+    else:
+        y = margin
+
+    for logo in logos:
+        img.paste(logo, (x, y), logo)
+        x += logo.width + padding
+
+    print(f"[thumbnailer] {len(logos)} logo(s) composited")
+    return img
 
 
 def _find_face_asset() -> Path | None:
@@ -175,29 +249,36 @@ def _crop_center(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
 def _stylize_frame_bg(img: Image.Image) -> Image.Image:
     """Turn a raw video frame into a styled thumbnail background.
 
-    Applies blur, saturation boost, darkening, and vignette so the frame
-    looks like a designed background rather than a screenshot.
+    Center stays sharp (subject/face), edges get blur + darkening.
     """
-    # 1. Gaussian blur — bokeh effect
-    img = img.filter(ImageFilter.GaussianBlur(radius=15))
+    w, h = img.size
+    img = img.convert("RGB")
 
-    # 2. Boost saturation — more vivid colors
+    # 1. Create blurred version for edges
+    blurred = img.filter(ImageFilter.GaussianBlur(radius=12))
+
+    # 2. Radial mask: center = sharp (white), edges = blurred (black)
+    sw, sh = 128, 128
+    y_arr, x_arr = np.mgrid[0:sh, 0:sw]
+    cx, cy = sw / 2, sh * 0.55  # slightly below center (faces are usually there)
+    # Elliptical: wider horizontally to cover shoulders
+    dist = np.sqrt(((x_arr - cx) / (sw * 0.35)) ** 2 + ((y_arr - cy) / (sh * 0.30)) ** 2)
+    # Smooth falloff: 0 = sharp center, 1 = fully blurred edge
+    blend = np.clip(dist - 0.3, 0, 1)
+    blend = (blend / blend.max() * 255).astype(np.uint8)
+    blur_mask = Image.fromarray(blend, mode="L").resize((w, h), Image.LANCZOS)
+
+    # 3. Composite: sharp center + blurred edges
+    img = Image.composite(blurred, img, blur_mask)
+
+    # 4. Boost saturation
     img = ImageEnhance.Color(img).enhance(1.4)
 
-    # 3. Darken — better contrast with white text
-    img = ImageEnhance.Brightness(img).enhance(0.55)
-
-    # 4. Vignette — darken edges via radial gradient mask
-    w, h = img.size
-    # Build small vignette mask then upscale (fast)
-    sw, sh = 64, 64
-    y_arr, x_arr = np.mgrid[0:sh, 0:sw]
-    cx, cy = sw / 2, sh / 2
-    dist = np.sqrt((x_arr - cx) ** 2 + (y_arr - cy) ** 2) / np.sqrt(cx ** 2 + cy ** 2)
-    alpha = np.clip(180 * dist ** 1.8, 0, 255).astype(np.uint8)
+    # 5. Vignette — darken edges only, center untouched
+    dist_vig = np.sqrt((x_arr - sw / 2) ** 2 + (y_arr - sh / 2) ** 2) / np.sqrt((sw / 2) ** 2 + (sh / 2) ** 2)
+    alpha = np.clip(160 * dist_vig ** 2.2, 0, 255).astype(np.uint8)
     mask = Image.fromarray(alpha, mode="L").resize((w, h), Image.LANCZOS)
     black = Image.new("RGB", (w, h), (0, 0, 0))
-    img = img.convert("RGB")
     img = Image.composite(black, img, mask)
     return img
 
@@ -339,6 +420,7 @@ def _draw_text_with_outline(
     text_color: tuple[int, int, int],
     outline_color: tuple[int, int, int],
     outline_width: int = 4,
+    anchor: str = "mm",
 ) -> None:
     """Draw text with outline effect (stroke in 8 directions + shadow)."""
     x, y = position
@@ -347,12 +429,12 @@ def _draw_text_with_outline(
     shadow_offset = max(2, outline_width // 2)
     draw.text(
         (x + shadow_offset, y + shadow_offset),
-        text, font=font, fill=(0, 0, 0, 160), anchor="mm",
+        text, font=font, fill=(0, 0, 0, 160), anchor=anchor,
     )
 
     # Outline via stroke
     draw.text(
-        (x, y), text, font=font, fill=text_color, anchor="mm",
+        (x, y), text, font=font, fill=text_color, anchor=anchor,
         stroke_width=outline_width, stroke_fill=outline_color,
     )
 
@@ -369,7 +451,7 @@ def _draw_dark_band(img: Image.Image, center_y: int, band_height: int) -> Image.
 
     for y in range(top, bottom):
         dist = abs(y - center_y) / max(half, 1)
-        alpha = int(160 * (1 - dist ** 1.5))
+        alpha = int(110 * (1 - dist ** 2.0))
         alpha = max(0, min(255, alpha))
         draw.line([(0, y), (img.width, y)], fill=(0, 0, 0, alpha))
 
@@ -388,13 +470,19 @@ def _draw_thumbnail_text(
     font_path = _find_font()
     w, h = img.size
 
+    style = STYLE_MAP.get(style_hint, STYLE_MAP[DEFAULT_STYLE])
+    accent_color = style.get("accent", (255, 220, 0))
+
     main_text = main_text.upper()
-    max_text_width = int(w * 0.90)
+    if position in ("left", "right"):
+        max_text_width = int(w * 0.55)
+    else:
+        max_text_width = int(w * 0.65)
 
     # Main text — auto-size with word wrap (up to 2 lines)
     main_font, main_lines = _auto_size_font(
         font_path, main_text, max_text_width,
-        max_size=int(w * 0.14),  # ~150px on 1080w
+        max_size=int(w * 0.12),  # slightly smaller for cleaner look
         min_size=int(w * 0.05),
         max_lines=2,
     )
@@ -413,9 +501,10 @@ def _draw_thumbnail_text(
     sub_line_h = 0
     if sub_text:
         sub_text = sub_text.upper()
+        sub_max_width = int(w * 0.80)  # sub_text gets more room to be prominent
         sub_font, sub_lines = _auto_size_font(
-            font_path, sub_text, max_text_width,
-            max_size=int(w * 0.07),
+            font_path, sub_text, sub_max_width,
+            max_size=int(w * 0.09),
             min_size=int(w * 0.035),
             max_lines=1,
         )
@@ -426,17 +515,29 @@ def _draw_thumbnail_text(
     gap = int(line_h * 0.3) if sub_lines else 0
     total_h = main_block_h + gap + (sub_line_h if sub_lines else 0)
 
-    # Vertical position
+    # Vertical position — text goes upper to leave room for face/subject below
     if position == "upper":
-        block_top = int(h * 0.20)
+        block_top = int(h * 0.15)
+    elif position in ("left", "right"):
+        block_top = int(h * 0.35) - total_h // 2
     else:
-        block_top = int(h * 0.45) - total_h // 2
+        # Center-top: text in upper third, subject visible in lower half
+        block_top = int(h * 0.08)
 
-    center_x = w // 2
+    # Horizontal position — rule of thirds
+    if position == "left":
+        text_x = int(w * 0.05)
+        anchor = "lm"
+    elif position == "right":
+        text_x = int(w * 0.95)
+        anchor = "rm"
+    else:
+        text_x = w // 2
+        anchor = "mm"
 
-    # Dark band behind text
+    # Dark band behind text — tight to text area only
     band_center = block_top + total_h // 2
-    img = _draw_dark_band(img, band_center, total_h + int(line_h * 1.2))
+    img = _draw_dark_band(img, band_center, total_h + int(line_h * 0.6))
 
     draw = ImageDraw.Draw(img)
     outline_w = max(6, int(line_h * 0.08))
@@ -445,19 +546,21 @@ def _draw_thumbnail_text(
     y = block_top
     for line in main_lines:
         _draw_text_with_outline(
-            draw, (center_x, y + line_h // 2), line,
-            main_font, (255, 255, 255), (0, 0, 0), outline_width=outline_w,
+            draw, (text_x, y + line_h // 2), line,
+            main_font, (255, 255, 255), (0, 0, 0),
+            outline_width=outline_w, anchor=anchor,
         )
         y += line_h + line_spacing
 
-    # Draw sub text
+    # Draw sub text with accent color
     if sub_lines and sub_font:
         y += gap
         sub_outline = max(4, int(sub_line_h * 0.08))
         for line in sub_lines:
             _draw_text_with_outline(
-                draw, (center_x, y + sub_line_h // 2), line,
-                sub_font, (255, 255, 255), (0, 0, 0), outline_width=sub_outline,
+                draw, (text_x, y + sub_line_h // 2), line,
+                sub_font, accent_color, (0, 0, 0),
+                outline_width=sub_outline, anchor=anchor,
             )
             y += sub_line_h
 
@@ -491,6 +594,13 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
     # Overlay text
     img = _draw_thumbnail_text(img, main_text, sub_text, style_hint, position="center")
+
+    # Composite logos if specified
+    logo_names = thumb_data.get("logos")
+    logo_paths = _find_logo_assets(logo_names)
+    if logo_paths:
+        img = _composite_logos(Image.fromarray(np.array(img)), logo_paths, "top-left")
+        img = img.convert("RGB")
 
     output = workspace / "thumbnail.png"
     img.save(output, "PNG", quality=95)
@@ -539,23 +649,31 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     has_face = False
     if face_path:
         face = Image.open(face_path).convert("RGBA")
-        face_h = int(h * 0.60)
+        face_h = int(h * 0.75)
         face_ratio = face.width / face.height
         face_w = int(face_h * face_ratio)
         face = face.resize((face_w, face_h), Image.LANCZOS)
 
-        # Position: bottom-right
-        face_x = w - face_w + int(face_w * 0.05)
+        # Position: bottom-right, flush
+        face_x = w - face_w
         face_y = h - face_h
         img.paste(face, (face_x, face_y), face)
         has_face = True
         print(f"[thumbnailer] Face composited from {face_path.name}")
 
-    # Text position: upper if face present, center otherwise
-    text_pos = "upper" if has_face else "center"
+    # Text position: left (rule of thirds) if face on right, center otherwise
+    text_pos = "left" if has_face else "center"
 
     img_rgb = img.convert("RGB")
     img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, style_hint, position=text_pos)
+
+    # Composite logos if specified
+    logo_names = thumb_data.get("logos")
+    logo_paths = _find_logo_assets(logo_names)
+    if logo_paths:
+        logo_pos = "top-left" if has_face else "top-right"
+        img_rgb = _composite_logos(img_rgb.convert("RGBA"), logo_paths, logo_pos)
+        img_rgb = img_rgb.convert("RGB")
 
     output = workspace / "thumbnail.png"
     img_rgb.save(output, "PNG", quality=95)

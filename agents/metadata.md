@@ -21,12 +21,13 @@ Your job is to generate compelling titles and descriptions optimized for the pla
 Generate a `thumbnail` object with text optimized for a video thumbnail image. This is NOT the title — it is the bold, visual text that appears on the thumbnail to grab attention at a glance.
 
 - `main_text`: The hero text. 2–5 impactful words, written to be read instantly. Same language as the video.
-- `sub_text`: Optional secondary line (max 30 chars). A qualifier, number, or hook. Set to null if the main text is self-sufficient.
+- `sub_text`: Optional secondary line (max 30 chars). This line renders in an **accent color** (yellow, green, etc.) for visual pop. Best for: numbers, percentages, data, key benefits. Set to null if the main text is self-sufficient.
 - `style_hint`: Visual mood for the thumbnail design. One of:
-  - `"bold-energy"` — sports, action, hype, urgency
-  - `"clean-minimal"` — tech, tutorial, informational
-  - `"dramatic"` — storytelling, reveal, controversy
-  - `"fun-colorful"` — comedy, lifestyle, entertainment
+  - `"bold-energy"` — sports, action, hype, urgency (accent: yellow)
+  - `"clean-minimal"` — tech, tutorial, informational (accent: green neon)
+  - `"dramatic"` — storytelling, reveal, controversy (accent: red)
+  - `"fun-colorful"` — comedy, lifestyle, entertainment (accent: orange)
+- `logos`: Optional array of logo filenames (without extension) to overlay on the thumbnail. Use when the video features specific tools, brands, or products that viewers would recognize visually. Example: `["claude", "conductor"]`. Set to null if not applicable.
 
 ## Language
 
@@ -44,7 +45,8 @@ Schema for short:
   "thumbnail": {
     "main_text": "PEÇA 3D QUEBROU",
     "sub_text": "IA QUE CORRIGE",
-    "style_hint": "bold-energy"
+    "style_hint": "bold-energy",
+    "logos": null
   }
 }
 
@@ -55,7 +57,8 @@ Schema for long:
   "tags": ["pão caseiro", "como fazer pão", ...],
   "thumbnail": {
     "main_text": "META AI RAY-BAN GEN 2",
-    "sub_text": null,
-    "style_hint": "clean-minimal"
+    "sub_text": "REVIEW COMPLETO",
+    "style_hint": "clean-minimal",
+    "logos": ["meta", "rayban"]
   }
 }
