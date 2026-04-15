@@ -245,7 +245,7 @@ def _generate_imagen_bg(
             f"No text, no people, no faces. Visually striking, high contrast."
         )
 
-        print(f"[thumbnailer] Generating Imagen background...")
+        print("[thumbnailer] Generating Imagen background...")
         response = client.models.generate_images(
             model="imagen-3.0-generate-002",
             prompt=prompt,
