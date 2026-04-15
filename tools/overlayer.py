@@ -110,16 +110,21 @@ def overlay(workspace: Path) -> None:
         placed.append({"asset": asset, "start": post_cut_start, "end": post_cut_start + duration})
         print(f"[overlayer] '{ov['file']}' -> post-cut {post_cut_start:.2f}s-{post_cut_start + duration:.2f}s")
 
-    if overlays and not placed:
-        raise RuntimeError(
-            "[overlayer] Planned overlays could not be applied:\n"
+    if skip_reasons:
+        print(
+            "[overlayer] WARNING: some overlays could not be applied:\n"
             + "\n".join(f"  - {r}" for r in skip_reasons)
             + f"\n  Searched: {', '.join(str(d) for d in search_dirs)}"
         )
 
     input_video = workspace / "edited_video.mp4"
     output_video = workspace / "overlaid_video.mp4"
-    _run_ffmpeg_overlay(input_video, placed, output_video)
+    if placed:
+        _run_ffmpeg_overlay(input_video, placed, output_video)
+    else:
+        import shutil
+        shutil.copy2(input_video, output_video)
+        print("[overlayer] No overlays applied — copied edited video as-is")
     print(f"[overlayer] Done -> {output_video}")
 
 
