@@ -157,7 +157,7 @@ def _composite_logos(
         logo = logo.resize((lw, logo_size), Image.LANCZOS)
         logos.append(logo)
 
-    total_w = sum(l.width for l in logos) + padding * (len(logos) - 1)
+    total_w = sum(lg.width for lg in logos) + padding * (len(logos) - 1)
 
     if "right" in position:
         x = w - margin - total_w
