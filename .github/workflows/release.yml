@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "auto_edit/_version.py"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+          COMMITS=$(git log "$LATEST_TAG"..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          BUMP="none"
+          if echo "$COMMITS" | grep -qiE "^feat(\(.*\))?!:|BREAKING CHANGE"; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qiE "^feat(\(.*\))?:"; then
+            BUMP="minor"
+          elif echo "$COMMITS" | grep -qiE "^fix(\(.*\))?:"; then
+            BUMP="patch"
+          fi
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        if: steps.bump.outputs.bump != 'none'
+        id: version
+        run: |
+          CURRENT=$(grep '__version__' auto_edit/_version.py | sed 's/.*"\(.*\)".*/\1/')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "${{ steps.bump.outputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "__version__ = \"$NEW_VERSION\"" > auto_edit/_version.py
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add auto_edit/_version.py
+          git commit -m "chore: bump version to $VERSION [skip ci]"
+          git tag "v$VERSION"
+          git push origin main --tags
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.bump != 'none'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LATEST_TAG="${{ steps.bump.outputs.latest_tag }}"
+
+          NOTES=$(git log "$LATEST_TAG"..HEAD~1 --pretty=format:"- %s" 2>/dev/null || echo "- Initial release")
+
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "$NOTES" \
+            --latest
