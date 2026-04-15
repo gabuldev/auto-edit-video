@@ -155,7 +155,7 @@ def finalize(workspace: Path) -> Path:
     import shutil
 
     pipeline = load(workspace)
-    output_dir = Path("output")
+    output_dir = workspace.parent / "output"
     output_dir.mkdir(exist_ok=True)
 
     # Determine final video file
