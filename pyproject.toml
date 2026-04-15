@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auto-edit-video"
-version = "0.1.0"
+dynamic = ["version"]
 description = "AI-powered video editing CLI (Claude Code or Cursor Agent for planner agents)"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,6 +24,9 @@ mcp = ["mcp>=1.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.version]
+path = "auto_edit/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["auto_edit"]

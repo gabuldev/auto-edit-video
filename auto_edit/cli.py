@@ -14,7 +14,15 @@ from rich.console import Console
 from rich.table import Table
 
 from auto_edit import pipeline as pl
+from auto_edit._version import __version__
 from auto_edit.workspace import get_workspace, init_workspace, get_status_table
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"auto-edit {__version__}")
+        raise typer.Exit()
+
 
 app = typer.Typer(
     name="auto-edit",
@@ -22,6 +30,18 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """AI-powered video editing using Claude Code agents."""
+
+
 console = Console()
 
 def _repo_root() -> Path:
