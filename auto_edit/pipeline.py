@@ -116,6 +116,16 @@ def loop_back(workspace: Path) -> dict:
         if pipeline["stages"].get(stage, {}).get("status") != "skip":
             pipeline["stages"][stage] = {"status": "pending"}
 
+    # Clean stale intermediary files so they get regenerated with new cuts
+    for stale in [
+        "post_cut_transcription.json",
+        "captions.ass",
+        "captions.srt",
+    ]:
+        p = workspace / stale
+        if p.exists():
+            p.unlink()
+
     pipeline["current_stage"] = "plan"
     save(workspace, pipeline)
     return pipeline

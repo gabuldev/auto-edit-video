@@ -37,9 +37,13 @@ def _get_video_codec() -> tuple[str, list[str]]:
     return "libx264", ["-crf", "23", "-preset", "fast"]
 
 
+SHORT_TARGET = (1080, 1920)  # 9:16
+
+
 def execute(workspace: Path) -> None:
     pipeline = json.loads((workspace / "pipeline.json").read_text())
     video_path = Path(pipeline["video_path"])
+    video_type = pipeline.get("type", "short")
     duration = _get_duration(video_path)
 
     reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
@@ -53,8 +57,19 @@ def execute(workspace: Path) -> None:
     for i, (s, e) in enumerate(kept):
         print(f"  [{i+1}] {s:.2f}s → {e:.2f}s  ({e-s:.2f}s)")
 
+    # Detect if short needs aspect ratio conversion
+    reframe = None
+    if video_type == "short":
+        w, h = _get_video_dimensions(video_path)
+        target_w, target_h = SHORT_TARGET
+        target_ratio = target_w / target_h  # 0.5625
+        source_ratio = w / h
+        if abs(source_ratio - target_ratio) > 0.02:
+            reframe = (target_w, target_h)
+            print(f"[executor] Reframing {w}x{h} ({source_ratio:.3f}) → {target_w}x{target_h} (9:16)")
+
     output = workspace / "edited_video.mp4"
-    _run_ffmpeg_cuts(video_path, kept, output)
+    _run_ffmpeg_cuts(video_path, kept, output, reframe=reframe)
     print(f"[executor] Done → {output}")
 
 
@@ -169,7 +184,24 @@ def _get_duration(video: Path) -> float:
     return float(result.stdout.strip())
 
 
-def _build_filter(intervals: list[tuple[float, float]]) -> str:
+def _get_video_dimensions(video: Path) -> tuple[int, int]:
+    """Return (width, height) of the first video stream."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0",
+        str(video),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    w, h = result.stdout.strip().split(",")
+    return int(w), int(h)
+
+
+def _build_filter(
+    intervals: list[tuple[float, float]],
+    reframe: tuple[int, int] | None = None,
+) -> str:
     parts = []
     concat_inputs = ""
     for i, (start, end) in enumerate(intervals):
@@ -177,14 +209,30 @@ def _build_filter(intervals: list[tuple[float, float]]) -> str:
         parts.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{i}]")
         concat_inputs += f"[v{i}][a{i}]"
     n = len(intervals)
-    parts.append(f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa_raw]")
+
+    if reframe:
+        tw, th = reframe
+        # concat → crop to target aspect ratio (center) → scale to target size
+        parts.append(f"{concat_inputs}concat=n={n}:v=1:a=1[concatv][outa_raw]")
+        parts.append(
+            f"[concatv]crop=ih*{tw}/{th}:ih:(iw-ih*{tw}/{th})/2:0,"
+            f"scale={tw}:{th}:flags=lanczos[outv]"
+        )
+    else:
+        parts.append(f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa_raw]")
+
     # Normalize audio loudness after concatenation (EBU R128)
     parts.append("[outa_raw]loudnorm=I=-16:TP=-1.5:LRA=11[outa]")
     return ";".join(parts)
 
 
-def _run_ffmpeg_cuts(video: Path, intervals: list[tuple[float, float]], output: Path) -> None:
-    filter_str = _build_filter(intervals)
+def _run_ffmpeg_cuts(
+    video: Path,
+    intervals: list[tuple[float, float]],
+    output: Path,
+    reframe: tuple[int, int] | None = None,
+) -> None:
+    filter_str = _build_filter(intervals, reframe=reframe)
     codec, codec_flags = _get_video_codec()
 
     base_cmd = [

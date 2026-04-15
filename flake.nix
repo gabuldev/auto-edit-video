@@ -95,34 +95,43 @@
 
             # ── 1. Virtual environment ────────────────────────────────────────
             if [ ! -d .venv ]; then
-              echo -e "''${YELLOW}[1/4] Creating virtual environment (Python 3.13)...''${RESET}"
+              echo -e "''${YELLOW}[1/5] Creating virtual environment (Python 3.13)...''${RESET}"
               uv venv --python ${python}/bin/python .venv --quiet
             else
-              echo -e "''${GREEN}[1/4] Virtual environment already exists''${RESET}"
+              echo -e "''${GREEN}[1/5] Virtual environment already exists''${RESET}"
             fi
 
             source .venv/bin/activate
 
             # ── 2. Python package (auto-edit + deps) ──────────────────────────
             if ! python -c "import auto_edit" 2>/dev/null; then
-              echo -e "''${YELLOW}[2/4] Installing auto-edit-video and dependencies...''${RESET}"
+              echo -e "''${YELLOW}[2/5] Installing auto-edit-video and dependencies...''${RESET}"
               uv pip install -e . --quiet
             else
-              echo -e "''${GREEN}[2/4] auto-edit-video already installed''${RESET}"
+              echo -e "''${GREEN}[2/5] auto-edit-video already installed''${RESET}"
             fi
 
             # ── 3. Whisper + PyTorch (large download, only once) ──────────────
             if ! python -c "import whisper" 2>/dev/null; then
-              echo -e "''${YELLOW}[3/4] Installing openai-whisper + PyTorch...''${RESET}"
+              echo -e "''${YELLOW}[3/5] Installing openai-whisper + PyTorch...''${RESET}"
               echo    "      (first time only — PyTorch is ~2GB, grab a coffee)"
               uv pip install openai-whisper
               echo -e "''${GREEN}      Whisper installed''${RESET}"
             else
-              echo -e "''${GREEN}[3/4] openai-whisper already installed''${RESET}"
+              echo -e "''${GREEN}[3/5] openai-whisper already installed''${RESET}"
             fi
 
-            # ── 4. Validate all dependencies ─────────────────────────────────
-            echo -e "''${YELLOW}[4/4] Validating environment...''${RESET}"
+            # ── 4. Thumbnail fonts (download once) ───────────────────────────
+            FONTS_DIR="assets/thumbnails/fonts"
+            if [ -d "$FONTS_DIR" ] && [ "$(ls -1 "$FONTS_DIR"/*.ttf 2>/dev/null | wc -l)" -ge 3 ]; then
+              echo -e "''${GREEN}[4/5] Thumbnail fonts already downloaded''${RESET}"
+            else
+              echo -e "''${YELLOW}[4/5] Downloading thumbnail fonts...''${RESET}"
+              python tools/download_fonts.py 2>&1 | sed 's/^/      /'
+            fi
+
+            # ── 5. Validate all dependencies ─────────────────────────────────
+            echo -e "''${YELLOW}[5/5] Validating environment...''${RESET}"
 
             OK=true
 

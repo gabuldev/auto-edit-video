@@ -16,7 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
@@ -66,22 +67,40 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+PREFERRED_FONTS = [
+    "Montserrat",         # Modern geometric bold
+    "ProtestGuerrilla",   # Bold display (CapCut style)
+    "BebasNeue",          # Tall condensed display
+    "Anton",              # Heavy impact
+    "Oswald",             # Clean condensed
+]
+
+
 def _find_font() -> Path | None:
-    """Find a bold TTF font in assets/thumbnails/fonts/."""
+    """Find a bold TTF font in assets/thumbnails/fonts/, preferring display fonts."""
     dirs = []
     env = os.environ.get("AUTO_EDIT_ASSETS_FONTS")
     if env:
         dirs.append(Path(env))
     dirs.append(_repo_root() / "assets" / "thumbnails" / "fonts")
 
+    all_fonts: list[Path] = []
     for d in dirs:
         if not d.is_dir():
             continue
-        for f in sorted(d.glob("*.ttf")):
-            return f
-        for f in sorted(d.glob("*.otf")):
-            return f
-    return None
+        all_fonts.extend(d.glob("*.ttf"))
+        all_fonts.extend(d.glob("*.otf"))
+
+    if not all_fonts:
+        return None
+
+    # Try preferred fonts first
+    for pref in PREFERRED_FONTS:
+        for f in all_fonts:
+            if pref.lower() in f.stem.lower():
+                return f
+
+    return sorted(all_fonts)[0]
 
 
 def _find_face_asset() -> Path | None:
@@ -153,6 +172,36 @@ def _crop_center(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
 # ── Background generators ──────────────────────────────────────────────────
 
 
+def _stylize_frame_bg(img: Image.Image) -> Image.Image:
+    """Turn a raw video frame into a styled thumbnail background.
+
+    Applies blur, saturation boost, darkening, and vignette so the frame
+    looks like a designed background rather than a screenshot.
+    """
+    # 1. Gaussian blur — bokeh effect
+    img = img.filter(ImageFilter.GaussianBlur(radius=15))
+
+    # 2. Boost saturation — more vivid colors
+    img = ImageEnhance.Color(img).enhance(1.4)
+
+    # 3. Darken — better contrast with white text
+    img = ImageEnhance.Brightness(img).enhance(0.55)
+
+    # 4. Vignette — darken edges via radial gradient mask
+    w, h = img.size
+    # Build small vignette mask then upscale (fast)
+    sw, sh = 64, 64
+    y_arr, x_arr = np.mgrid[0:sh, 0:sw]
+    cx, cy = sw / 2, sh / 2
+    dist = np.sqrt((x_arr - cx) ** 2 + (y_arr - cy) ** 2) / np.sqrt(cx ** 2 + cy ** 2)
+    alpha = np.clip(180 * dist ** 1.8, 0, 255).astype(np.uint8)
+    mask = Image.fromarray(alpha, mode="L").resize((w, h), Image.LANCZOS)
+    black = Image.new("RGB", (w, h), (0, 0, 0))
+    img = img.convert("RGB")
+    img = Image.composite(black, img, mask)
+    return img
+
+
 def _generate_gradient_bg(width: int, height: int, style_hint: str) -> Image.Image:
     """Generate a vertical gradient background as fallback."""
     style = STYLE_MAP.get(style_hint, STYLE_MAP[DEFAULT_STYLE])
@@ -222,27 +271,64 @@ def _generate_imagen_bg(
 # ── Text rendering ──────────────────────────────────────────────────────────
 
 
-def _auto_size_font(
-    font_path: Path | None, text: str, max_width: int, max_size: int = 120, min_size: int = 32
-) -> ImageFont.FreeTypeFont:
-    """Find the largest font size where text fits within max_width."""
-    for size in range(max_size, min_size - 1, -2):
-        if font_path:
-            font = ImageFont.truetype(str(font_path), size)
+def _load_font(font_path: Path | None, size: int) -> ImageFont.FreeTypeFont:
+    """Load font at given size, setting bold weight for variable fonts."""
+    if font_path:
+        font = ImageFont.truetype(str(font_path), size)
+        # Set variable font to bold/extrabold weight if supported
+        try:
+            axes = font.get_variation_axes()
+            for axis in axes:
+                if axis["name"] == b"Weight":
+                    # Use 800 (ExtraBold) or max available
+                    bold_weight = min(800, axis["maximum"])
+                    font.set_variation_by_axes([bold_weight])
+                    break
+        except Exception:
+            pass
+        return font
+    try:
+        return ImageFont.truetype("Arial Bold", size)
+    except OSError:
+        return ImageFont.load_default(size=size)
+
+
+def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+    """Split text into lines that fit within max_width."""
+    words = text.split()
+    if not words:
+        return [text]
+
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        test = current + " " + word
+        bbox = font.getbbox(test)
+        if bbox[2] - bbox[0] <= max_width:
+            current = test
         else:
-            try:
-                font = ImageFont.truetype("Arial Bold", size)
-            except OSError:
-                font = ImageFont.load_default(size=size)
-        bbox = font.getbbox(text)
-        text_width = bbox[2] - bbox[0]
-        if text_width <= max_width:
-            return font
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def _auto_size_font(
+    font_path: Path | None, text: str, max_width: int,
+    max_size: int = 120, min_size: int = 32, max_lines: int = 2,
+) -> tuple[ImageFont.FreeTypeFont, list[str]]:
+    """Find the largest font size where text fits within max_width in max_lines lines.
+    Returns (font, lines)."""
+    for size in range(max_size, min_size - 1, -2):
+        font = _load_font(font_path, size)
+        lines = _wrap_text(text, font, max_width)
+        if len(lines) <= max_lines:
+            return font, lines
 
     # Return minimum size
-    if font_path:
-        return ImageFont.truetype(str(font_path), min_size)
-    return ImageFont.load_default(size=min_size)
+    font = _load_font(font_path, min_size)
+    lines = _wrap_text(text, font, max_width)
+    return font, lines
 
 
 def _draw_text_with_outline(
@@ -271,6 +357,25 @@ def _draw_text_with_outline(
     )
 
 
+def _draw_dark_band(img: Image.Image, center_y: int, band_height: int) -> Image.Image:
+    """Draw a horizontal dark gradient band behind text for readability."""
+    img = img.convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    half = band_height // 2
+    top = max(0, center_y - half)
+    bottom = min(img.height, center_y + half)
+
+    for y in range(top, bottom):
+        dist = abs(y - center_y) / max(half, 1)
+        alpha = int(160 * (1 - dist ** 1.5))
+        alpha = max(0, min(255, alpha))
+        draw.line([(0, y), (img.width, y)], fill=(0, 0, 0, alpha))
+
+    return Image.alpha_composite(img, overlay)
+
+
 def _draw_thumbnail_text(
     img: Image.Image,
     main_text: str,
@@ -278,50 +383,83 @@ def _draw_thumbnail_text(
     style_hint: str,
     position: str = "center",
 ) -> Image.Image:
-    """Overlay main_text (and optional sub_text) onto the image.
-
-    position: "center" (for shorts) or "upper" (for longs, to avoid face area)
-    """
-    style = STYLE_MAP.get(style_hint, STYLE_MAP[DEFAULT_STYLE])
+    """Overlay main_text (and optional sub_text) onto the image."""
     img = img.convert("RGBA")
-
-    # Apply tint overlay for better text readability
-    tint = Image.new("RGBA", img.size, style["tint"])
-    img = Image.alpha_composite(img, tint)
-
-    draw = ImageDraw.Draw(img)
     font_path = _find_font()
+    w, h = img.size
 
     main_text = main_text.upper()
-    max_text_width = int(img.width * 0.80)
+    max_text_width = int(w * 0.90)
 
-    # Main text
-    main_font = _auto_size_font(font_path, main_text, max_text_width, max_size=120, min_size=36)
-
-    if position == "upper":
-        main_y = int(img.height * 0.30)
-    else:
-        main_y = int(img.height * 0.45)
-
-    main_x = img.width // 2
-
-    _draw_text_with_outline(
-        draw, (main_x, main_y), main_text,
-        main_font, style["text"], style["outline"], outline_width=5,
+    # Main text — auto-size with word wrap (up to 2 lines)
+    main_font, main_lines = _auto_size_font(
+        font_path, main_text, max_text_width,
+        max_size=int(w * 0.14),  # ~150px on 1080w
+        min_size=int(w * 0.05),
+        max_lines=2,
     )
 
+    # Measure line height
+    sample_bbox = main_font.getbbox("Ag")
+    line_h = sample_bbox[3] - sample_bbox[1]
+    line_spacing = int(line_h * 0.15)
+
+    # Total main block height
+    main_block_h = line_h * len(main_lines) + line_spacing * (len(main_lines) - 1)
+
     # Sub text
+    sub_font = None
+    sub_lines = []
+    sub_line_h = 0
     if sub_text:
         sub_text = sub_text.upper()
-        sub_font = _auto_size_font(font_path, sub_text, max_text_width, max_size=60, min_size=24)
-        main_bbox = main_font.getbbox(main_text)
-        main_height = main_bbox[3] - main_bbox[1]
-        sub_y = main_y + main_height // 2 + 30
-
-        _draw_text_with_outline(
-            draw, (main_x, sub_y), sub_text,
-            sub_font, style["text"], style["outline"], outline_width=3,
+        sub_font, sub_lines = _auto_size_font(
+            font_path, sub_text, max_text_width,
+            max_size=int(w * 0.07),
+            min_size=int(w * 0.035),
+            max_lines=1,
         )
+        sub_bbox = sub_font.getbbox("Ag")
+        sub_line_h = sub_bbox[3] - sub_bbox[1]
+
+    # Total text block height
+    gap = int(line_h * 0.3) if sub_lines else 0
+    total_h = main_block_h + gap + (sub_line_h if sub_lines else 0)
+
+    # Vertical position
+    if position == "upper":
+        block_top = int(h * 0.20)
+    else:
+        block_top = int(h * 0.45) - total_h // 2
+
+    center_x = w // 2
+
+    # Dark band behind text
+    band_center = block_top + total_h // 2
+    img = _draw_dark_band(img, band_center, total_h + int(line_h * 1.2))
+
+    draw = ImageDraw.Draw(img)
+    outline_w = max(6, int(line_h * 0.08))
+
+    # Draw main text lines
+    y = block_top
+    for line in main_lines:
+        _draw_text_with_outline(
+            draw, (center_x, y + line_h // 2), line,
+            main_font, (255, 255, 255), (0, 0, 0), outline_width=outline_w,
+        )
+        y += line_h + line_spacing
+
+    # Draw sub text
+    if sub_lines and sub_font:
+        y += gap
+        sub_outline = max(4, int(sub_line_h * 0.08))
+        for line in sub_lines:
+            _draw_text_with_outline(
+                draw, (center_x, y + sub_line_h // 2), line,
+                sub_font, (255, 255, 255), (0, 0, 0), outline_width=sub_outline,
+            )
+            y += sub_line_h
 
     return img.convert("RGB")
 
@@ -373,40 +511,126 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
     w, h = LONG_SIZE
 
-    # Try Gemini Imagen, fallback to gradient
+    # Background: try Imagen → frame from video → gradient (last resort)
     bg = _generate_imagen_bg(w, h, style_hint, context)
-    if bg is None:
-        print("[thumbnailer] Using gradient fallback for background")
-        bg = _generate_gradient_bg(w, h, style_hint)
 
+    if bg is None:
+        # Fallback: use a frame from the video (same as shorts)
+        transcription_path = workspace / "transcription.json"
+        transcription = json.loads(transcription_path.read_text()) if transcription_path.exists() else {}
+        peak_time = _find_energy_peak(transcription)
+        video_path = pipeline["video_path"]
+        frame_path = workspace / "thumb_frame_long.jpg"
+
+        try:
+            _extract_frame(video_path, peak_time, frame_path)
+            bg = _stylize_frame_bg(Image.open(frame_path))
+            print("[thumbnailer] Using stylized video frame as background")
+            frame_path.unlink(missing_ok=True)
+        except Exception:
+            print("[thumbnailer] Frame extraction failed — using gradient fallback")
+            bg = _generate_gradient_bg(w, h, style_hint)
+
+    bg = _crop_center(bg, w, h)
     img = bg.convert("RGBA")
 
     # Composite face asset if available
     face_path = _find_face_asset()
+    has_face = False
     if face_path:
         face = Image.open(face_path).convert("RGBA")
-        # Resize face to ~45% of thumbnail height
-        face_h = int(h * 0.45)
+        face_h = int(h * 0.60)
         face_ratio = face.width / face.height
         face_w = int(face_h * face_ratio)
         face = face.resize((face_w, face_h), Image.LANCZOS)
 
         # Position: bottom-right
-        face_x = w - face_w + int(face_w * 0.05)  # slight overflow right
+        face_x = w - face_w + int(face_w * 0.05)
         face_y = h - face_h
         img.paste(face, (face_x, face_y), face)
+        has_face = True
         print(f"[thumbnailer] Face composited from {face_path.name}")
-    else:
-        print("[thumbnailer] No face asset found — skipping face composite")
 
-    # Overlay title text in upper area (avoid face)
+    # Text position: upper if face present, center otherwise
+    text_pos = "upper" if has_face else "center"
+
     img_rgb = img.convert("RGB")
-    img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, style_hint, position="upper")
+    img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, style_hint, position=text_pos)
 
     output = workspace / "thumbnail.png"
     img_rgb.save(output, "PNG", quality=95)
     print(f"[thumbnailer] Long thumbnail → {output}")
     return output
+
+
+# ── Cover frame embedding ───────────────────────────────────────────────────
+
+
+def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
+    """Prepend the thumbnail as a brief still frame at the start of the final video.
+
+    This makes platforms like YouTube Shorts and Instagram pick it up
+    as the cover/thumbnail automatically (since they use the first frame).
+    """
+    # Find the final video (captioned > overlaid > edited)
+    for name in ["captioned_video.mp4", "overlaid_video.mp4", "edited_video.mp4"]:
+        video_path = workspace / name
+        if video_path.exists():
+            break
+    else:
+        print("[thumbnailer] No video found to embed cover frame — skipping")
+        return
+
+    # Get video specs (fps, resolution, audio sample rate) to match
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=r_frame_rate,width,height",
+        "-of", "csv=p=0", str(video_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    parts = result.stdout.strip().split(",")
+    vid_w, vid_h = int(parts[0]), int(parts[1])
+    fps_str = parts[2]  # e.g. "30/1"
+
+    # Create a short video clip from the thumbnail image (0.1s)
+    cover_clip = workspace / "thumb_cover.mp4"
+    # Scale thumbnail to match video dimensions, generate 0.1s of silent video
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", str(thumb_path),
+        "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+        "-t", "0.1",
+        "-vf", f"scale={vid_w}:{vid_h}:flags=lanczos,format=yuv420p",
+        "-r", fps_str,
+        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        str(cover_clip),
+    ]
+    subprocess.run(cmd, capture_output=True, check=True)
+
+    # Concat: cover clip + original video
+    concat_list = workspace / "thumb_concat.txt"
+    concat_list.write_text(
+        f"file '{cover_clip.resolve()}'\nfile '{video_path.resolve()}'\n"
+    )
+
+    output = workspace / "cover_video.mp4"
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", str(concat_list),
+        "-c", "copy",
+        str(output),
+    ]
+    subprocess.run(cmd, capture_output=True, check=True)
+
+    # Replace the original video with the cover version
+    output.replace(video_path)
+    print(f"[thumbnailer] Cover frame embedded into {video_path.name}")
+
+    # Cleanup temp files
+    cover_clip.unlink(missing_ok=True)
+    concat_list.unlink(missing_ok=True)
 
 
 # ── Entry point ─────────────────────────────────────────────────────────────
@@ -426,9 +650,12 @@ def thumbnail(workspace: Path) -> None:
     video_type = pipeline.get("type", "short")
 
     if video_type == "short":
-        _thumbnail_short(workspace, metadata, pipeline)
+        thumb = _thumbnail_short(workspace, metadata, pipeline)
     else:
-        _thumbnail_long(workspace, metadata, pipeline)
+        thumb = _thumbnail_long(workspace, metadata, pipeline)
+
+    # Embed thumbnail as first frame so platforms pick it up as cover
+    _embed_cover_frame(workspace, thumb)
 
 
 if __name__ == "__main__":
