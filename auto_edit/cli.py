@@ -816,20 +816,24 @@ def _setup_gemini() -> None:
     gemini_dir.mkdir(exist_ok=True)
 
     gemini_md = gemini_dir / "GEMINI.md"
-    marker = "# auto-edit — AI Video Editing CLI"
+    begin = "<!-- BEGIN auto-edit -->"
+    end = "<!-- END auto-edit -->"
+    block = f"{begin}\n{_AUTO_EDIT_INSTRUCTIONS}{end}\n"
 
     if gemini_md.exists():
         content = gemini_md.read_text()
-        if marker in content:
-            # Replace existing auto-edit section
-            before = content.split(marker)[0].rstrip()
-            gemini_md.write_text(before + "\n\n" + _AUTO_EDIT_INSTRUCTIONS if before else _AUTO_EDIT_INSTRUCTIONS)
+        if begin in content and end in content:
+            before = content.split(begin)[0].rstrip()
+            after = content.split(end)[1]
+            gemini_md.write_text((before + "\n\n" if before else "") + block + after.lstrip("\n"))
             console.print(f"[green]✓[/green] Updated auto-edit section in {gemini_md}")
-        else:
-            gemini_md.write_text(content.rstrip() + "\n\n" + _AUTO_EDIT_INSTRUCTIONS)
+        elif begin not in content:
+            gemini_md.write_text(content.rstrip() + "\n\n" + block)
             console.print(f"[green]✓[/green] Appended auto-edit instructions to {gemini_md}")
+        else:
+            console.print(f"[yellow]⚠[/yellow] Found {begin} but no {end} in {gemini_md} — please fix manually")
     else:
-        gemini_md.write_text(_AUTO_EDIT_INSTRUCTIONS)
+        gemini_md.write_text(block)
         console.print(f"[green]✓[/green] Created {gemini_md}")
 
 
