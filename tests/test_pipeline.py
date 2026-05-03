@@ -58,6 +58,18 @@ class TestInit:
         p = pl.load(workspace)
         assert p["whisper_model"] == "base"  # default from init params
 
+    def test_plan_id_default_none(self, workspace):
+        p = pl.load(workspace)
+        assert p["plan_id"] is None
+
+    def test_plan_id_persisted(self, tmp_path):
+        ws = tmp_path / "linked_ws"
+        ws.mkdir()
+        video = tmp_path / "v.mp4"
+        video.write_text("")
+        pl.init(ws, video, "short", "ctx", plan_id="2026-W19/S2")
+        assert pl.load(ws)["plan_id"] == "2026-W19/S2"
+
 
 class TestSetStageStatus:
     def test_mark_complete_advances(self, workspace):

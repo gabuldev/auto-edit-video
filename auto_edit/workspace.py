@@ -8,9 +8,16 @@ from pathlib import Path
 from auto_edit import pipeline as pl
 
 
-def get_workspace(video_path: Path) -> Path:
-    """Return workspace path for a video (may not exist yet)."""
+def get_workspace(video_path: Path, plan_id: str | None = None) -> Path:
+    """Return workspace path for a video (may not exist yet).
+
+    With a plan_id like "2026-W19/S2", workspace is namespaced as
+    workspace/<period>_<item>_<stem>/ so it's easy to spot visually.
+    """
     root = Path("workspace")
+    if plan_id:
+        slug = plan_id.replace("/", "_")
+        return root / f"{slug}_{video_path.stem}"
     return root / video_path.stem
 
 
@@ -22,9 +29,10 @@ def init_workspace(
     max_iterations: int = 3,
     caption_style: dict | None = None,
     language: str = "pt",
+    plan_id: str | None = None,
 ) -> Path:
     """Create workspace directory and initial pipeline.json. Returns workspace path."""
-    ws = get_workspace(video_path)
+    ws = get_workspace(video_path, plan_id=plan_id)
     ws.mkdir(parents=True, exist_ok=True)
 
     pl.init(
@@ -36,6 +44,7 @@ def init_workspace(
         max_iterations=max_iterations,
         caption_style=caption_style or {},
         language=language,
+        plan_id=plan_id,
     )
     return ws
 
