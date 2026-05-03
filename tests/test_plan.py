@@ -1,7 +1,7 @@
 """Tests for auto_edit/plan.py — pure functions only (no LLM, no interactive prompts)."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
