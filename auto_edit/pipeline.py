@@ -28,6 +28,7 @@ def init(
     max_iterations: int = 3,
     caption_style: dict | None = None,
     language: str = "pt",
+    plan_id: str | None = None,
 ) -> dict:
     """Create initial pipeline.json. Returns the pipeline dict."""
     stages = {}
@@ -53,6 +54,7 @@ def init(
         "current_stage": "extract",
         "evaluator_feedback": None,
         "caption_style": caption_style or {},
+        "plan_id": plan_id,
         "stages": stages,
         "created_at": _now(),
     }

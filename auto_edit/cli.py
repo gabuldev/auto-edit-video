@@ -14,7 +14,9 @@ from rich.console import Console
 from rich.table import Table
 
 from auto_edit import pipeline as pl
+from auto_edit import plan as plan_mod
 from auto_edit._version import __version__
+from auto_edit.plan import plan_app
 from auto_edit.workspace import get_workspace, init_workspace, get_status_table
 
 
@@ -30,6 +32,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+app.add_typer(plan_app, name="plan")
 
 
 @app.callback(invoke_without_command=True)
@@ -121,6 +125,22 @@ def _resolve_llm(
     return primary, fb
 
 
+def _resolve_plan(plan_id: Optional[str], no_prompt: bool, resume_from: Optional[str]) -> Optional[str]:
+    """Convert raw --plan-id flag to canonical id, or interactively pick one."""
+    if resume_from:
+        # When resuming, plan_id is already in pipeline.json — don't override.
+        return None
+    if plan_id:
+        return plan_mod.resolve_plan_id_arg(plan_id)
+    if no_prompt:
+        return None
+    # No flag, no opt-out — offer interactive picker if there are pending items.
+    pending = plan_mod.pending_items()
+    if not pending:
+        return None
+    return plan_mod.prompt_for_plan_id()
+
+
 def _run_pipeline(
     video: Path,
     video_type: str,
@@ -133,12 +153,13 @@ def _run_pipeline(
     cli_fallback: Optional[str] = None,
     dry_run: bool = False,
     language: str = "pt",
+    plan_id: Optional[str] = None,
 ) -> None:
     if not video.exists():
         console.print(f"[red]Error:[/red] File not found: {video}")
         raise typer.Exit(1)
 
-    ws = get_workspace(video)
+    ws = get_workspace(video, plan_id=plan_id)
 
     if resume_from:
         if not (ws / "pipeline.json").exists():
@@ -156,6 +177,7 @@ def _run_pipeline(
             max_iterations=max_iterations,
             caption_style=caption_style or {},
             language=language,
+            plan_id=plan_id,
         )
 
     console.print(f"[cyan]Type:[/cyan] {video_type}")
@@ -163,6 +185,8 @@ def _run_pipeline(
     console.print(f"[cyan]Whisper model:[/cyan] {whisper_model}")
     console.print(f"[cyan]Language:[/cyan] {language}")
     console.print(f"[cyan]Workspace:[/cyan] {ws}")
+    if plan_id:
+        console.print(f"[cyan]Plan slot:[/cyan] {plan_id}")
     primary, fb = _resolve_llm(cli, cli_fallback)
     env = os.environ.copy()
     env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
@@ -227,6 +251,8 @@ def short(
     font_size: int = typer.Option(14, "--font-size", help="Caption font size (default 14)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run only through review stage — shows cut plan without executing FFmpeg."),
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
+    plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'S2' or '2026-W19/S2'). Use 'none' to skip prompt."),
+    no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
 ) -> None:
     """Edit a short-form video (adds captions, generates Reels/Shorts metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -237,6 +263,7 @@ def short(
         "color_highlight": highlight_color,
         "font_size": font_size,
     }
+    pid = _resolve_plan(plan_id, no_plan_prompt, resume_from)
     _run_pipeline(
         video,
         "short",
@@ -249,6 +276,7 @@ def short(
         cli_fallback=cli_fallback,
         dry_run=dry_run,
         language=language,
+        plan_id=pid,
     )
 
 
@@ -271,11 +299,14 @@ def long(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run only through review stage — shows cut plan without executing FFmpeg."),
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
+    plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'L1' or '2026-W19/L1'). Use 'none' to skip prompt."),
+    no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
         console.print(f"[red]Invalid model.[/red] Choose from: {', '.join(VALID_MODELS)}")
         raise typer.Exit(1)
+    pid = _resolve_plan(plan_id, no_plan_prompt, resume_from)
     _run_pipeline(
         video,
         "long",
@@ -287,6 +318,7 @@ def long(
         cli_fallback=cli_fallback,
         dry_run=dry_run,
         language=language,
+        plan_id=pid,
     )
 
 
@@ -370,6 +402,8 @@ def merge(
     highlight_color: str = typer.Option("&H0045FF&", "--highlight-color"),
     font_size: int = typer.Option(14, "--font-size"),
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
+    plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link merged video to a plan slot (e.g. 'S2' or '2026-W19/S2')."),
+    no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
 ) -> None:
     """Concatenate all videos in a folder into one, then run the pipeline."""
     if video_type not in ("short", "long"):
@@ -488,6 +522,7 @@ def merge(
         "font_size": font_size,
     } if video_type == "short" else None
 
+    pid = _resolve_plan(plan_id, no_plan_prompt, None)
     _run_pipeline(
         merged_path,
         video_type,
@@ -499,6 +534,7 @@ def merge(
         cli=cli,
         cli_fallback=cli_fallback,
         language=language,
+        plan_id=pid,
     )
 
 

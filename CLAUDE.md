@@ -18,6 +18,12 @@ auto-edit batch upload/ --type short --context "vlogs de viagem"
 auto-edit status video.mp4
 auto-edit resume video.mp4 --from plan
 auto-edit doctor
+
+# Plan (planejamento de conteúdo — semanal/mensal)
+auto-edit plan new -w next -c "..." -s "..."
+auto-edit plan show           # default: semana atual
+auto-edit plan status         # progresso vs datas
+auto-edit plan ingest --run   # parear pastas com slots e editar tudo
 ```
 
 ## Pipeline
@@ -59,6 +65,8 @@ Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iteraç
 | `AUTO_EDIT_LLM_FALLBACK` | — | CLI fallback se primário falhar |
 | `AUTO_EDIT_END_PADDING` | `0.2` | Segundos adicionados ao final de cada segmento mantido |
 | `AUTO_EDIT_LANGUAGE` | `pt` | Idioma do áudio para transcrição |
+| `AUTO_EDIT_HOME` | `~/.auto-edit` | Diretório de profile + plans (fora do repo) |
+| `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
 
 ## Slash Commands Disponíveis

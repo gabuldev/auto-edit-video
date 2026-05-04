@@ -131,6 +131,106 @@ auto-edit resume upload/meu-video.mp4 --from extract --whisper-model medium
 auto-edit status upload/meu-video.mp4
 ```
 
+## Planejamento de conteúdo (`auto-edit plan`)
+
+Além de editar, o auto-edit ajuda a **planejar** o que tu vai postar. Plans semanais ou mensais geram tópicos (longs + shorts), datas de gravação/publicação e talking points — usando IA + um perfil livre que tu escreve sobre teu canal.
+
+O fluxo fecha o loop entre **planejamento → gravação → edição**: cada vídeo editado é vinculado a um slot do plano, e o `status` cruza isso com as datas pra dizer o que tá pronto, atrasado ou pendente.
+
+### Setup (uma vez)
+
+```bash
+# Criar diretório e templates
+auto-edit plan path
+
+# Editar teu perfil (texto livre — o planner usa como contexto)
+$EDITOR ~/.auto-edit/profile/identity.md
+$EDITOR ~/.auto-edit/profile/channel_history.md
+
+# (Opcional) apontar pra pasta onde tu joga as gravações
+export AUTO_EDIT_INBOX="/Volumes/XPG/Movies/precisa-editar"
+```
+
+### Gerar um plano
+
+```bash
+# Plano semanal (3 longs + 6 shorts por padrão)
+auto-edit plan new -w next \
+  -c "essa semana: foco em IA + 3D" \
+  -s "long sobre auto-edit pipeline; setup Bambulab"
+
+# Plano mensal (12 + 24)
+auto-edit plan new -m next -c "..." -s "..."
+
+# Atalhos
+auto-edit plan new -w current      # semana atual
+auto-edit plan new -m 2026-06      # mês explícito
+```
+
+### Ver, editar, listar
+
+```bash
+auto-edit plan show               # default: semana atual
+auto-edit plan show -w 2026-W19   # semana específica
+auto-edit plan edit               # abre yaml no $EDITOR
+auto-edit plan list               # todos os plans existentes
+```
+
+### Vincular vídeos ao plano (ingest)
+
+```bash
+# Lista slots pendentes, tu escolhe um, depois escolhe a pasta
+auto-edit plan ingest
+
+# Auto-pareia pastas nomeadas como 2026-W19_S2_xxx ou
+# que casam com o `source_folder` do yaml; o resto cai no interativo
+auto-edit plan ingest --run    # já edita tudo no fim
+```
+
+### Acompanhar progresso
+
+```bash
+auto-edit plan status            # default: semana atual
+auto-edit plan status --all      # todos os plans
+```
+
+| Status | Quando |
+|---|---|
+| `planned` | Nenhum workspace existe vinculado ao slot |
+| `recorded` | Workspace existe, pipeline em andamento |
+| `edited` | Pipeline terminou |
+| `published` | Tu marcou manualmente no yaml |
+| ⚠ late | `publish_at < hoje` E ainda não foi editado |
+
+### Loop bidirecional (inbox → planner)
+
+Se `$AUTO_EDIT_INBOX` aponta pra uma pasta com subpastas de gravações, o `plan new` lê os nomes dessas subpastas e o planner sugere slots que **cobrem o que tu já filmou** — em vez de inventar tópicos do zero. Cada slot ganha um campo `source_folder` que o `ingest` usa pra parear automaticamente sem renomear.
+
+### Onde mora tudo
+
+```
+~/.auto-edit/                       # sobrescrito por $AUTO_EDIT_HOME
+├── profile/                        # markdowns livres lidos pelo planner
+│   ├── identity.md
+│   ├── channel_history.md
+│   └── ... (qualquer .md vai como contexto)
+└── plans/
+    ├── 2026-W19.yaml
+    └── 2026-06.yaml
+```
+
+Plans ficam fora do repo opensource — dado pessoal.
+
+### Vincular um vídeo direto (sem ingest)
+
+```bash
+auto-edit short video.mp4 --plan-id S2     # forma curta (se único)
+auto-edit short video.mp4 --plan-id 2026-W19/S2
+auto-edit merge folder/ --type long --plan-id L1
+```
+
+Sem `--plan-id`, se houver slots pendentes, a CLI pergunta interativamente. Use `--no-plan-prompt` pra desligar o prompt.
+
 ## Claude Code Extension
 
 ### MCP Server (recomendado)
@@ -207,8 +307,10 @@ export AUTO_EDIT_LLM_TIMEOUT=600  # timeout em segundos (default: 10min)
 ```
 auto-edit-video/
 ├── auto_edit/              # Core do pipeline
-│   ├── cli.py              # CLI (Typer) — 8 comandos
+│   ├── cli.py              # CLI (Typer) — comandos de edição
 │   ├── pipeline.py         # State machine (9 stages)
+│   ├── plan.py             # Subcomando `plan` (planejamento de conteúdo)
+│   ├── config.py           # Paths de ~/.auto-edit/
 │   ├── runner.py           # Builder de prompts + invocação LLM
 │   └── workspace.py        # Gestão de workspaces
 ├── agents/                 # Prompts dos agentes LLM (markdown)
@@ -216,7 +318,8 @@ auto-edit-video/
 │   ├── reviewer.md         # Regras de QA dos cortes
 │   ├── evaluator.md        # Regras de avaliação de qualidade
 │   ├── overlayer.md        # Regras de posicionamento de overlays
-│   └── metadata.md         # Regras de geração de metadados
+│   ├── metadata.md         # Regras de geração de metadados
+│   └── plan_month.md       # Regras de planejamento mensal/semanal
 ├── tools/                  # Ferramentas Python (FFmpeg/Whisper)
 │   ├── extract.py          # Transcrição + energia + correção IA
 │   ├── executor.py         # Cortes FFmpeg + loudnorm
