@@ -8,12 +8,13 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/auto-edit-video"
 VENV_DIR="$CACHE_DIR/venv"
 PKG_DIR="$(dirname "$(dirname "$(readlink -f "$0")")")/share/auto-edit-video"
 
-# ── Staleness check: rebuild venv when package changes or venv is broken ─────
-CURRENT_HASH="$(md5sum "$PKG_DIR/pyproject.toml" 2>/dev/null | cut -d' ' -f1 || md5 -q "$PKG_DIR/pyproject.toml" 2>/dev/null)"
-STORED_HASH="$(cat "$VENV_DIR/.pkg_hash" 2>/dev/null || true)"
+# ── Staleness check ─────────────────────────────────────────────────────────
+# Rebuild when: store path changed (nix upgrade), pyproject changed, or venv broken.
+CURRENT_PKG="$PKG_DIR"
+STORED_PKG="$(cat "$VENV_DIR/.pkg_path" 2>/dev/null || true)"
 NEEDS_SETUP=false
 
-if [ ! -d "$VENV_DIR" ] || [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+if [ ! -d "$VENV_DIR" ] || [ "$CURRENT_PKG" != "$STORED_PKG" ]; then
   NEEDS_SETUP=true
 elif ! "$VENV_DIR/bin/python" -c "import auto_edit" 2>/dev/null; then
   NEEDS_SETUP=true
@@ -27,9 +28,16 @@ if [ "$NEEDS_SETUP" = true ]; then
 
   mkdir -p "$CACHE_DIR"
 
-  # Recreate venv if python binary is missing or broken
-  if [ ! -x "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -c "pass" 2>/dev/null; then
-    rm -rf "$VENV_DIR"
+  # Nuke venv if store path changed (python binary points to old nix store)
+  # or if python is broken
+  if [ -d "$VENV_DIR" ]; then
+    if [ "$CURRENT_PKG" != "$STORED_PKG" ] || ! "$VENV_DIR/bin/python" -c "pass" 2>/dev/null; then
+      echo "  [0/3] Cleaning stale virtual environment..."
+      rm -rf "$VENV_DIR"
+    fi
+  fi
+
+  if [ ! -d "$VENV_DIR" ]; then
     echo "  [1/3] Creating virtual environment..."
     python3 -m venv "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --upgrade pip --quiet 2>/dev/null
@@ -47,8 +55,7 @@ if [ "$NEEDS_SETUP" = true ]; then
     echo "  [3/3] openai-whisper already installed"
   fi
 
-  echo "$CURRENT_HASH" > "$VENV_DIR/.pkg_hash"
-  echo "$PKG_DIR" > "$VENV_DIR/.pkg_path"
+  echo "$CURRENT_PKG" > "$VENV_DIR/.pkg_path"
   echo ""
   echo "  Setup complete! Running auto-edit..."
   echo ""
