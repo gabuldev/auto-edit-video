@@ -16,9 +16,12 @@
         # Wraps auto-edit with ffmpeg + python in PATH.
         # Python deps (whisper, torch) are pip-installed into a user-local
         # venv on first run — this avoids Nix-building PyTorch from source.
+        versionFile = builtins.readFile ./auto_edit/_version.py;
+        version = builtins.head (builtins.match ".*\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*" versionFile);
+
         auto-edit-pkg = pkgs.stdenv.mkDerivation {
           pname = "auto-edit-video";
-          version = "0.1.0";
+          inherit version;
           src = ./.;
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
