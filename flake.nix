@@ -104,9 +104,14 @@
             source .venv/bin/activate
 
             # ── 2. Python package (auto-edit + deps) ──────────────────────────
-            if ! python -c "import auto_edit" 2>/dev/null; then
+            PYPROJECT_HASH=$(md5sum pyproject.toml 2>/dev/null | cut -d' ' -f1 || md5 -q pyproject.toml 2>/dev/null)
+            STORED_HASH=""
+            [ -f .venv/.pyproject_hash ] && STORED_HASH=$(cat .venv/.pyproject_hash)
+
+            if ! python -c "import auto_edit" 2>/dev/null || [ "$PYPROJECT_HASH" != "$STORED_HASH" ]; then
               echo -e "''${YELLOW}[2/5] Installing auto-edit-video and dependencies...''${RESET}"
               uv pip install -e . --quiet
+              echo "$PYPROJECT_HASH" > .venv/.pyproject_hash
             else
               echo -e "''${GREEN}[2/5] auto-edit-video already installed''${RESET}"
             fi

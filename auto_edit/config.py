@@ -24,6 +24,10 @@ def plans_dir() -> Path:
     return home_dir() / "plans"
 
 
+def ideas_dir() -> Path:
+    return home_dir() / "ideas"
+
+
 _PROFILE_README = """# Your Creator Profile
 
 Drop any `.md` files in this folder. Every `.md` here is loaded as context
@@ -51,6 +55,13 @@ Example:
 - **2026-03** · *Criando um Agente de IA com NestJS e Gemini Flash* — tutorial, PT
 """
 
+_IDEAS_README = """# Content Ideas Backlog
+
+Ideas are stored as individual YAML files. Each file represents one content idea.
+Use `auto-edit ideas add "title"` to create new ideas, and `auto-edit ideas list`
+to browse them. When ready, use `auto-edit ideas pick` to link an idea to a plan slot.
+"""
+
 _PLANS_README = """# Generated Plans
 
 Monthly content plans land here as `YYYY-MM.yaml`. Edit by hand or via
@@ -63,6 +74,7 @@ def ensure_dirs() -> None:
     """Create ~/.auto-edit/ scaffolding on first use. Idempotent."""
     profile_dir().mkdir(parents=True, exist_ok=True)
     plans_dir().mkdir(parents=True, exist_ok=True)
+    ideas_dir().mkdir(parents=True, exist_ok=True)
 
     readme = profile_dir() / "README.md"
     if not readme.exists():
@@ -75,6 +87,10 @@ def ensure_dirs() -> None:
     plans_readme = plans_dir() / "README.md"
     if not plans_readme.exists():
         plans_readme.write_text(_PLANS_README, encoding="utf-8")
+
+    ideas_readme = ideas_dir() / "README.md"
+    if not ideas_readme.exists():
+        ideas_readme.write_text(_IDEAS_README, encoding="utf-8")
 
 
 def load_profile() -> str:
