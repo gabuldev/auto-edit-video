@@ -193,14 +193,15 @@ def _find_face_asset() -> Path | None:
     return None
 
 
-# ── Frame extraction ────────────────────────────────────────────────────────
+# ── Frame extraction & scoring ─────────────────────────────────────────────
+
+NUM_CANDIDATES = 12
 
 
 def _find_energy_peak(transcription: dict) -> float:
     """Return timestamp (seconds) of the energy peak in the transcription."""
     energy_db = transcription.get("energy_db", [])
     if not energy_db:
-        # Fallback: use 25% of video duration (usually an interesting moment)
         duration = transcription.get("duration", 10.0)
         return duration * 0.25
 
@@ -220,6 +221,125 @@ def _extract_frame(video_path: str, timestamp: float, output: Path) -> Path:
     ]
     subprocess.run(cmd, capture_output=True, check=True)
     return output
+
+
+def _score_sharpness(gray: np.ndarray) -> float:
+    """Laplacian variance — higher = sharper image."""
+    kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32)
+    h, w = gray.shape
+    pad = np.pad(gray, 1, mode="edge")
+    lap = np.zeros_like(gray, dtype=np.float32)
+    for dy in range(3):
+        for dx in range(3):
+            lap += pad[dy:dy + h, dx:dx + w] * kernel[dy, dx]
+    return float(np.var(lap))
+
+
+def _score_face_region(rgb: np.ndarray) -> float:
+    """Skin-tone ratio in the upper-center region where faces typically are.
+
+    High ratio = face likely visible. Low ratio = face blocked or absent.
+    """
+    h, w = rgb.shape[:2]
+    # Upper-center crop (face zone in selfie/vlog framing)
+    y0, y1 = int(h * 0.15), int(h * 0.65)
+    x0, x1 = int(w * 0.20), int(w * 0.80)
+    roi = rgb[y0:y1, x0:x1].astype(np.float32)
+
+    r, g, b = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
+    # Skin-tone heuristic (works across skin tones)
+    skin = (
+        (r > 60) & (g > 40) & (b > 20)
+        & (r > g) & (r > b)
+        & ((r - g) > 10)
+        & (np.abs(r - g) < 120)
+        & (r < 240) & (g < 230) & (b < 220)
+    )
+    return float(skin.sum()) / max(roi.shape[0] * roi.shape[1], 1)
+
+
+def _score_center_clarity(gray: np.ndarray) -> float:
+    """Variance in center region — low = uniform object blocking the view."""
+    h, w = gray.shape
+    y0, y1 = int(h * 0.25), int(h * 0.75)
+    x0, x1 = int(w * 0.25), int(w * 0.75)
+    center = gray[y0:y1, x0:x1]
+    return float(np.std(center))
+
+
+def _score_brightness(gray: np.ndarray) -> float:
+    """Penalize too dark or too bright — optimal around 100-160."""
+    mean = float(np.mean(gray))
+    optimal = 130.0
+    return max(0.0, 1.0 - abs(mean - optimal) / optimal)
+
+
+def _score_frame(img: Image.Image) -> dict:
+    """Score a frame across multiple quality dimensions."""
+    small = img.resize((320, int(320 * img.height / img.width)), Image.LANCZOS)
+    rgb = np.array(small)
+    gray = np.mean(rgb, axis=2).astype(np.float32)
+
+    sharpness = _score_sharpness(gray)
+    face = _score_face_region(rgb)
+    clarity = _score_center_clarity(gray)
+    brightness = _score_brightness(gray)
+
+    return {
+        "sharpness": sharpness,
+        "face": face,
+        "clarity": clarity,
+        "brightness": brightness,
+    }
+
+
+def _pick_best_frame(
+    video_path: str, duration: float, workspace: Path,
+    energy_peak: float | None = None,
+) -> Path:
+    """Extract multiple candidate frames, score them, and return the best one."""
+    # Generate candidate timestamps: regular intervals + energy peak
+    margin = max(1.0, duration * 0.05)
+    usable = duration - 2 * margin
+    step = usable / max(NUM_CANDIDATES - 1, 1)
+    timestamps = [margin + i * step for i in range(NUM_CANDIDATES)]
+
+    if energy_peak is not None and margin < energy_peak < duration - margin:
+        timestamps.append(energy_peak)
+
+    candidates: list[tuple[float, float, Path]] = []
+    for i, ts in enumerate(timestamps):
+        path = workspace / f"_thumb_cand_{i}.jpg"
+        try:
+            _extract_frame(video_path, ts, path)
+        except Exception:
+            continue
+        img = Image.open(path)
+        scores = _score_frame(img)
+
+        # Weighted combination (face visibility is most important for thumbnails)
+        combined = (
+            scores["face"] * 50.0
+            + scores["sharpness"] / 500.0
+            + scores["clarity"] / 10.0
+            + scores["brightness"] * 5.0
+        )
+        candidates.append((combined, ts, path))
+
+    if not candidates:
+        fallback = workspace / "_thumb_cand_fallback.jpg"
+        _extract_frame(video_path, duration * 0.25, fallback)
+        return fallback
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    best_score, best_ts, best_path = candidates[0]
+    print(f"[thumbnailer] Best frame at {best_ts:.1f}s (score={best_score:.1f})")
+
+    # Cleanup losers
+    for _, _, path in candidates[1:]:
+        path.unlink(missing_ok=True)
+
+    return best_path
 
 
 def _crop_center(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
@@ -579,15 +699,14 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
     w, h = SHORT_SIZE
 
-    # Extract best frame from original video
     transcription_path = workspace / "transcription.json"
     transcription = json.loads(transcription_path.read_text()) if transcription_path.exists() else {}
 
-    peak_time = _find_energy_peak(transcription)
+    duration = transcription.get("duration", 30.0)
+    energy_peak = _find_energy_peak(transcription)
     video_path = pipeline["video_path"]
 
-    frame_path = workspace / "thumb_frame.jpg"
-    _extract_frame(video_path, peak_time, frame_path)
+    frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
 
     img = Image.open(frame_path)
     img = _crop_center(img, w, h)
@@ -625,17 +744,16 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     bg = _generate_imagen_bg(w, h, style_hint, context)
 
     if bg is None:
-        # Fallback: use a frame from the video (same as shorts)
         transcription_path = workspace / "transcription.json"
         transcription = json.loads(transcription_path.read_text()) if transcription_path.exists() else {}
-        peak_time = _find_energy_peak(transcription)
+        duration = transcription.get("duration", 30.0)
+        energy_peak = _find_energy_peak(transcription)
         video_path = pipeline["video_path"]
-        frame_path = workspace / "thumb_frame_long.jpg"
 
         try:
-            _extract_frame(video_path, peak_time, frame_path)
+            frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
             bg = _stylize_frame_bg(Image.open(frame_path))
-            print("[thumbnailer] Using stylized video frame as background")
+            print("[thumbnailer] Using best-scored video frame as background")
             frame_path.unlink(missing_ok=True)
         except Exception:
             print("[thumbnailer] Frame extraction failed — using gradient fallback")
