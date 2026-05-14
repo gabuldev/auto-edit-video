@@ -239,7 +239,7 @@ def _run_ffmpeg_cuts(
         "ffmpeg", "-y", "-i", str(video),
         "-map", "[outv]", "-map", "[outa]",
         "-c:v", codec, *codec_flags,
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         str(output),
     ]
 
@@ -258,6 +258,50 @@ def _run_ffmpeg_cuts(
     result = subprocess.run(cmd)
     if result.returncode != 0:
         raise RuntimeError("FFmpeg failed — see output above")
+
+    _fix_av_duration_mismatch(output)
+
+
+def _get_stream_duration(video: Path, stream_type: str) -> float:
+    """Get duration of a specific stream type ('v:0' or 'a:0')."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", stream_type,
+        "-show_entries", "stream=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(video),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip().split("\n")[0])
+
+
+def _fix_av_duration_mismatch(video: Path, tolerance: float = 1.0) -> None:
+    """If audio duration exceeds video duration beyond tolerance, trim audio to match."""
+    try:
+        v_dur = _get_stream_duration(video, "v:0")
+        a_dur = _get_stream_duration(video, "a:0")
+    except (subprocess.CalledProcessError, ValueError):
+        return
+
+    if a_dur <= v_dur + tolerance:
+        return
+
+    print(f"[executor] Audio/video duration mismatch: video={v_dur:.1f}s audio={a_dur:.1f}s — fixing...")
+    fixed = video.with_suffix(".fixed.mp4")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(video),
+        "-filter_complex", f"[0:a]atrim=end={v_dur:.3f},asetpts=PTS-STARTPTS[a]",
+        "-map", "0:v", "-map", "[a]",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        str(fixed),
+    ]
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode == 0 and fixed.exists():
+        fixed.replace(video)
+        print(f"[executor] Fixed — audio trimmed to {v_dur:.1f}s")
+    else:
+        fixed.unlink(missing_ok=True)
+        print(f"[executor] Warning: could not fix duration mismatch")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
