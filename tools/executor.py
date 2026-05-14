@@ -292,7 +292,7 @@ def _fix_av_duration_mismatch(video: Path, tolerance: float = 1.0) -> None:
         "ffmpeg", "-y", "-i", str(video),
         "-filter_complex", f"[0:a]atrim=end={v_dur:.3f},asetpts=PTS-STARTPTS[a]",
         "-map", "0:v", "-map", "[a]",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         str(fixed),
     ]
     result = subprocess.run(cmd, capture_output=True)
