@@ -234,7 +234,7 @@ def _run_ffmpeg_overlay(
         "-map", "[outv]",
     ]
     if _has_audio_stream(video):
-        cmd += ["-map", "0:a", "-c:a", "copy"]
+        cmd += ["-map", "0:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
     cmd += [
         "-c:v", codec, *codec_flags,
         str(output),
