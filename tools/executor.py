@@ -301,7 +301,7 @@ def _fix_av_duration_mismatch(video: Path, tolerance: float = 1.0) -> None:
         print(f"[executor] Fixed — audio trimmed to {v_dur:.1f}s")
     else:
         fixed.unlink(missing_ok=True)
-        print(f"[executor] Warning: could not fix duration mismatch")
+        print("[executor] Warning: could not fix duration mismatch")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
