@@ -171,9 +171,14 @@ def _detect_audio_onset(
         "ffmpeg", "-hide_banner", "-ss", f"{segment_start:.3f}",
         "-t", f"{probe_dur:.3f}", "-i", str(video),
         "-af", f"silencedetect=noise={noise_db}dB:duration={min_silence_dur}",
-        "-vn", "-f", "null", "/dev/null",
+        "-vn", "-f", "null", os.devnull,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        # ffmpeg itself failed (missing binary, unreadable input, etc.);
+        # don't pretend silence was just absent — surface it and skip the snap.
+        print(f"[executor] silencedetect probe failed (rc={result.returncode}), skipping leading-silence snap")
+        return None
     output = result.stderr
     # Look for "silence_start: 0" followed by "silence_end: X" — that's leading silence.
     leading_silence_start = None
