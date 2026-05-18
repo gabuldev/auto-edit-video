@@ -50,6 +50,16 @@ def execute(workspace: Path) -> None:
     _validate_plan(reviewed_plan, duration)  # validate before processing
     kept = _build_keep_intervals(reviewed_plan, duration)
 
+    # Snap the first segment's start to the actual audio onset (silencedetect).
+    # Without this, the LLM planner often leaves 0.3-1.0s of leading silence
+    # before the speaker actually starts — devastating for Reels engagement.
+    kept_snapped = snap_start_to_audio_onset(kept, video_path)
+    if kept_snapped != kept:
+        old_s, _ = kept[0]
+        new_s, _ = kept_snapped[0]
+        print(f"[executor] Snapped first segment start: {old_s:.2f}s → {new_s:.2f}s (trimmed {new_s-old_s:.2f}s of leading silence)")
+        kept = kept_snapped
+
     if not kept:
         raise RuntimeError("reviewed_plan has no kept_segments — nothing to cut")
 
@@ -143,6 +153,72 @@ def _build_keep_intervals(plan: dict, duration: float) -> list[tuple[float, floa
     return filtered
 
 
+def _detect_audio_onset(
+    video: Path,
+    segment_start: float,
+    segment_end: float,
+    noise_db: float = -40.0,
+    min_silence_dur: float = 0.1,
+) -> float | None:
+    """Run ffmpeg silencedetect on [segment_start, segment_end] of the source
+    and return the timestamp (in source timeline) where audible content starts.
+    Returns None if no leading silence is detected.
+    """
+    probe_dur = min(3.0, segment_end - segment_start)
+    if probe_dur <= 0:
+        return None
+    cmd = [
+        "ffmpeg", "-hide_banner", "-ss", f"{segment_start:.3f}",
+        "-t", f"{probe_dur:.3f}", "-i", str(video),
+        "-af", f"silencedetect=noise={noise_db}dB:duration={min_silence_dur}",
+        "-vn", "-f", "null", "/dev/null",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    output = result.stderr
+    # Look for "silence_start: 0" followed by "silence_end: X" — that's leading silence.
+    leading_silence_start = None
+    for line in output.splitlines():
+        if "silence_start:" in line:
+            try:
+                val = float(line.split("silence_start:")[1].strip().split()[0])
+                if leading_silence_start is None and abs(val) < 0.05:  # silence at very start of probe
+                    leading_silence_start = val
+            except (ValueError, IndexError):
+                continue
+        elif "silence_end:" in line and leading_silence_start is not None:
+            try:
+                end = float(line.split("silence_end:")[1].split("|")[0].strip())
+                # end is relative to probe start (ss); map back to source timeline
+                return segment_start + end
+            except (ValueError, IndexError):
+                return None
+    return None
+
+
+def snap_start_to_audio_onset(
+    intervals: list[tuple[float, float]],
+    video: Path,
+    leading_pad: float = 0.08,
+    min_silence: float = 0.2,
+) -> list[tuple[float, float]]:
+    """If the first kept interval has > min_silence of leading silence (per
+    silencedetect on the actual audio), advance its start to
+    (onset - leading_pad). Only touches the first segment.
+    """
+    if not intervals:
+        return intervals
+    first_start, first_end = intervals[0]
+    onset = _detect_audio_onset(video, first_start, first_end)
+    if onset is None:
+        return intervals
+    if (onset - first_start) < min_silence:
+        return intervals
+    new_start = max(first_start, onset - leading_pad)
+    if new_start <= first_start:
+        return intervals
+    return [(new_start, first_end)] + intervals[1:]
+
+
 def _invert_cuts(cuts: list[dict], duration: float) -> list[dict]:
     """Convert a list of cut intervals into keep intervals."""
     keep = []
@@ -221,8 +297,15 @@ def _build_filter(
     else:
         parts.append(f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa_raw]")
 
-    # Normalize audio loudness after concatenation (EBU R128)
-    parts.append("[outa_raw]loudnorm=I=-16:TP=-1.5:LRA=11[outa]")
+    # Normalize audio loudness after concatenation (EBU R128), then force a
+    # well-defined stereo channel layout. Without this aformat step, the AAC
+    # encoder writes a malformed mp4a/chnl atom (especially when source is mono),
+    # which Apple decoders (QuickTime/iPhone) reject silently — file plays
+    # video but no audio.
+    parts.append(
+        "[outa_raw]loudnorm=I=-16:TP=-1.5:LRA=11,"
+        "aformat=sample_fmts=fltp:channel_layouts=stereo[outa]"
+    )
     return ";".join(parts)
 
 
@@ -239,7 +322,8 @@ def _run_ffmpeg_cuts(
         "ffmpeg", "-y", "-i", str(video),
         "-map", "[outv]", "-map", "[outa]",
         "-c:v", codec, *codec_flags,
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", "-brand", "mp42",
         str(output),
     ]
 
@@ -290,9 +374,12 @@ def _fix_av_duration_mismatch(video: Path, tolerance: float = 1.0) -> None:
     fixed = video.with_suffix(".fixed.mp4")
     cmd = [
         "ffmpeg", "-y", "-i", str(video),
-        "-filter_complex", f"[0:a]atrim=end={v_dur:.3f},asetpts=PTS-STARTPTS[a]",
+        "-filter_complex",
+        f"[0:a]atrim=end={v_dur:.3f},asetpts=PTS-STARTPTS,"
+        f"aformat=sample_fmts=fltp:channel_layouts=stereo[a]",
         "-map", "0:v", "-map", "[a]",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-movflags", "+faststart", "-brand", "mp42",
         str(fixed),
     ]
     result = subprocess.run(cmd, capture_output=True)

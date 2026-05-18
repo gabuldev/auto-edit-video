@@ -190,6 +190,13 @@ def caption(workspace: Path) -> None:
 
             orig_words = original_transcription.get("words", [])
             orig_segments = original_transcription.get("segments", [])
+
+            # Must mirror executor's leading-silence snap so caption timestamps
+            # stay aligned with the actually-cut video.
+            from executor import snap_start_to_audio_onset
+            source_video = Path(pipeline["video_path"])
+            kept = snap_start_to_audio_onset(kept, source_video)
+
             words, segments = _remap_words(orig_words, orig_segments, kept)
 
             edited_duration = _get_duration(edited_video)
@@ -422,6 +429,7 @@ def _burn_captions(video: Path, ass: Path, output: Path) -> None:
         "-i", str(video),
         "-vf", f"subtitles='{ass_norm}'",
         "-c:a", "copy",
+        "-movflags", "+faststart", "-brand", "mp42",
         str(output),
     ]
     print("[captioner] Burning captions...")
