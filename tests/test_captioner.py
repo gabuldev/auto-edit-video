@@ -13,6 +13,7 @@ from tools.captioner import (
     _group_words,
     _generate_srt,
     _format_srt_time,
+    _is_existing_post_cut_usable,
 )
 
 
@@ -118,6 +119,45 @@ class TestRemapWords:
         kept = [(0.0, 10.0)]
         remapped, _ = _remap_words(words, [], kept)
         assert len(remapped) == 0
+
+
+# ── _is_existing_post_cut_usable ─────────────────────────────────────────────
+
+
+class TestExistingPostCutUsable:
+    """Guard against reusing a stale post_cut_transcription.json left over from a
+    prior run on a reused workspace — the root cause of caption desync."""
+
+    def _words(self, last_end):
+        return [
+            {"word": "a", "start": 0.0, "end": 1.0},
+            {"word": "b", "start": last_end - 1.0, "end": last_end},
+        ]
+
+    def test_matches_edited_video(self):
+        post_cut = {"duration": 90.0, "words": self._words(89.0)}
+        assert _is_existing_post_cut_usable(post_cut, 90.0) is True
+
+    def test_stale_shorter_duration_rejected(self):
+        # London Bridge bug: stale file is 61.5s, edited video is 90s
+        post_cut = {"duration": 61.5, "words": self._words(61.2)}
+        assert _is_existing_post_cut_usable(post_cut, 90.0) is False
+
+    def test_uncovered_tail_rejected(self):
+        # Duration claims 90 but words stop at 40s → most of the video uncaptioned
+        post_cut = {"duration": 90.0, "words": self._words(40.0)}
+        assert _is_existing_post_cut_usable(post_cut, 90.0) is False
+
+    def test_no_words_rejected(self):
+        assert _is_existing_post_cut_usable({"duration": 90.0, "words": []}, 90.0) is False
+
+    def test_missing_duration_rejected(self):
+        assert _is_existing_post_cut_usable({"words": self._words(89.0)}, 90.0) is False
+
+    def test_small_duration_drift_tolerated(self):
+        # ffprobe vs sum-of-intervals can differ by a fraction of a second
+        post_cut = {"duration": 90.4, "words": self._words(89.8)}
+        assert _is_existing_post_cut_usable(post_cut, 90.0) is True
 
 
 # ── _group_words ─────────────────────────────────────────────────────────────

@@ -31,6 +31,10 @@ MAX_GAP_FOR_GROUP = 0.6     # seconds — gap larger than this starts a new grou
 WORD_CONFIDENCE_THRESHOLD = 0.3
 NO_SPEECH_PROB_THRESHOLD = 0.8
 
+# Reuse/validation of an existing post_cut_transcription.json
+POST_CUT_DURATION_TOLERANCE = 2.0   # seconds of allowed drift vs edited video
+POST_CUT_MIN_COVERAGE = 0.5         # last word must reach >= this fraction of video
+
 # ── Default caption style ─────────────────────────────────────────────────────
 # Colors in ASS format: &HBBGGRR& (blue-green-red, reversed from RGB)
 # Override via pipeline.json["caption_style"] or CLI --highlight-* flags
@@ -47,6 +51,33 @@ DEFAULTS = {
     "font_bold":       True,
     "margin_v":        95,           # distance from bottom (pixels)
 }
+
+
+def _is_existing_post_cut_usable(post_cut: dict, edited_duration: float) -> bool:
+    """Decide whether a pre-existing post_cut_transcription.json can be trusted
+    for the CURRENT edited video.
+
+    Reused for manual corrections and same-run caches, but must reject stale
+    leftovers from a prior run on a reused workspace (different cuts → different
+    duration), which would otherwise burn desynced captions onto the new video.
+    """
+    words = post_cut.get("words") or []
+    if not words:
+        return False
+    pc_duration = post_cut.get("duration")
+    if pc_duration is None:
+        return False
+    # Different cuts produce a different total length.
+    if abs(float(pc_duration) - edited_duration) > POST_CUT_DURATION_TOLERANCE:
+        return False
+    # Captions must span most of the video — a large uncovered tail signals a mismatch.
+    try:
+        last_end = max(float(w.get("end", 0.0)) for w in words)
+    except (TypeError, ValueError):
+        return False
+    if last_end < POST_CUT_MIN_COVERAGE * edited_duration:
+        return False
+    return True
 
 
 def _remap(original_ts: float, kept: list[tuple[float, float]]) -> float | None:
@@ -172,14 +203,33 @@ def caption(workspace: Path) -> None:
     print(f"[captioner] Style: highlight_border={style['border_highlight']}  blur={style['blur_highlight']}  color={style['color_highlight']}")
 
     post_cut_path = workspace / "post_cut_transcription.json"
+    edited_duration = _get_duration(edited_video)
 
-    # 1. Build post-cut transcription — use existing file if already present (e.g. manually corrected)
+    # 1. Build post-cut transcription.
+    #    A pre-existing file is only reused if it actually matches the current
+    #    edited video (manual correction / same-run cache). A stale file left
+    #    over from a PRIOR run on a reused workspace describes different cuts and
+    #    would burn badly-desynced captions — regenerate from the current plan.
+    existing_post_cut = None
     if post_cut_path.exists():
-        print("[captioner] Using existing post_cut_transcription.json (manually corrected or cached).")
-        post_cut = json.loads(post_cut_path.read_text())
+        try:
+            candidate = json.loads(post_cut_path.read_text())
+        except json.JSONDecodeError:
+            candidate = None
+        if candidate and _is_existing_post_cut_usable(candidate, edited_duration):
+            existing_post_cut = candidate
+
+    if existing_post_cut is not None:
+        print("[captioner] Reusing existing post_cut_transcription.json (matches edited video).")
+        post_cut = existing_post_cut
         words = post_cut.get("words", [])
         segments = post_cut.get("segments", [])
     else:
+        if post_cut_path.exists():
+            print(
+                "[captioner] Ignoring stale/inconsistent post_cut_transcription.json "
+                f"(does not match edited video duration {edited_duration:.1f}s) — regenerating."
+            )
         try:
             reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
             original_transcription = json.loads((workspace / "transcription.json").read_text())
@@ -199,7 +249,6 @@ def caption(workspace: Path) -> None:
 
             words, segments = _remap_words(orig_words, orig_segments, kept)
 
-            edited_duration = _get_duration(edited_video)
             post_cut = {
                 "duration": edited_duration,
                 "words": words,
@@ -208,12 +257,14 @@ def caption(workspace: Path) -> None:
             }
             print(f"[captioner] Remapped {len(words)} words from original transcription (no re-transcription).")
         except (FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
-            # Fallback: re-transcribe with Whisper (original behavior)
+            # Fallback: re-transcribe with Whisper. Note: Whisper run on a cut +
+            # concatenated video tends to drift across cut boundaries, so this is
+            # a last resort — the remap path above is preferred whenever possible.
             print(f"[captioner] Remap failed ({exc}), falling back to Whisper re-transcription (model={model_name})...")
             context = pipeline.get("context", "")
             words, segments = _transcribe(edited_video, model_name, language, context)
             post_cut = {
-                "duration": _get_duration(edited_video),
+                "duration": edited_duration,
                 "words": words,
                 "segments": segments,
                 "language": language,
@@ -224,6 +275,17 @@ def caption(workspace: Path) -> None:
             json.dumps(post_cut, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+
+    # Sanity check: captions should cover most of the video. A large uncovered
+    # tail almost always means a timeline mismatch (the desync we guard against).
+    if words:
+        last_end = max(float(w.get("end", 0.0)) for w in words)
+        if last_end < POST_CUT_MIN_COVERAGE * edited_duration:
+            print(
+                f"[captioner] WARNING: captions end at {last_end:.1f}s but video is "
+                f"{edited_duration:.1f}s — last {edited_duration - last_end:.1f}s uncaptioned. "
+                "Possible timeline mismatch."
+            )
 
     # 2. Group words into display lines (max 4 words, gap-aware)
     groups = _group_words(words)
