@@ -684,7 +684,7 @@ def sync_overlays() -> None:
 @app.command()
 def resume(
     video: Path = typer.Argument(..., help="Path to the original video file"),
-    from_stage: str = typer.Option(..., "--from", help=f"Stage to resume from: {', '.join(pl.STAGES[:-1])}"),
+    from_stage: str = typer.Option(..., "--from", help=f"Stage to resume from: {', '.join(sorted({s for seq in pl.STAGE_SEQUENCES.values() for s in seq if s != 'done'}))}"),
     whisper_model: Optional[str] = typer.Option(None, "--whisper-model", "-m", help=f"Override Whisper model: {', '.join(VALID_MODELS)}"),
     cli: Optional[str] = typer.Option(
         None,

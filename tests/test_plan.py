@@ -201,14 +201,14 @@ class TestDeriveStatus:
         assert p.derive_status({"id": "S1"}, [(Path("/tmp/x"), pj)]) == "edited"
 
     def test_edited_when_every_canonical_stage_done(self):
-        from auto_edit.pipeline import STAGES
-        stages = {name: {"status": "complete"} for name in STAGES if name != "done"}
-        pj = {"current_stage": "metadata", "stages": stages}
+        from auto_edit.pipeline import stage_sequence
+        stages = {name: {"status": "complete"} for name in stage_sequence("short") if name != "done"}
+        pj = {"current_stage": "metadata", "type": "short", "stages": stages}
         assert p.derive_status({"id": "S1"}, [(Path("/tmp/x"), pj)]) == "edited"
 
     def test_recorded_when_some_stages_still_pending(self):
-        from auto_edit.pipeline import STAGES
-        stages = {name: {"status": "pending"} for name in STAGES if name != "done"}
+        from auto_edit.pipeline import stage_sequence
+        stages = {name: {"status": "pending"} for name in stage_sequence("short") if name != "done"}
         stages["extract"] = {"status": "complete"}
         pj = {"current_stage": "plan", "stages": stages}
         assert p.derive_status({"id": "S1"}, [(Path("/tmp/x"), pj)]) == "recorded"

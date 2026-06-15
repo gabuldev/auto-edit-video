@@ -980,13 +980,13 @@ def derive_status(item: dict, workspaces: list[tuple[Path, dict]]) -> str:
     if not workspaces:
         return "planned"
     # Lazy import to avoid circular deps
-    from auto_edit.pipeline import STAGES
+    from auto_edit.pipeline import stage_sequence
 
-    canonical = [s for s in STAGES if s != "done"]
     for _, pj in workspaces:
         if pj.get("current_stage") == "done":
             return "edited"
         stages = pj.get("stages", {})
+        canonical = [s for s in stage_sequence(pj.get("type", "short")) if s != "done"]
         # Every canonical stage must be present and complete/skip.
         if all(stages.get(name, {}).get("status") in ("complete", "skip") for name in canonical):
             return "edited"

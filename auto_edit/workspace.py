@@ -57,7 +57,7 @@ def get_status_table(video_path: Path) -> list[dict]:
 
     p = pl.load(ws)
     rows = []
-    for stage in pl.STAGES:
+    for stage in pl.stage_sequence(p["type"]):
         if stage == "done":
             continue
         info = p["stages"].get(stage, {})
