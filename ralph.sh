@@ -283,7 +283,20 @@ while true; do
             ;;
 
         review)
-            run_agent "review" "$WORKSPACE/reviewed_plan.json" "$AGENTS_DIR/reviewer.md"
+            VIDEO_TYPE=$("$PYTHON" -c "import json;print(json.load(open('$PIPELINE'))['type'])")
+            if [ "$VIDEO_TYPE" = "narrated" ]; then
+                if [ "${AUTO_EDIT_AUTO_APPROVE:-}" = "1" ]; then
+                    log "Auto-approve set — skipping B-roll review gate."
+                    "$PYTHON" -m auto_edit.pipeline complete "$WORKSPACE" "review"
+                else
+                    log "Review gate. Run: auto-edit review-broll $WORKSPACE"
+                    log "Then: auto-edit resume <name> --from assemble"
+                    "$PYTHON" -m auto_edit.pipeline running "$WORKSPACE" "review" 2>/dev/null || true
+                    break
+                fi
+            else
+                run_agent "review" "$WORKSPACE/reviewed_plan.json" "$AGENTS_DIR/reviewer.md"
+            fi
             ;;
 
         execute)
@@ -338,6 +351,30 @@ print(f'[dry-run] Total time to cut: {total_cut:.1f}s')
             $PYTHON -m auto_edit.pipeline finalize "$WORKSPACE"
             log "Done."
             break
+            ;;
+
+        parse-script)
+            run_agent "parse-script" "$WORKSPACE/script.json" "$AGENTS_DIR/script_parser.md"
+            ;;
+
+        extract-vo)
+            run_python_tool "extract-vo" "$TOOLS_DIR/extract.py"
+            ;;
+
+        align-blocks)
+            run_python_tool "align-blocks" "$TOOLS_DIR/block_aligner.py"
+            ;;
+
+        analyze-clips)
+            run_python_tool "analyze-clips" "$TOOLS_DIR/clip_analyzer.py"
+            ;;
+
+        match)
+            run_agent "match" "$WORKSPACE/clip_map.json" "$AGENTS_DIR/matcher.md"
+            ;;
+
+        assemble)
+            run_python_tool "assemble" "$TOOLS_DIR/assembler.py"
             ;;
 
         *)
