@@ -184,6 +184,28 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             text,
         ]
 
+    elif stage == "parse-script":
+        base = prompt_file.read_text()
+        roteiro = (workspace / "script_source.txt").read_text()
+        return f"{base}\n\n## Roteiro\n\n{roteiro}\n"
+
+    elif stage == "match":
+        base = prompt_file.read_text()
+        script = _read_json(workspace / "script.json")
+        align = _read_json(workspace / "vo_alignment.json")
+        clip_index = _read_json(workspace / "clip_index.json")
+        align_by_id = {b["id"]: b for b in align["blocks"]}
+        blocks = []
+        for b in script["blocks"]:
+            a = align_by_id.get(b["id"], {})
+            dur = round(a.get("vo_end", 0) - a.get("vo_start", 0), 2)
+            blocks.append({"id": b["id"], "visual": b["visual"],
+                           "narration": b["narration"],
+                           "vo_start": a.get("vo_start"), "vo_end": a.get("vo_end"),
+                           "target_duration": dur})
+        payload = {"blocks": blocks, "clip_index": clip_index}
+        return f"{base}\n\n## Dados\n\n{_compact_json(payload)}\n"
+
     sections.append(
         "\nRespond with ONLY valid JSON. No markdown code fences, no explanation."
     )
