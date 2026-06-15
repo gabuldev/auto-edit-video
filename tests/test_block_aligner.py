@@ -47,3 +47,25 @@ def test_blocks_are_contiguous_no_gap():
     ]
     out = _align_blocks(words, blocks, vo_duration=5.5)
     assert out[1]["vo_start"] == out[0]["vo_end"]
+
+
+def test_more_blocks_than_voice_no_negative_durations():
+    # 2 words of voice but 3 scripted blocks — extra blocks must not go negative
+    words = [
+        {"word": "ola", "start": 0.0, "end": 0.5},
+        {"word": "mundo", "start": 0.5, "end": 1.0},
+    ]
+    blocks = [
+        {"id": 1, "narration": "ola mundo"},
+        {"id": 2, "narration": "bloco extra um"},
+        {"id": 3, "narration": "bloco extra dois"},
+    ]
+    out = _align_blocks(words, blocks, vo_duration=1.0)
+    assert len(out) == 3
+    for b in out:
+        assert b["vo_end"] >= b["vo_start"], b
+        assert 0.0 <= b["vo_start"] <= 1.0
+        assert 0.0 <= b["vo_end"] <= 1.0
+    # starts must be monotonic non-decreasing
+    starts = [b["vo_start"] for b in out]
+    assert starts == sorted(starts)

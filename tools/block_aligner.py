@@ -62,6 +62,14 @@ def _align_blocks(words: list[dict], blocks: list[dict], vo_duration: float) -> 
         out[i]["vo_end"] = out[i + 1]["vo_start"]
     if out:
         out[-1]["vo_end"] = round(vo_duration, 3)
+
+    # Clamp so no block has a negative/inverted span (e.g. more blocks than voice).
+    prev_start = 0.0
+    for b in out:
+        b["vo_start"] = round(min(max(b["vo_start"], prev_start), vo_duration), 3)
+        b["vo_end"] = round(min(max(b["vo_end"], b["vo_start"]), vo_duration), 3)
+        prev_start = b["vo_start"]
+
     return out
 
 
