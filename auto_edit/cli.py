@@ -3,6 +3,7 @@ auto-edit CLI — entry point for all commands.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -156,6 +157,9 @@ def _run_pipeline(
     dry_run: bool = False,
     language: str = "pt",
     plan_id: Optional[str] = None,
+    voice_path: Optional[Path] = None,
+    clips_dir: Optional[Path] = None,
+    script_text: Optional[str] = None,
 ) -> None:
     if not video.exists():
         console.print(f"[red]Error:[/red] File not found: {video}")
@@ -180,7 +184,11 @@ def _run_pipeline(
             caption_style=caption_style or {},
             language=language,
             plan_id=plan_id,
+            voice_path=voice_path,
+            clips_dir=clips_dir,
         )
+        if script_text is not None:
+            (ws / "script_source.txt").write_text(script_text, encoding="utf-8")
 
     console.print(f"[cyan]Type:[/cyan] {video_type}")
     console.print(f"[cyan]Context:[/cyan] {context or '(none)'}")
@@ -321,6 +329,81 @@ def long(
         dry_run=dry_run,
         language=language,
         plan_id=pid,
+    )
+
+
+@app.command()
+def narrate(
+    script: Path = typer.Argument(..., help="Path to the narration script (text/markdown)"),
+    voice: Path = typer.Option(..., "--voice", help="Recorded voiceover audio file"),
+    clips: Path = typer.Option(..., "--clips", help="Folder of B-roll clips"),
+    video_type: str = typer.Option("short", "--type", "-t", help="short (9:16) or long (16:9)"),
+    context: str = typer.Option("", "--context", "-c", help="What the video is about"),
+    whisper_model: str = typer.Option("small", "--whisper-model", "-m"),
+    language: str = typer.Option("pt", "--language", "-l"),
+    resume_from: Optional[str] = typer.Option(None, "--from"),
+    cli: Optional[str] = typer.Option(None, "--cli", help=f"Primary agent CLI ({CLI_EPILOG}). Default: $AUTO_EDIT_LLM or claude."),
+    cli_fallback: Optional[str] = typer.Option(None, "--cli-fallback", help="Fallback CLI if primary fails. Default: $AUTO_EDIT_LLM_FALLBACK."),
+) -> None:
+    """Assemble a narrated video from a script + voiceover + B-roll folder."""
+    if video_type not in ("short", "long"):
+        console.print("[red]--type must be 'short' or 'long'[/red]")
+        raise typer.Exit(1)
+    for p, name in [(script, "script"), (voice, "voice"), (clips, "clips")]:
+        if not p.exists():
+            console.print(f"[red]{name} not found:[/red] {p}")
+            raise typer.Exit(1)
+    if whisper_model not in VALID_MODELS:
+        console.print(f"[red]Invalid model.[/red] Choose from: {', '.join(VALID_MODELS)}")
+        raise typer.Exit(1)
+    _run_pipeline(
+        voice,
+        "narrated",
+        context,
+        whisper_model,
+        1,
+        resume_from,
+        cli=cli,
+        cli_fallback=cli_fallback,
+        language=language,
+        voice_path=voice,
+        clips_dir=clips,
+        script_text=script.read_text(encoding="utf-8"),
+    )
+
+
+@app.command(name="review-broll")
+def review_broll(
+    target: Path = typer.Argument(..., help="Workspace dir or the script/voice file path"),
+) -> None:
+    """Show the proposed B-roll clip map for a narrated video before assemble."""
+    # Resolve workspace: if target is a dir with clip_map.json, use it directly;
+    # otherwise fall back to get_workspace() (same as status/resume).
+    if target.is_dir() and (target / "clip_map.json").exists():
+        ws = target
+    else:
+        ws = get_workspace(target)
+        if not (ws / "clip_map.json").exists():
+            console.print(f"[red]No clip_map.json found in workspace:[/red] {ws}")
+            console.print("[dim]Make sure the 'match' stage has completed before reviewing B-roll.[/dim]")
+            raise typer.Exit(1)
+
+    clip_map = json.loads((ws / "clip_map.json").read_text())
+    script = {b["id"]: b for b in json.loads((ws / "script.json").read_text())["blocks"]}
+    for block in clip_map["blocks"]:
+        b = script.get(block["id"], {})
+        dur = block["vo_end"] - block["vo_start"]
+        console.print(
+            f"\n[bold]Bloco {block['id']}[/bold] "
+            f"[{block['vo_start']:.1f}->{block['vo_end']:.1f}s, {dur:.1f}s]"
+        )
+        console.print(f"  [dim]{b.get('narration', '')[:80]}[/dim]")
+        for c in block["clips"]:
+            cut = c["out"] - c["in"]
+            console.print(f"  - {c['file']}  [{c['in']:.1f}->{c['out']:.1f}] ({cut:.1f}s)")
+    console.print(
+        f"\nEdite [cyan]{ws / 'clip_map.json'}[/cyan] se quiser, depois:\n"
+        f"  [green]auto-edit resume {target} --from assemble[/green]\n"
     )
 
 
