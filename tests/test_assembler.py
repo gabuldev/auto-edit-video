@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from tools.assembler import _flatten_clips, _build_video_filter
+from tools.assembler import _flatten_clips, _build_video_filter, _pad_to_cover
 
 
 def test_flatten_clips_preserves_order():
@@ -24,3 +24,16 @@ def test_build_video_filter_has_trim_and_concat():
     assert "concat=n=2" in filt
     assert "scale=1080:1920" in filt
     assert "[outv]" in filt
+
+
+def test_pad_stretches_last_clip_when_short():
+    flat = [{"file": "a.mp4", "in": 0.0, "out": 1.0, "_idx": 0},
+            {"file": "b.mp4", "in": 0.0, "out": 1.0, "_idx": 1}]
+    padded = _pad_to_cover(flat, vo_duration=3.0)
+    assert padded[-1]["out"] - padded[-1]["in"] == 2.0
+
+
+def test_pad_noop_when_already_covers():
+    flat = [{"file": "a.mp4", "in": 0.0, "out": 2.0, "_idx": 0}]
+    padded = _pad_to_cover(flat, vo_duration=1.5)
+    assert padded[-1]["out"] == 2.0
