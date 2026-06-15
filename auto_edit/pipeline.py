@@ -42,6 +42,8 @@ def init(
     caption_style: dict | None = None,
     language: str = "pt",
     plan_id: str | None = None,
+    voice_path: Path | None = None,
+    clips_dir: Path | None = None,
 ) -> dict:
     """Create initial pipeline.json. Returns the pipeline dict."""
     seq = stage_sequence(video_type)
@@ -63,6 +65,11 @@ def init(
         "stages": stages,
         "created_at": _now(),
     }
+
+    if voice_path is not None:
+        pipeline["voice_path"] = str(voice_path.resolve())
+    if clips_dir is not None:
+        pipeline["clips_dir"] = str(clips_dir.resolve())
 
     save(workspace, pipeline)
     return pipeline
