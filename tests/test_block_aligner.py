@@ -22,9 +22,9 @@ def test_align_exact_phrases():
     ]
     out = _align_blocks(words, blocks, vo_duration=2.6)
     assert out[0]["vo_start"] == 0.0
-    assert abs(out[0]["vo_end"] - 1.0) < 0.01
+    assert abs(out[0]["vo_end"] - 2.0) < 0.01   # contiguous: ends where block 2 begins
     assert abs(out[1]["vo_start"] - 2.0) < 0.01
-    assert abs(out[1]["vo_end"] - 2.6) < 0.01
+    assert abs(out[1]["vo_end"] - 2.6) < 0.01   # last block ends at vo_duration
 
 
 def test_align_tolerates_small_variation():

@@ -54,15 +54,12 @@ def _align_blocks(words: list[dict], blocks: list[dict], vo_duration: float) -> 
                     "vo_end": round(vo_end, 3)})
         cursor = best_end
 
-    # Make blocks contiguous: if the gap between consecutive blocks is small
-    # (inter-word spacing, not a real silence), snap the start of the next
-    # block to the end of the previous.  A gap > 0.9 s is treated as an
-    # intentional pause and kept as-is so downstream can use it.
-    _GAP_THRESHOLD = 0.9
+    # Strict contiguity: every block's vo_end must equal the next block's
+    # vo_start, and the last block's vo_end must equal vo_duration.
+    # No threshold — any gap (including intentional pauses) would leave the
+    # voice timeline uncovered and cause visual drift downstream.
     for i in range(len(out) - 1):
-        gap = out[i + 1]["vo_start"] - out[i]["vo_end"]
-        if 0 < gap < _GAP_THRESHOLD:
-            out[i + 1]["vo_start"] = out[i]["vo_end"]
+        out[i]["vo_end"] = out[i + 1]["vo_start"]
     if out:
         out[-1]["vo_end"] = round(vo_duration, 3)
     return out
