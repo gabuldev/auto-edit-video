@@ -371,4 +371,31 @@ python -m pytest tests/ -v
 
 ## Licença
 
-MIT
+Este projeto é **source available** sob a
+[PolyForm Noncommercial License 1.0.0](LICENSE) — não é uma licença open source
+no sentido da OSI, porque restringe o uso comercial.
+
+**O que você pode fazer (grátis):**
+
+- ✅ Usar, estudar e modificar o código para **fins não-comerciais**
+- ✅ Uso pessoal, hobby, pesquisa, educação e organizações sem fins lucrativos
+- ✅ Redistribuir com suas mudanças (mantendo esta licença e os avisos de copyright)
+
+**O que requer licença comercial paga:**
+
+- 💼 Qualquer uso com finalidade comercial (produtos, serviços, uso em empresa
+  com fins lucrativos)
+- 💼 Oferecer o `auto-edit-video` — ou um derivado — como serviço/produto pago
+
+### Versão hosted & licença comercial
+
+A **versão hospedada (SaaS) é um produto pago oficial e exclusivo** do
+mantenedor. Se você precisa usar o projeto comercialmente ou quer a versão
+hosted, entre em contato para adquirir uma licença comercial:
+
+📧 **contato@gabul.dev**
+
+> Modelo de *dual licensing*: o código fica público sob a PolyForm Noncommercial
+> para a comunidade, enquanto o mantenedor (Gabriel Sampaio / gabuldev) oferece
+> licenças comerciais e a versão hosted paga à parte. Veja
+> [`CONTRIBUTING.md`](CONTRIBUTING.md) para os termos de contribuição.
