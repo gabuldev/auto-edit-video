@@ -7,6 +7,9 @@ name = "auto-edit-video"
 dynamic = ["version"]
 description = "AI-powered video editing CLI (Claude Code or Cursor Agent for planner agents)"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Gabriel Sampaio", email = "contato@gabul.dev" }]
+classifiers = ["License :: Other/Proprietary License"]
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.0.0",
