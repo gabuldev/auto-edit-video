@@ -28,7 +28,7 @@ sobre o código. Por isso:
 > este projeto, você declara que é o autor do trabalho e **concede ao mantenedor
 > do projeto (Gabriel Sampaio / gabuldev) uma licença perpétua, mundial, não
 > exclusiva, isenta de royalties e irrevogável — incluindo o direito de
-> relicenciar** a sua contribuição sob quaisquer termos, inclusive licenças
+> relicenciar a sua contribuição sob quaisquer termos, inclusive licenças
 > comerciais e proprietárias.**
 
 Isso preserva a capacidade do mantenedor de vender licenças comerciais e manter
