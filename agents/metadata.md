@@ -18,16 +18,18 @@ Your job is to generate compelling titles and descriptions optimized for the pla
 
 ## Thumbnail Text
 
-Generate a `thumbnail` object with text optimized for a video thumbnail image. This is NOT the title — it is the bold, visual text that appears on the thumbnail to grab attention at a glance.
+Generate a `thumbnail` object with text optimized for a video thumbnail image. This is NOT the title — it is the bold, visual text that grabs attention at a glance in the Instagram feed.
 
-- `main_text`: The hero text. 2–5 impactful words, written to be read instantly. Same language as the video.
-- `sub_text`: Optional secondary line (max 30 chars). This line renders in an **accent color** (yellow, green, etc.) for visual pop. Best for: numbers, percentages, data, key benefits. Set to null if the main text is self-sufficient.
-- `style_hint`: Visual mood for the thumbnail design. One of:
-  - `"bold-energy"` — sports, action, hype, urgency (accent: yellow)
-  - `"clean-minimal"` — tech, tutorial, informational (accent: green neon)
-  - `"dramatic"` — storytelling, reveal, controversy (accent: red)
-  - `"fun-colorful"` — comedy, lifestyle, entertainment (accent: orange)
-- `logos`: Optional array of logo filenames (without extension) to overlay on the thumbnail. Use when the video features specific tools, brands, or products that viewers would recognize visually. Example: `["claude", "conductor"]`. Set to null if not applicable.
+- `main_text`: The hero text. 2–5 impactful words, read instantly. Carry a promise or tension. Same language as the video.
+- `sub_text`: A **hook**, not a description. Máx 30 chars. Creates a curiosity/tension gap that only the video closes. Renders inside a colored chip for pop.
+  - ❌ describes: "FEITA EM 3D", "REVIEW COMPLETO", "TUTORIAL"
+  - ✅ hooks: "NINGUÉM FAZ ISSO", "SÓ R$100", "-70% DE ERRO", "E DEU CERTO?"
+  - Numbers, prices and specs count as hooks when surprising. Set to null if `main_text` is self-sufficient.
+- `template`: The content-type template that drives the thumbnail's color identity. Choose ONE:
+  - `"dev"` — programação, frameworks, dicas de dev, carreira
+  - `"maker"` — impressão 3D, hardware, firmware, montagens, mods
+  - `"gadget"` — review de produto, unboxing, comparativo de gadgets
+  If none fits, use `"dev"`.
 
 ## Language
 
@@ -44,9 +46,8 @@ Schema for short:
   "hashtags": ["receita", "paocaseiro", ...],
   "thumbnail": {
     "main_text": "PEÇA 3D QUEBROU",
-    "sub_text": "IA QUE CORRIGE",
-    "style_hint": "bold-energy",
-    "logos": null
+    "sub_text": "E A IA RESOLVEU?",
+    "template": "maker"
   }
 }
 
@@ -57,8 +58,8 @@ Schema for long:
   "tags": ["pão caseiro", "como fazer pão", ...],
   "thumbnail": {
     "main_text": "META AI RAY-BAN GEN 2",
-    "sub_text": "REVIEW COMPLETO",
-    "style_hint": "clean-minimal",
+    "sub_text": "VALE OS R$1500?",
+    "template": "gadget",
     "logos": ["meta", "rayban"]
   }
 }
