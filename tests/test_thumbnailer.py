@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools.thumbnailer import (
     _BUILTIN_TEMPLATES,
     _load_templates,
+    _resolve_template,
 )
 
 
@@ -41,3 +42,25 @@ class TestLoadTemplates:
         monkeypatch.setenv("AUTO_EDIT_ASSETS_TEMPLATES", str(f))
         reg = _load_templates()
         assert "dev" in reg["templates"]
+
+
+class TestResolveTemplate:
+    def setup_method(self):
+        self.reg = _BUILTIN_TEMPLATES
+
+    def test_explicit_name_wins(self):
+        name, tpl = _resolve_template("maker", None, self.reg)
+        assert name == "maker"
+        assert tpl["accent"] == [255, 159, 46]
+
+    def test_unknown_name_falls_back_to_default(self):
+        name, _ = _resolve_template("banana", None, self.reg)
+        assert name == "dev"
+
+    def test_legacy_style_hint_maps(self):
+        name, _ = _resolve_template(None, "bold-energy", self.reg)
+        assert name == "gadget"
+
+    def test_none_uses_default(self):
+        name, _ = _resolve_template(None, None, self.reg)
+        assert name == "dev"

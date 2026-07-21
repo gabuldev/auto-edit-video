@@ -113,6 +113,26 @@ def _load_templates() -> dict:
             continue
     return _BUILTIN_TEMPLATES
 
+
+def _resolve_template(
+    name: str | None, style_hint: str | None, registry: dict
+) -> tuple[str, dict]:
+    """Resolve a template by explicit name, legacy style_hint, or default."""
+    templates = registry.get("templates", {})
+    default_name = registry.get("default")
+    if default_name not in templates:
+        default_name = next(iter(templates), None)
+
+    if name and name in templates:
+        return name, templates[name]
+
+    if style_hint:
+        mapped = _STYLE_HINT_COMPAT.get(style_hint)
+        if mapped in templates:
+            return mapped, templates[mapped]
+
+    return default_name, templates.get(default_name, {})
+
 # ── Asset helpers ───────────────────────────────────────────────────────────
 
 
