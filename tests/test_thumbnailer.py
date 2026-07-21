@@ -13,6 +13,10 @@ from tools.thumbnailer import (
     _BUILTIN_TEMPLATES,
     _load_templates,
     _resolve_template,
+    _safe_block_top,
+    IG_SAFE_TOP,
+    IG_SAFE_BOT,
+    FACE_ZONE_TOP,
 )
 
 
@@ -64,3 +68,28 @@ class TestResolveTemplate:
     def test_none_uses_default(self):
         name, _ = _resolve_template(None, None, self.reg)
         assert name == "dev"
+
+
+class TestSafeBlockTop:
+    H = 1920
+
+    def test_center_small_block_at_upper_safe(self):
+        top = _safe_block_top(self.H, 300, "center")
+        assert top == int(self.H * 0.24)
+        assert top >= int(self.H * IG_SAFE_TOP)
+        assert top + 300 <= int(self.H * FACE_ZONE_TOP)
+
+    def test_center_tall_block_pinned_to_top_limit(self):
+        # block too tall to fit above the face zone -> pinned at safe top
+        top = _safe_block_top(self.H, 900, "center")
+        assert top == int(self.H * IG_SAFE_TOP)
+
+    def test_center_never_above_safe_top(self):
+        for total_h in (100, 400, 700, 1200):
+            top = _safe_block_top(self.H, total_h, "center")
+            assert top >= int(self.H * IG_SAFE_TOP)
+
+    def test_left_stays_within_safe_bottom(self):
+        top = _safe_block_top(self.H, 300, "left")
+        assert top >= int(self.H * IG_SAFE_TOP)
+        assert top + 300 <= int(self.H * IG_SAFE_BOT)

@@ -26,6 +26,31 @@ LONG_SIZE = (1280, 720)     # 16:9 landscape
 
 ENERGY_RESOLUTION = 0.5     # must match extract.py
 
+# ── Instagram safe zone (grid crops 9:16 to center 1:1) ─────────────────────
+IG_SAFE_TOP = 0.22   # abaixo disso a grid corta o topo
+IG_SAFE_BOT = 0.78   # acima disso a grid corta a base
+FACE_ZONE_TOP = 0.52  # texto do short não invade abaixo daqui (rosto ~0.55–0.65)
+
+
+def _safe_block_top(h: int, total_h: int, position: str = "center") -> int:
+    """Top-y for the text block, clamped into the Instagram safe zone.
+
+    center/upper: block sits in the upper safe zone, above the face zone.
+    left/right:   block may extend down to the safe bottom.
+    """
+    if position in ("left", "right"):
+        desired = int(h * 0.35) - total_h // 2
+        bottom_limit = int(h * IG_SAFE_BOT)
+    else:
+        desired = int(h * 0.24)
+        bottom_limit = int(h * FACE_ZONE_TOP)
+
+    top_limit = int(h * IG_SAFE_TOP)
+    max_top = bottom_limit - total_h
+    block_top = min(desired, max_top)
+    block_top = max(block_top, top_limit)
+    return block_top
+
 # ── Style mapping ───────────────────────────────────────────────────────────
 
 STYLE_MAP = {
