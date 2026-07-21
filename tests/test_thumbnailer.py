@@ -14,6 +14,8 @@ from tools.thumbnailer import (
     _load_templates,
     _resolve_template,
     _safe_block_top,
+    _draw_sub_chip,
+    _apply_grade,
     IG_SAFE_TOP,
     IG_SAFE_BOT,
     FACE_ZONE_TOP,
@@ -93,3 +95,31 @@ class TestSafeBlockTop:
         top = _safe_block_top(self.H, 300, "left")
         assert top >= int(self.H * IG_SAFE_TOP)
         assert top + 300 <= int(self.H * IG_SAFE_BOT)
+
+
+class TestSubChip:
+    def test_chip_paints_accent_pixels(self):
+        img = Image.new("RGBA", (300, 120), (0, 0, 0, 255))
+        font = ImageFont.load_default(size=24)
+        out = _draw_sub_chip(img, "SÓ R$100", font, (255, 0, 0), (255, 255, 255), (150, 60))
+        arr = np.asarray(out.convert("RGB"))
+        # há pixels vermelhos do chip
+        red = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 60) & (arr[:, :, 2] < 60)
+        assert red.sum() > 0
+
+
+class TestApplyGrade:
+    def test_same_size_and_changes_pixels(self):
+        img = Image.new("RGB", (200, 400), (128, 128, 128))
+        out = _apply_grade(img, [[255, 0, 0], [0, 0, 255]])
+        assert out.size == img.size
+        arr = np.asarray(out)
+        # topo puxa vermelho, base puxa azul
+        assert int(arr[5, 100, 0]) > int(arr[395, 100, 0])
+        assert int(arr[395, 100, 2]) > int(arr[5, 100, 2])
+
+    def test_none_grade_returns_rgb(self):
+        img = Image.new("RGB", (50, 50), (10, 20, 30))
+        out = _apply_grade(img, None)
+        assert out.mode == "RGB"
+        assert out.size == (50, 50)

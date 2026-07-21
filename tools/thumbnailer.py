@@ -675,6 +675,52 @@ def _draw_dark_band(img: Image.Image, center_y: int, band_height: int) -> Image.
     return Image.alpha_composite(img, overlay)
 
 
+def _draw_sub_chip(
+    img: Image.Image,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    accent: tuple,
+    text_color: tuple,
+    center_xy: tuple[int, int],
+) -> Image.Image:
+    """Draw sub_text as a filled rounded chip in the accent color."""
+    img = img.convert("RGBA")
+    draw = ImageDraw.Draw(img)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    pad_x = max(10, int(th * 0.5))
+    pad_y = max(6, int(th * 0.30))
+    cx, cy = center_xy
+
+    x0 = cx - tw // 2 - pad_x
+    y0 = cy - th // 2 - pad_y
+    x1 = cx + tw // 2 + pad_x
+    y1 = cy + th // 2 + pad_y
+    radius = max(6, (y1 - y0) // 3)
+
+    draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=tuple(accent))
+    draw.text((cx, cy), text, font=font, fill=tuple(text_color), anchor="mm")
+    return img
+
+
+def _apply_grade(
+    img: Image.Image, grade: list | None, strength: float = 0.22
+) -> Image.Image:
+    """Blend a subtle vertical [top, bottom] color grade over the frame."""
+    img = img.convert("RGB")
+    if not grade:
+        return img
+    arr = np.asarray(img, dtype=np.float32)
+    h = arr.shape[0]
+    top = np.array(grade[0], dtype=np.float32)
+    bottom = np.array(grade[1], dtype=np.float32)
+    ramp = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None, None]
+    overlay = top[None, None, :] + (bottom - top)[None, None, :] * ramp
+    out = arr * (1.0 - strength) + overlay * strength
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGB")
+
+
 def _draw_thumbnail_text(
     img: Image.Image,
     main_text: str,
