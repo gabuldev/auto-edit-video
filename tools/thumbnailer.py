@@ -61,6 +61,58 @@ STYLE_MAP = {
 
 DEFAULT_STYLE = "clean-minimal"
 
+# ── Template registry ───────────────────────────────────────────────────────
+
+_BUILTIN_TEMPLATES = {
+    "default": "dev",
+    "templates": {
+        "dev": {
+            "description": "programação, frameworks, dicas de dev, carreira",
+            "accent": [55, 224, 160],
+            "grade": [[11, 31, 26], [6, 16, 13]],
+            "sub_text_color": [4, 18, 12],
+        },
+        "maker": {
+            "description": "impressão 3D, hardware, firmware, montagens, mods",
+            "accent": [255, 159, 46],
+            "grade": [[36, 22, 5], [15, 10, 5]],
+            "sub_text_color": [26, 14, 0],
+        },
+        "gadget": {
+            "description": "review de produto, unboxing, comparativo de gadgets",
+            "accent": [255, 63, 134],
+            "grade": [[38, 10, 26], [15, 5, 11]],
+            "sub_text_color": [255, 255, 255],
+        },
+    },
+}
+
+_STYLE_HINT_COMPAT = {
+    "bold-energy": "gadget",
+    "clean-minimal": "dev",
+    "dramatic": "gadget",
+    "fun-colorful": "maker",
+}
+
+
+def _load_templates() -> dict:
+    """Load the template registry from JSON, falling back to built-in defaults."""
+    candidates: list[Path] = []
+    env = os.environ.get("AUTO_EDIT_ASSETS_TEMPLATES")
+    if env:
+        candidates.append(Path(env))
+    candidates.append(_repo_root() / "assets" / "thumbnails" / "templates.json")
+
+    for p in candidates:
+        try:
+            if p.is_file():
+                data = json.loads(p.read_text())
+                if isinstance(data, dict) and data.get("templates"):
+                    return data
+        except Exception:
+            continue
+    return _BUILTIN_TEMPLATES
+
 # ── Asset helpers ───────────────────────────────────────────────────────────
 
 

@@ -1,0 +1,23 @@
+{
+  "default": "dev",
+  "templates": {
+    "dev": {
+      "description": "programação, frameworks, dicas de dev, carreira",
+      "accent": [55, 224, 160],
+      "grade": [[11, 31, 26], [6, 16, 13]],
+      "sub_text_color": [4, 18, 12]
+    },
+    "maker": {
+      "description": "impressão 3D, hardware, firmware, montagens, mods",
+      "accent": [255, 159, 46],
+      "grade": [[36, 22, 5], [15, 10, 5]],
+      "sub_text_color": [26, 14, 0]
+    },
+    "gadget": {
+      "description": "review de produto, unboxing, comparativo de gadgets",
+      "accent": [255, 63, 134],
+      "grade": [[38, 10, 26], [15, 5, 11]],
+      "sub_text_color": [255, 255, 255]
+    }
+  }
+}
