@@ -15,6 +15,7 @@ from tools.thumbnailer import (
     _resolve_template,
     _safe_block_top,
     _draw_sub_chip,
+    _draw_thumbnail_text,
     _apply_grade,
     IG_SAFE_TOP,
     IG_SAFE_BOT,
@@ -106,6 +107,24 @@ class TestSubChip:
         # há pixels vermelhos do chip
         red = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 60) & (arr[:, :, 2] < 60)
         assert red.sum() > 0
+
+
+class TestDrawThumbnailText:
+    def test_accepts_template_dict_and_renders(self):
+        img = Image.new("RGB", (1080, 1920), (40, 40, 40))
+        template = _BUILTIN_TEMPLATES["templates"]["gadget"]
+        out = _draw_thumbnail_text(img, "CASE DA GOPRO", "SÓ R$100", template, "center")
+        assert out.size == (1080, 1920)
+        arr = np.asarray(out.convert("RGB"))
+        # chip magenta do gadget aparece em algum lugar
+        magenta = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 90) & (arr[:, :, 2] > 110)
+        assert magenta.sum() > 0
+
+    def test_no_subtext_still_renders(self):
+        img = Image.new("RGB", (1080, 1920), (40, 40, 40))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        out = _draw_thumbnail_text(img, "CAIU O FLUTTER", None, template, "center")
+        assert out.size == (1080, 1920)
 
 
 class TestApplyGrade:

@@ -725,69 +725,47 @@ def _draw_thumbnail_text(
     img: Image.Image,
     main_text: str,
     sub_text: str | None,
-    style_hint: str,
+    template: dict,
     position: str = "center",
 ) -> Image.Image:
-    """Overlay main_text (and optional sub_text) onto the image."""
+    """Overlay main_text (branco condensado) e sub_text (chip accent) na safe zone."""
     img = img.convert("RGBA")
     font_path = _find_font()
     w, h = img.size
 
-    style = STYLE_MAP.get(style_hint, STYLE_MAP[DEFAULT_STYLE])
-    accent_color = style.get("accent", (255, 220, 0))
+    accent_color = tuple(template.get("accent", [255, 220, 0]))
+    sub_text_color = tuple(template.get("sub_text_color", [0, 0, 0]))
 
     main_text = main_text.upper()
-    if position in ("left", "right"):
-        max_text_width = int(w * 0.55)
-    else:
-        max_text_width = int(w * 0.65)
+    max_text_width = int(w * 0.55) if position in ("left", "right") else int(w * 0.72)
 
-    # Main text — auto-size with word wrap (up to 2 lines)
     main_font, main_lines = _auto_size_font(
         font_path, main_text, max_text_width,
-        max_size=int(w * 0.12),  # slightly smaller for cleaner look
-        min_size=int(w * 0.05),
-        max_lines=2,
+        max_size=int(w * 0.13), min_size=int(w * 0.05), max_lines=2,
     )
-
-    # Measure line height
     sample_bbox = main_font.getbbox("Ag")
     line_h = sample_bbox[3] - sample_bbox[1]
     line_spacing = int(line_h * 0.15)
-
-    # Total main block height
     main_block_h = line_h * len(main_lines) + line_spacing * (len(main_lines) - 1)
 
-    # Sub text
     sub_font = None
-    sub_lines = []
+    sub_lines: list[str] = []
     sub_line_h = 0
     if sub_text:
         sub_text = sub_text.upper()
-        sub_max_width = int(w * 0.80)  # sub_text gets more room to be prominent
         sub_font, sub_lines = _auto_size_font(
-            font_path, sub_text, sub_max_width,
-            max_size=int(w * 0.09),
-            min_size=int(w * 0.035),
-            max_lines=1,
+            font_path, sub_text, int(w * 0.80),
+            max_size=int(w * 0.075), min_size=int(w * 0.035), max_lines=1,
         )
         sub_bbox = sub_font.getbbox("Ag")
         sub_line_h = sub_bbox[3] - sub_bbox[1]
 
-    # Total text block height
-    gap = int(line_h * 0.3) if sub_lines else 0
-    total_h = main_block_h + gap + (sub_line_h if sub_lines else 0)
+    chip_extra = int(sub_line_h * 0.6) if sub_lines else 0
+    gap = int(line_h * 0.4) if sub_lines else 0
+    total_h = main_block_h + gap + (sub_line_h + chip_extra if sub_lines else 0)
 
-    # Vertical position — text goes upper to leave room for face/subject below
-    if position == "upper":
-        block_top = int(h * 0.15)
-    elif position in ("left", "right"):
-        block_top = int(h * 0.35) - total_h // 2
-    else:
-        # Center-top: text in upper third, subject visible in lower half
-        block_top = int(h * 0.08)
+    block_top = _safe_block_top(h, total_h, position)
 
-    # Horizontal position — rule of thirds
     if position == "left":
         text_x = int(w * 0.05)
         anchor = "lm"
@@ -798,14 +776,13 @@ def _draw_thumbnail_text(
         text_x = w // 2
         anchor = "mm"
 
-    # Dark band behind text — tight to text area only
     band_center = block_top + total_h // 2
+    band_center = min(band_center, int(h * IG_SAFE_BOT) - int(line_h * 0.3))
     img = _draw_dark_band(img, band_center, total_h + int(line_h * 0.6))
 
     draw = ImageDraw.Draw(img)
     outline_w = max(6, int(line_h * 0.08))
 
-    # Draw main text lines
     y = block_top
     for line in main_lines:
         _draw_text_with_outline(
@@ -815,17 +792,13 @@ def _draw_thumbnail_text(
         )
         y += line_h + line_spacing
 
-    # Draw sub text with accent color
     if sub_lines and sub_font:
         y += gap
-        sub_outline = max(4, int(sub_line_h * 0.08))
-        for line in sub_lines:
-            _draw_text_with_outline(
-                draw, (text_x, y + sub_line_h // 2), line,
-                sub_font, accent_color, (0, 0, 0),
-                outline_width=sub_outline, anchor=anchor,
-            )
-            y += sub_line_h
+        chip_cx = w // 2 if anchor == "mm" else text_x
+        img = _draw_sub_chip(
+            img, sub_lines[0], sub_font, accent_color, sub_text_color,
+            (chip_cx, y + sub_line_h // 2),
+        )
 
     return img.convert("RGB")
 
@@ -834,11 +807,16 @@ def _draw_thumbnail_text(
 
 
 def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
-    """Generate thumbnail for short video: best frame + bold text."""
+    """Generate thumbnail for short video: best frame + template + bold text."""
     thumb_data = metadata.get("thumbnail", {})
     main_text = thumb_data.get("main_text", metadata.get("short_title", ""))
     sub_text = thumb_data.get("sub_text")
-    style_hint = thumb_data.get("style_hint", DEFAULT_STYLE)
+
+    registry = _load_templates()
+    template_name, template = _resolve_template(
+        thumb_data.get("template"), thumb_data.get("style_hint"), registry
+    )
+    print(f"[thumbnailer] template={template_name}")
 
     w, h = SHORT_SIZE
 
@@ -853,22 +831,14 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
     img = Image.open(frame_path)
     img = _crop_center(img, w, h)
+    img = _apply_grade(img, template.get("grade"))
 
-    # Overlay text
-    img = _draw_thumbnail_text(img, main_text, sub_text, style_hint, position="center")
-
-    # Composite logos if specified
-    logo_names = thumb_data.get("logos")
-    logo_paths = _find_logo_assets(logo_names)
-    if logo_paths:
-        img = _composite_logos(img, logo_paths, "top-left")
-        img = img.convert("RGB")
+    img = _draw_thumbnail_text(img, main_text, sub_text, template, position="center")
 
     output = workspace / "thumbnail.png"
     img.save(output, "PNG", quality=95)
     print(f"[thumbnailer] Short thumbnail → {output}")
 
-    # Cleanup temp frame
     frame_path.unlink(missing_ok=True)
     return output
 
@@ -880,6 +850,11 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     sub_text = thumb_data.get("sub_text")
     style_hint = thumb_data.get("style_hint", DEFAULT_STYLE)
     context = pipeline.get("context", "")
+
+    registry = _load_templates()
+    _, template = _resolve_template(
+        thumb_data.get("template"), thumb_data.get("style_hint"), registry
+    )
 
     w, h = LONG_SIZE
 
@@ -926,7 +901,7 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     text_pos = "left" if has_face else "center"
 
     img_rgb = img.convert("RGB")
-    img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, style_hint, position=text_pos)
+    img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, template, position=text_pos)
 
     # Composite logos if specified
     logo_names = thumb_data.get("logos")
