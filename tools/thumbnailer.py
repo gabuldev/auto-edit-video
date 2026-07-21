@@ -119,6 +119,12 @@ _STYLE_HINT_COMPAT = {
     "fun-colorful": "maker",
 }
 
+_TEMPLATE_TO_STYLE = {
+    "dev": "clean-minimal",
+    "maker": "fun-colorful",
+    "gadget": "bold-energy",
+}
+
 
 def _load_templates() -> dict:
     """Load the template registry from JSON, falling back to built-in defaults."""
@@ -681,9 +687,18 @@ def _draw_sub_chip(
     font: ImageFont.FreeTypeFont,
     accent: tuple,
     text_color: tuple,
-    center_xy: tuple[int, int],
+    anchor_xy: tuple[int, int],
+    align: str = "center",
 ) -> Image.Image:
-    """Draw sub_text as a filled rounded chip in the accent color."""
+    """Draw sub_text as a filled rounded chip in the accent color.
+
+    ``anchor_xy`` is the point the caller wants the chip anchored to.
+    ``align`` controls how the chip's text-center is derived from that
+    anchor so the chip stays on screen for left/right positions:
+      - "center": text center = anchor (unchanged legacy behavior)
+      - "left":   chip grows to the right of the anchor
+      - "right":  chip grows to the left of the anchor
+    """
     img = img.convert("RGBA")
     draw = ImageDraw.Draw(img)
     bbox = draw.textbbox((0, 0), text, font=font)
@@ -691,16 +706,24 @@ def _draw_sub_chip(
     th = bbox[3] - bbox[1]
     pad_x = max(10, int(th * 0.5))
     pad_y = max(6, int(th * 0.30))
-    cx, cy = center_xy
+    ax, ay = anchor_xy
 
-    x0 = cx - tw // 2 - pad_x
-    y0 = cy - th // 2 - pad_y
-    x1 = cx + tw // 2 + pad_x
-    y1 = cy + th // 2 + pad_y
+    if align == "left":
+        text_cx = ax + pad_x + tw // 2
+    elif align == "right":
+        text_cx = ax - pad_x - tw // 2
+    else:
+        text_cx = ax
+    text_cy = ay
+
+    x0 = text_cx - tw // 2 - pad_x
+    y0 = text_cy - th // 2 - pad_y
+    x1 = text_cx + tw // 2 + pad_x
+    y1 = text_cy + th // 2 + pad_y
     radius = max(6, (y1 - y0) // 3)
 
     draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=tuple(accent))
-    draw.text((cx, cy), text, font=font, fill=tuple(text_color), anchor="mm")
+    draw.text((text_cx, text_cy), text, font=font, fill=tuple(text_color), anchor="mm")
     return img
 
 
@@ -718,7 +741,7 @@ def _apply_grade(
     ramp = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None, None]
     overlay = top[None, None, :] + (bottom - top)[None, None, :] * ramp
     out = arr * (1.0 - strength) + overlay * strength
-    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGB")
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), mode="RGB")
 
 
 def _draw_thumbnail_text(
@@ -794,10 +817,18 @@ def _draw_thumbnail_text(
 
     if sub_lines and sub_font:
         y += gap
-        chip_cx = w // 2 if anchor == "mm" else text_x
+        if anchor == "lm":
+            chip_anchor_xy = (int(w * 0.05), y + sub_line_h // 2)
+            chip_align = "left"
+        elif anchor == "rm":
+            chip_anchor_xy = (int(w * 0.95), y + sub_line_h // 2)
+            chip_align = "right"
+        else:
+            chip_anchor_xy = (w // 2, y + sub_line_h // 2)
+            chip_align = "center"
         img = _draw_sub_chip(
             img, sub_lines[0], sub_font, accent_color, sub_text_color,
-            (chip_cx, y + sub_line_h // 2),
+            chip_anchor_xy, align=chip_align,
         )
 
     return img.convert("RGB")
@@ -848,12 +879,14 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     thumb_data = metadata.get("thumbnail", {})
     main_text = thumb_data.get("main_text", metadata.get("youtube_title", ""))
     sub_text = thumb_data.get("sub_text")
-    style_hint = thumb_data.get("style_hint", DEFAULT_STYLE)
     context = pipeline.get("context", "")
 
     registry = _load_templates()
-    _, template = _resolve_template(
+    template_name, template = _resolve_template(
         thumb_data.get("template"), thumb_data.get("style_hint"), registry
+    )
+    style_hint = thumb_data.get("style_hint") or _TEMPLATE_TO_STYLE.get(
+        template_name, DEFAULT_STYLE
     )
 
     w, h = LONG_SIZE

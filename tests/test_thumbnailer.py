@@ -4,13 +4,13 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 from PIL import Image, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.thumbnailer import (
     _BUILTIN_TEMPLATES,
+    _TEMPLATE_TO_STYLE,
     _load_templates,
     _resolve_template,
     _safe_block_top,
@@ -107,6 +107,25 @@ class TestSubChip:
         # há pixels vermelhos do chip
         red = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 60) & (arr[:, :, 2] < 60)
         assert red.sum() > 0
+
+    def test_chip_left_align_stays_on_screen(self):
+        img = Image.new("RGBA", (1080, 200), (0, 0, 0, 255))
+        font = ImageFont.load_default(size=24)
+        out = _draw_sub_chip(
+            img, "PTFE 2,5MM", font, (255, 0, 0), (255, 255, 255),
+            (int(1080 * 0.05), 60), align="left",
+        )
+        arr = np.asarray(out.convert("RGB"))
+        red = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 60) & (arr[:, :, 2] < 60)
+        xs = np.where(red.any(axis=0))[0]
+        assert xs.size > 0
+        assert xs.min() >= 0 and xs.max() < 1080
+
+
+class TestTemplateToStyle:
+    def test_template_to_style_covers_registry(self):
+        for name in _BUILTIN_TEMPLATES["templates"]:
+            assert name in _TEMPLATE_TO_STYLE
 
 
 class TestDrawThumbnailText:
