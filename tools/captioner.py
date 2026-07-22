@@ -482,12 +482,57 @@ def _get_duration(video: Path) -> float:
     return float(result.stdout.strip())
 
 
+def _ffmpeg_has_subtitles(binary: str) -> bool:
+    """True if this ffmpeg build exposes the libass 'subtitles' filter."""
+    try:
+        result = subprocess.run(
+            [binary, "-hide_banner", "-filters"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return " subtitles " in (result.stdout or "")
+
+
+def _resolve_caption_ffmpeg() -> str:
+    """Find an ffmpeg build with libass (the 'subtitles' filter) to burn captions.
+
+    Order: AUTO_EDIT_FFMPEG override, then each ffmpeg on PATH. Raises with an
+    actionable message if none has libass — many Homebrew builds ship without it.
+    """
+    candidates: list[str] = []
+    env = os.environ.get("AUTO_EDIT_FFMPEG")
+    if env:
+        candidates.append(env)
+
+    seen = set(candidates)
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if not d:
+            continue
+        p = os.path.join(d, "ffmpeg")
+        if p not in seen and os.path.isfile(p) and os.access(p, os.X_OK):
+            seen.add(p)
+            candidates.append(p)
+
+    for binary in candidates:
+        if _ffmpeg_has_subtitles(binary):
+            return binary
+
+    raise RuntimeError(
+        "Nenhum ffmpeg com libass encontrado (filtro 'subtitles' ausente) — "
+        "necessário pra queimar legendas. Instale um ffmpeg com libass "
+        "(ex: `brew reinstall ffmpeg`) ou aponte AUTO_EDIT_FFMPEG para um "
+        "binário com libass."
+    )
+
+
 def _burn_captions(video: Path, ass: Path, output: Path) -> None:
     # ASS path must use forward slashes and be absolute
     ass_norm = str(ass.resolve()).replace("\\", "/")
 
+    ffmpeg_bin = _resolve_caption_ffmpeg()
     cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_bin, "-y",
         "-i", str(video),
         "-vf", f"subtitles='{ass_norm}'",
         "-c:a", "copy",

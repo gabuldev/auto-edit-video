@@ -67,6 +67,7 @@ Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iteraç
 | `AUTO_EDIT_LANGUAGE` | `pt` | Idioma do áudio para transcrição |
 | `AUTO_EDIT_HOME` | `~/.auto-edit` | Diretório de profile + plans (fora do repo) |
 | `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
+| `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
 
 ## Slash Commands Disponíveis
