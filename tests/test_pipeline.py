@@ -131,3 +131,41 @@ class TestSetStage:
         assert p["stages"]["plan"]["status"] == "pending"
         assert p["stages"]["review"]["status"] == "pending"
         assert p["stages"]["extract"]["status"] == "complete"
+
+
+# ── _merge_target ────────────────────────────────────────────────────────────
+
+class TestMergeTarget:
+    def test_all_portrait_picks_portrait(self):
+        from auto_edit.cli import _merge_target
+        res = [(2192, 2928), (2192, 2928), (2208, 2928), (2128, 2848)]
+        w, h = _merge_target(res)
+        assert h > w  # stays portrait
+        assert (w, h) == (2192, 2928)  # most common resolution wins
+
+    def test_all_portrait_tie_largest_area_wins(self):
+        from auto_edit.cli import _merge_target
+        res = [(2192, 2928), (2208, 2928), (2128, 2848)]
+        assert _merge_target(res) == (2208, 2928)
+
+    def test_all_landscape_picks_largest_16_9(self):
+        from auto_edit.cli import _merge_target
+        res = [(1920, 1080), (3840, 2160), (1280, 720)]
+        assert _merge_target(res) == (3840, 2160)
+
+    def test_mixed_orientation_majority_wins(self):
+        from auto_edit.cli import _merge_target
+        res = [(1080, 1920), (1080, 1920), (1920, 1080)]
+        w, h = _merge_target(res)
+        assert h > w
+
+    def test_landscape_no_16_9_defaults_1080p(self):
+        from auto_edit.cli import _merge_target
+        res = [(1440, 1080), (1600, 1200)]
+        assert _merge_target(res) == (1920, 1080)
+
+    def test_odd_dimensions_rounded_even(self):
+        from auto_edit.cli import _merge_target
+        res = [(1081, 1921), (1081, 1921), (721, 1281)]
+        w, h = _merge_target(res)
+        assert w % 2 == 0 and h % 2 == 0
