@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -79,6 +80,29 @@ def _get_merge_codec() -> tuple[str, list[str]]:
         if codec in result.stdout:
             return codec, flags
     return "libx264", ["-crf", "23", "-preset", "fast"]
+
+
+def _merge_target(resolutions: list[tuple[int, int]]) -> tuple[int, int]:
+    """Pick the merge target resolution honoring the dominant orientation.
+
+    Portrait majority → most common portrait resolution (keeps phone footage
+    upright instead of decapitating it into 1920x1080). Landscape majority →
+    largest ~16:9 present, or 1920x1080 default.
+    """
+    portrait = [(w, h) for w, h in resolutions if h > w]
+    if len(portrait) > len(resolutions) / 2:
+        # Most common portrait resolution; ties broken by area (largest wins)
+        counts = Counter(portrait)
+        target_w, target_h = max(counts, key=lambda r: (counts[r], r[0] * r[1]))
+    else:
+        target_w, target_h = 1920, 1080
+        for w, h in resolutions:
+            ar = w / h
+            if 1.7 < ar < 1.8 and w > target_w:  # ~16:9
+                target_w, target_h = w, h
+    return target_w - target_w % 2, target_h - target_h % 2
+
+
 VALID_MODELS = ["tiny", "base", "small", "medium", "large"]
 CLI_EPILOG = "claude, cursor, or agent (agent = Cursor)"
 
@@ -461,12 +485,7 @@ def merge(
         concat_list.unlink(missing_ok=True)
     else:
         # Slow path: mixed resolutions — use concat filter with crop+scale
-        # Target: largest 16:9 resolution present, or 1920x1080 default
-        target_w, target_h = 1920, 1080
-        for w, h in resolutions:
-            ar = w / h
-            if 1.7 < ar < 1.8 and w > target_w:  # ~16:9
-                target_w, target_h = w, h
+        target_w, target_h = _merge_target(resolutions)
         console.print(f"  Target resolution: [bold]{target_w}x{target_h}[/bold]")
 
         inputs = []
