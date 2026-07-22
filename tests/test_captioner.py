@@ -14,6 +14,8 @@ from tools.captioner import (
     _generate_srt,
     _format_srt_time,
     _is_existing_post_cut_usable,
+    _ffmpeg_has_subtitles,
+    _resolve_caption_ffmpeg,
 )
 
 
@@ -219,3 +221,67 @@ class TestSrtExport:
         srt_path = tmp_path / "empty.srt"
         _generate_srt([], srt_path)
         assert srt_path.read_text() == ""
+
+
+# ── ffmpeg / libass resolution ────────────────────────────────────────────────
+
+
+class TestFfmpegHasSubtitles:
+    def test_true_when_filter_listed(self, monkeypatch):
+        import tools.captioner as c
+
+        class R:
+            stdout = " .. subtitles         V->V       Render text subtitles onto input video using the libass library.\n"
+
+        monkeypatch.setattr(c.subprocess, "run", lambda *a, **k: R())
+        assert _ffmpeg_has_subtitles("/any/ffmpeg") is True
+
+    def test_false_when_filter_absent(self, monkeypatch):
+        import tools.captioner as c
+
+        class R:
+            stdout = " .. scale         V->V       Scale the input video.\n"
+
+        monkeypatch.setattr(c.subprocess, "run", lambda *a, **k: R())
+        assert _ffmpeg_has_subtitles("/any/ffmpeg") is False
+
+    def test_false_when_binary_missing(self, monkeypatch):
+        import tools.captioner as c
+
+        def boom(*a, **k):
+            raise OSError("no such binary")
+
+        monkeypatch.setattr(c.subprocess, "run", boom)
+        assert _ffmpeg_has_subtitles("/nope/ffmpeg") is False
+
+
+class TestResolveCaptionFfmpeg:
+    def test_env_override_wins_when_valid(self, monkeypatch):
+        import tools.captioner as c
+
+        monkeypatch.setenv("AUTO_EDIT_FFMPEG", "/opt/good/ffmpeg")
+        monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: b == "/opt/good/ffmpeg")
+        assert _resolve_caption_ffmpeg() == "/opt/good/ffmpeg"
+
+    def test_falls_back_to_path_binary(self, monkeypatch, tmp_path):
+        import tools.captioner as c
+
+        # a fake ffmpeg on PATH that "has" libass
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        fake = bindir / "ffmpeg"
+        fake.write_text("#!/bin/sh\n")
+        fake.chmod(0o755)
+        monkeypatch.delenv("AUTO_EDIT_FFMPEG", raising=False)
+        monkeypatch.setenv("PATH", str(bindir))
+        monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: b == str(fake))
+        assert _resolve_caption_ffmpeg() == str(fake)
+
+    def test_raises_actionable_error_when_none(self, monkeypatch):
+        import tools.captioner as c
+
+        monkeypatch.delenv("AUTO_EDIT_FFMPEG", raising=False)
+        monkeypatch.setenv("PATH", "/nonexistent-dir")
+        monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: False)
+        with pytest.raises(RuntimeError, match="libass"):
+            _resolve_caption_ffmpeg()
