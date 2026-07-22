@@ -40,6 +40,26 @@ def _get_video_codec() -> tuple[str, list[str]]:
 SHORT_TARGET = (1080, 1920)  # 9:16
 
 
+def _resolve_reframe(video_type: str, w: int, h: int) -> tuple[int, int] | None:
+    """Return (target_w, target_h) if the video should be cropped to 9:16, else None.
+
+    Set AUTO_EDIT_NO_REFRAME=1 to skip the crop entirely — keeps the original
+    aspect ratio (platforms letterbox it). Useful when the source is landscape
+    and center-cropping would upscale too aggressively (e.g. 1080p → 608px wide
+    crop stretched to 1080, visibly pixelated).
+    """
+    if os.environ.get("AUTO_EDIT_NO_REFRAME", "").lower() in ("1", "true", "yes"):
+        return None
+    if video_type != "short":
+        return None
+    target_w, target_h = SHORT_TARGET
+    target_ratio = target_w / target_h  # 0.5625
+    source_ratio = w / h
+    if abs(source_ratio - target_ratio) > 0.02:
+        return (target_w, target_h)
+    return None
+
+
 def execute(workspace: Path) -> None:
     pipeline = json.loads((workspace / "pipeline.json").read_text())
     video_path = Path(pipeline["video_path"])
@@ -71,12 +91,11 @@ def execute(workspace: Path) -> None:
     reframe = None
     if video_type == "short":
         w, h = _get_video_dimensions(video_path)
-        target_w, target_h = SHORT_TARGET
-        target_ratio = target_w / target_h  # 0.5625
-        source_ratio = w / h
-        if abs(source_ratio - target_ratio) > 0.02:
-            reframe = (target_w, target_h)
-            print(f"[executor] Reframing {w}x{h} ({source_ratio:.3f}) → {target_w}x{target_h} (9:16)")
+        reframe = _resolve_reframe(video_type, w, h)
+        if reframe:
+            print(f"[executor] Reframing {w}x{h} ({w/h:.3f}) → {reframe[0]}x{reframe[1]} (9:16)")
+        elif os.environ.get("AUTO_EDIT_NO_REFRAME"):
+            print(f"[executor] AUTO_EDIT_NO_REFRAME set — keeping original {w}x{h}")
 
     output = workspace / "edited_video.mp4"
     _run_ffmpeg_cuts(video_path, kept, output, reframe=reframe)

@@ -180,3 +180,29 @@ class TestBuildFilter:
         assert "loudnorm=I=-16:TP=-1.5:LRA=11" in f
         assert "[outa_raw]" in f
         assert "[outa]" in f
+
+
+# ── _resolve_reframe ─────────────────────────────────────────────────────────
+
+class TestResolveReframe:
+    def test_short_landscape_reframes(self):
+        from tools.executor import _resolve_reframe
+        assert _resolve_reframe("short", 1920, 1080) == (1080, 1920)
+
+    def test_short_already_vertical_skips(self):
+        from tools.executor import _resolve_reframe
+        assert _resolve_reframe("short", 1080, 1920) is None
+
+    def test_long_never_reframes(self):
+        from tools.executor import _resolve_reframe
+        assert _resolve_reframe("long", 1920, 1080) is None
+
+    def test_env_no_reframe_disables(self, monkeypatch):
+        from tools.executor import _resolve_reframe
+        monkeypatch.setenv("AUTO_EDIT_NO_REFRAME", "1")
+        assert _resolve_reframe("short", 1920, 1080) is None
+
+    def test_env_no_reframe_zero_still_reframes(self, monkeypatch):
+        from tools.executor import _resolve_reframe
+        monkeypatch.setenv("AUTO_EDIT_NO_REFRAME", "0")
+        assert _resolve_reframe("short", 1920, 1080) == (1080, 1920)
