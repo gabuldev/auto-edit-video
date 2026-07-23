@@ -9,6 +9,7 @@ from PIL import Image, ImageFont
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.thumbnailer import (
+    _cover_concat_cmd,
     _BUILTIN_TEMPLATES,
     _TEMPLATE_TO_STYLE,
     _load_templates,
@@ -161,3 +162,23 @@ class TestApplyGrade:
         out = _apply_grade(img, None)
         assert out.mode == "RGB"
         assert out.size == (50, 50)
+
+
+# ── _cover_concat_cmd (faststart / brand) ────────────────────────────────────
+
+class TestCoverConcatCmd:
+    def test_includes_faststart(self):
+        cmd = _cover_concat_cmd(Path("/tmp/list.txt"), Path("/tmp/out.mp4"))
+        assert "-movflags" in cmd
+        assert cmd[cmd.index("-movflags") + 1] == "+faststart"
+
+    def test_includes_mp42_brand(self):
+        cmd = _cover_concat_cmd(Path("/tmp/list.txt"), Path("/tmp/out.mp4"))
+        assert "-brand" in cmd
+        assert cmd[cmd.index("-brand") + 1] == "mp42"
+
+    def test_flags_before_output(self):
+        # ffmpeg output options must precede the output path
+        cmd = _cover_concat_cmd(Path("/tmp/list.txt"), Path("/tmp/out.mp4"))
+        assert cmd.index("-movflags") < cmd.index("/tmp/out.mp4")
+        assert cmd[-1] == "/tmp/out.mp4"

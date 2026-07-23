@@ -953,6 +953,24 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 # ── Cover frame embedding ───────────────────────────────────────────────────
 
 
+def _cover_concat_cmd(concat_list: Path, output: Path) -> list[str]:
+    """Build the ffmpeg concat command for the cover+video mux.
+
+    MUST include `-movflags +faststart` and `-brand mp42`: this is the LAST
+    stage to touch the delivered file, and a bare `concat -c copy` writes the
+    moov atom at the END (no faststart) and resets major_brand to `isom`.
+    That combination is accepted by browser uploads (whole file read locally)
+    but rejected as "invalid format" by the iOS YouTube app after AirDrop.
+    """
+    return [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", str(concat_list),
+        "-c", "copy",
+        "-movflags", "+faststart", "-brand", "mp42",
+        str(output),
+    ]
+
+
 def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
     """Prepend the thumbnail as a brief still frame at the start of the final video.
 
@@ -1003,12 +1021,7 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
     )
 
     output = workspace / "cover_video.mp4"
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat_list),
-        "-c", "copy",
-        str(output),
-    ]
+    cmd = _cover_concat_cmd(concat_list, output)
     subprocess.run(cmd, capture_output=True, check=True)
 
     # Replace the original video with the cover version
