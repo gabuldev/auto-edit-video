@@ -66,9 +66,23 @@ class TestValidatePlan:
         with pytest.raises(ValueError, match="missing/invalid"):
             _validate_plan(plan, 60.0)
 
-    def test_cuts_inverted_raises(self):
+    def test_degenerate_cut_is_tolerated_with_kept_segments(self):
+        # Real case: LLM planner emits a micro-inverted cut (0.08s) that is not
+        # even used (kept_segments drives output). Must not crash the pipeline.
+        plan = {
+            "kept_segments": [{"start": 0, "end": 60}],
+            "cuts": [{"start": 33.62, "end": 33.54}],
+        }
+        _validate_plan(plan, 60.0)  # should not raise
+
+    def test_degenerate_cut_only_is_tolerated(self):
+        # A degenerate cut is a no-op; dropping it (keep everything) beats crashing.
         plan = {"cuts": [{"start": 30, "end": 10}]}
-        with pytest.raises(ValueError):
+        _validate_plan(plan, 60.0)  # should not raise
+
+    def test_cut_missing_field_still_raises(self):
+        plan = {"cuts": [{"start": 30}]}
+        with pytest.raises(ValueError, match="missing/invalid"):
             _validate_plan(plan, 60.0)
 
 
@@ -100,6 +114,12 @@ class TestInvertCuts:
         result = _invert_cuts(cuts, 60.0)
         assert len(result) == 1
         assert result[0]["end"] == 55.0
+
+    def test_degenerate_cut_dropped(self):
+        # Inverted cut (start>=end) is a no-op — must be ignored, not regress cursor.
+        cuts = [{"start": 10, "end": 20}, {"start": 33.62, "end": 33.54}]
+        result = _invert_cuts(cuts, 60.0)
+        assert result == [{"start": 0.0, "end": 10.0}, {"start": 20.0, "end": 60.0}]
 
 
 # ── _merge_intervals ─────────────────────────────────────────────────────────

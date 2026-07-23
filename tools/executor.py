@@ -137,8 +137,13 @@ def _validate_plan(plan: dict, duration: float) -> None:
         except (KeyError, TypeError, ValueError) as e:
             raise ValueError(f"cuts[{i}] missing/invalid start or end: {e}") from e
 
+        # A degenerate cut (start>=end) removes nothing — the LLM planner
+        # occasionally emits micro-inversions (~0.1s). It's a no-op, not a
+        # fatal error: warn and let it be dropped downstream instead of
+        # killing the whole pipeline. kept_segments (validated above) is what
+        # actually drives the output.
         if start >= end:
-            raise ValueError(f"cuts[{i}] start={start:.3f} >= end={end:.3f}")
+            print(f"[executor] Ignoring degenerate cut[{i}] start={start:.3f} >= end={end:.3f} (no-op)")
 
 
 def _build_keep_intervals(plan: dict, duration: float) -> list[tuple[float, float]]:
@@ -249,9 +254,12 @@ def _invert_cuts(cuts: list[dict], duration: float) -> list[dict]:
     cursor = 0.0
     for cut in cuts:
         s = float(cut["start"])
+        e = float(cut["end"])
+        if s >= e:
+            continue  # degenerate cut (no-op) — skip so cursor never regresses
         if s > cursor:
             keep.append({"start": cursor, "end": s})
-        cursor = float(cut["end"])
+        cursor = e
     if cursor < duration:
         keep.append({"start": cursor, "end": duration})
     return keep
