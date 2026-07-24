@@ -28,4 +28,12 @@ class TestRegistry:
         with pytest.raises(ValueError, match="youtube"):
             cn.get_connector("myspace")
 
-    # youtube-dependent tests (get_connector/detect_platform) land in Task 4
+    def test_get_connector_youtube(self):
+        c = cn.get_connector("youtube")
+        assert c.platform == "youtube"
+
+    def test_detect_platform_from_youtube_url(self):
+        assert cn.detect_platform("https://youtu.be/abc123") == "youtube"
+
+    def test_detect_platform_unknown_none(self):
+        assert cn.detect_platform("https://example.com/x") is None
