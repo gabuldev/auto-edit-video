@@ -63,3 +63,66 @@ class TestParseAnalytics:
         assert p.ctr is None  # ausente → None
         assert p.raw == {"views": 1000, "estimatedMinutesWatched": 250.0,
                          "averageViewPercentage": 47.5, "subscribersGained": 12}
+
+
+class _FakeReq:
+    def __init__(self, resp):
+        self._resp = resp
+    def execute(self):
+        return self._resp
+
+
+class _FakeData:
+    """Mimetiza o cliente Data API v3: channels() e playlistItems()."""
+    def channels(self):
+        class C:
+            def list(inner, **kw):
+                return _FakeReq({"items": [{"contentDetails": {
+                    "relatedPlaylists": {"uploads": "UP1"}}}]})
+        return C()
+
+    def playlistItems(self):
+        class P:
+            def list(inner, **kw):
+                return _FakeReq({"items": [{
+                    "contentDetails": {"videoId": "v1"},
+                    "snippet": {"title": "T", "publishedAt": "2026-07-01T00:00:00Z",
+                                "thumbnails": {"high": {"url": "u"}}},
+                }], "nextPageToken": None})
+        return P()
+
+
+class _FakeAnalytics:
+    def reports(self):
+        class R:
+            def query(inner, **kw):
+                # devolve CTR só quando pedido, senão as métricas base
+                if "impressions" in kw.get("metrics", ""):
+                    return _FakeReq({"columnHeaders": [{"name": "video"},
+                        {"name": "impressions"}, {"name": "impressionClickThroughRate"}],
+                        "rows": [["v1", 5000, 0.061]]})
+                return _FakeReq({"columnHeaders": [{"name": "video"}, {"name": "views"}],
+                                 "rows": [["v1", 1000]]})
+        return R()
+
+
+def _connector_with_fakes():
+    c = YouTubeConnector()
+    c._data = _FakeData()
+    c._analytics = _FakeAnalytics()
+    return c
+
+
+class TestYouTubeApiCalls:
+    def test_list_videos(self):
+        c = _connector_with_fakes()
+        refs = c.list_videos()
+        assert [r.platform_video_id for r in refs] == ["v1"]
+
+    def test_fetch_metrics_merges_ctr(self):
+        c = _connector_with_fakes()
+        pts = c.fetch_metrics(["v1"])
+        p = {x.platform_video_id: x for x in pts}["v1"]
+        assert p.views == 1000
+        assert p.reach == 5000
+        assert p.ctr == 0.061

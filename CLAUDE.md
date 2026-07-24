@@ -69,6 +69,7 @@ Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iteraç
 | `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
 | `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
+| `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` |
 
 ## Slash Commands Disponíveis
 

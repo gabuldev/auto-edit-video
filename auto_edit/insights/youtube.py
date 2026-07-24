@@ -1,9 +1,12 @@
 """Connector YouTube: OAuth + Data API v3 + Analytics API v2."""
 from __future__ import annotations
 
+import os
 import re
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from auto_edit import config as cfg
 from auto_edit.insights.connector import MetricPoint, VideoRef
 
 # YT metric name -> nosso campo do MetricPoint
@@ -26,6 +29,13 @@ _ANALYTICS_METRICS = [
 _CTR_METRICS = ["impressions", "impressionClickThroughRate"]
 
 _SHORTS_RE = re.compile(r"/shorts/([A-Za-z0-9_-]+)")
+
+_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
+]
+_ANALYTICS_METRICS_STR = ",".join(_ANALYTICS_METRICS)
+_CTR_METRICS_STR = ",".join(_CTR_METRICS)
 
 
 def _parse_uploads(items: list[dict]) -> list[VideoRef]:
@@ -89,11 +99,101 @@ class YouTubeConnector:
                 return q["v"][0]
         return None
 
+    def __init__(self) -> None:
+        self._data = None
+        self._analytics = None
+
+    def _token_path(self) -> Path:
+        return cfg.tokens_dir() / "youtube.json"
+
+    def _credentials(self):
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from google_auth_oauthlib.flow import InstalledAppFlow
+
+        token_path = self._token_path()
+        creds = None
+        if token_path.exists():
+            creds = Credentials.from_authorized_user_file(str(token_path), _SCOPES)
+        if creds and creds.valid:
+            return creds
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            secret = os.environ.get("AUTO_EDIT_YT_CLIENT_SECRET")
+            if not secret or not Path(secret).exists():
+                raise RuntimeError(
+                    "AUTO_EDIT_YT_CLIENT_SECRET não aponta pra um client secret OAuth. "
+                    "Crie um projeto no Google Cloud, habilite YouTube Data API v3 + "
+                    "YouTube Analytics API, crie um OAuth client 'Desktop app', baixe o "
+                    "JSON e aponte AUTO_EDIT_YT_CLIENT_SECRET pra ele."
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(secret, _SCOPES)
+            creds = flow.run_local_server(port=0)
+        token_path.write_text(creds.to_json())
+        token_path.chmod(0o600)
+        return creds
+
+    def _build_services(self) -> None:
+        if self._data is not None and self._analytics is not None:
+            return
+        from googleapiclient.discovery import build
+        creds = self._credentials()
+        self._data = build("youtube", "v3", credentials=creds, cache_discovery=False)
+        self._analytics = build("youtubeAnalytics", "v2", credentials=creds,
+                                cache_discovery=False)
+
     def authenticate(self) -> None:
-        raise NotImplementedError  # Task 5
+        self._credentials()
 
     def list_videos(self, since: str | None = None) -> list[VideoRef]:
-        raise NotImplementedError  # Task 5
+        self._build_services()
+        ch = self._data.channels().list(mine=True, part="contentDetails").execute()
+        uploads = (ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"])
+        refs: list[VideoRef] = []
+        page = None
+        while True:
+            resp = self._data.playlistItems().list(
+                playlistId=uploads, part="contentDetails,snippet",
+                maxResults=50, pageToken=page,
+            ).execute()
+            refs.extend(_parse_uploads(resp.get("items", [])))
+            page = resp.get("nextPageToken")
+            if not page:
+                break
+        if since:
+            refs = [r for r in refs if r.published_at >= since]
+        return refs
 
     def fetch_metrics(self, video_ids: list[str]) -> list[MetricPoint]:
-        raise NotImplementedError  # Task 5
+        self._build_services()
+        points: dict[str, MetricPoint] = {}
+        for batch in _chunks(video_ids, 200):
+            flt = "video==" + ",".join(batch)
+            base = self._analytics.reports().query(
+                ids="channel==MINE", startDate="2005-01-01",
+                endDate="2100-01-01", dimensions="video",
+                metrics=_ANALYTICS_METRICS_STR, filters=flt,
+            ).execute()
+            for p in _parse_analytics(base.get("columnHeaders", []), base.get("rows", [])):
+                points[p.platform_video_id] = p
+            try:
+                ctr = self._analytics.reports().query(
+                    ids="channel==MINE", startDate="2005-01-01",
+                    endDate="2100-01-01", dimensions="video",
+                    metrics=_CTR_METRICS_STR, filters=flt,
+                ).execute()
+                for p in _parse_analytics(ctr.get("columnHeaders", []), ctr.get("rows", [])):
+                    tgt = points.get(p.platform_video_id)
+                    if tgt:
+                        tgt.reach = p.reach
+                        tgt.ctr = p.ctr
+                        tgt.raw.update(p.raw)
+            except Exception:
+                pass  # CTR/impressions podem não estar disponíveis — degrada pra None
+        return list(points.values())
+
+
+def _chunks(seq, n):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
