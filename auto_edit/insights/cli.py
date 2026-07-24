@@ -34,7 +34,7 @@ def auth(platform: str = typer.Argument("youtube")) -> None:
 
 @insights_app.command()
 def sync(platform: str = typer.Argument("youtube"),
-         since: str = typer.Option(None, "--since", help="ISO date YYYY-MM-DD")) -> None:
+         since: str | None = typer.Option(None, "--since", help="ISO date YYYY-MM-DD")) -> None:
     """Puxa uploads + métricas do canal e grava no store."""
     try:
         c = connector.get_connector(platform)
@@ -59,9 +59,9 @@ def link(workspace_or_video: str = typer.Argument(...),
 
 
 @insights_app.command()
-def report(platform: str = typer.Option(None, "-p", "--platform"),
-           by: str = typer.Option(None, "--by", help="template|topic"),
-           top: int = typer.Option(None, "--top")) -> None:
+def report(platform: str | None = typer.Option(None, "-p", "--platform"),
+           by: str | None = typer.Option(None, "--by", help="template|topic"),
+           top: int | None = typer.Option(None, "--top")) -> None:
     """Mostra a performance (tabela)."""
     conn = _open()
     rows = service.build_report(conn, platform=platform, by=by, top=top)
