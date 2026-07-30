@@ -615,18 +615,23 @@ def _print_curation_summary(ws: Path) -> None:
 
     dropped = plan.get("dropped_blocks") or []
     rationale = plan.get("target_rationale")
-    estimated = plan.get("estimated_final_duration")
     if not dropped and not rationale:
         return
 
     console.print("\n[bold]Curadoria (long-form)[/bold]")
     if rationale:
         console.print(f"  [dim]{rationale}[/dim]")
-    if estimated:
+
+    # Computed from kept_segments -- the planner's own
+    # estimated_final_duration is frequently off by tens of seconds.
+    final = 0.0
+    for seg in plan.get("kept_segments") or []:
         try:
-            console.print(f"  Duração final estimada: [bold]{float(estimated) / 60:.1f}min[/bold]")
-        except (TypeError, ValueError):
-            pass
+            final += float(seg["end"]) - float(seg["start"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    if final:
+        console.print(f"  Duração final: [bold]{final / 60:.1f}min[/bold] [dim](soma dos segmentos mantidos)[/dim]")
 
     if dropped:
         table = Table(show_lines=False)
@@ -634,7 +639,7 @@ def _print_curation_summary(ws: Path) -> None:
         table.add_column("Dur")
         table.add_column("Tema")
         table.add_column("Motivo")
-        for b in dropped:
+        for b in sorted(dropped, key=lambda x: float(x.get("start") or 0)):
             try:
                 start, end = float(b.get("start", 0)), float(b.get("end", 0))
             except (TypeError, ValueError):

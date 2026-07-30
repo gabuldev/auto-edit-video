@@ -17,12 +17,14 @@ def test_prints_dropped_blocks(tmp_path, capsys):
         "reviewed_plan.json",
         {
             "target_rationale": "45min bruto, 18min de conteudo unico",
-            "estimated_final_duration": 1080,
+            # Self-reported estimate is ignored; the summary computes from kept_segments.
+            "estimated_final_duration": 60,
             "dropped_blocks": [
-                {"start": 610.0, "end": 1085.0, "topic": "troubleshooting", "reason": "sem payload"}
+                {"start": 610.0, "end": 1085.0, "topic": "troubleshooting", "reason": "sem payload"},
+                {"start": 90.0, "end": 120.0, "topic": "zoom da camera", "reason": "dead weight"},
             ],
             "cuts": [],
-            "kept_segments": [],
+            "kept_segments": [{"start": 0.0, "end": 600.0}, {"start": 1085.0, "end": 1565.0}],
         },
     )
     _print_curation_summary(tmp_path / "ws")
@@ -30,7 +32,10 @@ def test_prints_dropped_blocks(tmp_path, capsys):
 
     assert "Curadoria" in out
     assert "troubleshooting" in out
-    assert "18.0min" in out
+    assert "18.0min" in out  # (600 + 480) / 60 -- not the planner's 60s claim
+    assert "1.0min" not in out
+    # Blocks are listed chronologically, not in planner order.
+    assert out.index("zoom da camera") < out.index("troubleshooting")
 
 
 def test_falls_back_to_cut_plan(tmp_path, capsys):

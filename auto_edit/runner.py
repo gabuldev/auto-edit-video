@@ -157,7 +157,7 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                     '- The plan dropped whole thematic blocks (see `dropped_blocks`). Judge each one: '
                     'restore it **only** if it carries information, proof, or story found nowhere else in the video.\n'
                     '- A block being slow or low-energy is not grounds for restoring or dropping it — that is a trimming call.\n'
-                    '- Carry `dropped_blocks`, `target_rationale`, and `estimated_final_duration` through to your output, '
+                    '- Carry `dropped_blocks` and `target_rationale` through to your output, '
                     'updated to match your decisions (drop the entry when you restore a block).'
                 )
         sections += [

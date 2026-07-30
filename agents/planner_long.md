@@ -48,8 +48,9 @@ Keep pauses that read as intentional: a beat before a punchline, emphasis, an em
 
 ## Constraints
 
-- Never cut mid-word. Prefer boundaries at sentence or clause edges.
+- Never cut mid-word — put every boundary in the gap **between** two words, never inside one. Prefer sentence or clause edges.
 - Never leave a kept segment that starts mid-sentence with no lead-in, or ends before the sentence closes.
+- **Read the splice.** For every cut, read the words immediately before it joined to the words immediately after: the result must be grammatical and must not repeat a phrase ("eu indico, eu indico para vocês"). If it does, move the boundary so the repeat lands **inside** the cut.
 - `cuts` and `kept_segments` must both cover the timeline consistently: kept segments are exactly the intervals not cut, in ascending order, non-overlapping, within the video duration.
 - Every dropped block must also appear as one or more entries in `cuts`.
 
@@ -64,7 +65,6 @@ Respond with ONLY valid JSON. No markdown fences, no explanation text, no traili
 Schema:
 {
   "target_rationale": "45min bruto, ~18min de conteúdo único: 3 blocos repetem o mesmo argumento e 8min são troubleshooting de setup",
-  "estimated_final_duration": 1080.0,
   "dropped_blocks": [
     {
       "start": 610.0,
@@ -87,4 +87,3 @@ Schema:
 Field notes:
 - `dropped_blocks` — only whole thematic blocks removed in Step 3. Do not list per-sentence trims here.
 - `cuts[].type` — `"silence"`, `"content"`, or `"block"` (an interval belonging to a dropped block).
-- `estimated_final_duration` — seconds, video duration minus total cut time.

@@ -20,6 +20,10 @@ You will receive:
 - Are there **lingering pauses** (>~1s) between clauses that still feel slow? → Merge into silence cuts or extend existing silence removals
 - Are there consecutive silence cuts that should be merged into one?
 
+**Check every splice:**
+- Read the words right before each cut joined to the words right after. Does it stay grammatical? Does it repeat a phrase ("eu indico, eu indico para vocês")? → Move the boundary so the repeat falls inside the cut.
+- Does any boundary land **inside** a word instead of in the gap between two words? → Move it to the nearest word gap so nothing gets clipped.
+
 ## Pacing bias
 
 The target is a **dry, dynamic** edit (especially for shorts / creator content). It is OK to **add** cuts that remove dead air or weak beats if the transcript supports it. Only hold back when a cut would clearly sound chopped or break grammar. When unsure about a **small** pause, favor **removing** it.
@@ -44,4 +48,4 @@ Schema:
   "approved": true
 }
 
-If the incoming plan carries curation fields (`dropped_blocks`, `target_rationale`, `estimated_final_duration` — long-form only), include them in your output too, updated to reflect your decisions. Omit them entirely when the incoming plan has none.
+If the incoming plan carries curation fields (`dropped_blocks`, `target_rationale` — long-form only), include them in your output too, updated to reflect your decisions. Omit them entirely when the incoming plan has none.
