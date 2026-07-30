@@ -96,11 +96,8 @@ class _FakeAnalytics:
     def reports(self):
         class R:
             def query(inner, **kw):
-                # devolve CTR só quando pedido, senão as métricas base
-                if "impressions" in kw.get("metrics", ""):
-                    return _FakeReq({"columnHeaders": [{"name": "video"},
-                        {"name": "impressions"}, {"name": "impressionClickThroughRate"}],
-                        "rows": [["v1", 5000, 0.061]]})
+                # impressions/CTR não existem na API de canal — só as métricas base
+                assert "impressions" not in kw.get("metrics", "")
                 return _FakeReq({"columnHeaders": [{"name": "video"}, {"name": "views"}],
                                  "rows": [["v1", 1000]]})
         return R()
@@ -119,10 +116,11 @@ class TestYouTubeApiCalls:
         refs = c.list_videos()
         assert [r.platform_video_id for r in refs] == ["v1"]
 
-    def test_fetch_metrics_merges_ctr(self):
+    def test_fetch_metrics_base_only(self):
         c = _connector_with_fakes()
         pts = c.fetch_metrics(["v1"])
         p = {x.platform_video_id: x for x in pts}["v1"]
         assert p.views == 1000
-        assert p.reach == 5000
-        assert p.ctr == 0.061
+        # reach/ctr não existem na API de canal — ficam None
+        assert p.reach is None
+        assert p.ctr is None

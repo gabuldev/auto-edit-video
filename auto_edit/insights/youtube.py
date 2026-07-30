@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -26,7 +27,9 @@ _ANALYTICS_METRICS = [
     "views", "estimatedMinutesWatched", "averageViewPercentage",
     "likes", "comments", "shares", "subscribersGained",
 ]
-_CTR_METRICS = ["impressions", "impressionClickThroughRate"]
+# NOTE: impressions/impressionClickThroughRate NÃO existem na Analytics API de
+# canal — são exclusivos do YouTube Studio (ou content owner). reach/ctr ficam
+# None no YouTube; podem ser preenchidos por outra plataforma (ex: IG).
 
 _SHORTS_RE = re.compile(r"/shorts/([A-Za-z0-9_-]+)")
 
@@ -35,7 +38,6 @@ _SCOPES = [
     "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
 _ANALYTICS_METRICS_STR = ",".join(_ANALYTICS_METRICS)
-_CTR_METRICS_STR = ",".join(_CTR_METRICS)
 
 
 def _parse_uploads(items: list[dict]) -> list[VideoRef]:
@@ -167,30 +169,18 @@ class YouTubeConnector:
 
     def fetch_metrics(self, video_ids: list[str]) -> list[MetricPoint]:
         self._build_services()
+        # Analytics API rejeita end-date no futuro — usa hoje.
+        end_date = date.today().isoformat()
         points: dict[str, MetricPoint] = {}
         for batch in _chunks(video_ids, 200):
             flt = "video==" + ",".join(batch)
             base = self._analytics.reports().query(
                 ids="channel==MINE", startDate="2005-01-01",
-                endDate="2100-01-01", dimensions="video",
+                endDate=end_date, dimensions="video",
                 metrics=_ANALYTICS_METRICS_STR, filters=flt,
             ).execute()
             for p in _parse_analytics(base.get("columnHeaders", []), base.get("rows", [])):
                 points[p.platform_video_id] = p
-            try:
-                ctr = self._analytics.reports().query(
-                    ids="channel==MINE", startDate="2005-01-01",
-                    endDate="2100-01-01", dimensions="video",
-                    metrics=_CTR_METRICS_STR, filters=flt,
-                ).execute()
-                for p in _parse_analytics(ctr.get("columnHeaders", []), ctr.get("rows", [])):
-                    tgt = points.get(p.platform_video_id)
-                    if tgt:
-                        tgt.reach = p.reach
-                        tgt.ctr = p.ctr
-                        tgt.raw.update(p.raw)
-            except Exception:
-                pass  # CTR/impressions podem não estar disponíveis — degrada pra None
         return list(points.values())
 
 
