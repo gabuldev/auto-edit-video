@@ -28,6 +28,17 @@ def ideas_dir() -> Path:
     return home_dir() / "ideas"
 
 
+def insights_db_path() -> Path:
+    return home_dir() / "insights.db"
+
+
+def tokens_dir() -> Path:
+    d = home_dir() / "tokens"
+    d.mkdir(parents=True, exist_ok=True)
+    d.chmod(0o700)
+    return d
+
+
 _PROFILE_README = """# Your Creator Profile
 
 Drop any `.md` files in this folder. Every `.md` here is loaded as context
