@@ -30,6 +30,8 @@ def init_workspace(
     caption_style: dict | None = None,
     language: str = "pt",
     plan_id: str | None = None,
+    voice_path: Path | None = None,
+    clips_dir: Path | None = None,
 ) -> Path:
     """Create workspace directory and initial pipeline.json. Returns workspace path."""
     ws = get_workspace(video_path, plan_id=plan_id)
@@ -45,6 +47,8 @@ def init_workspace(
         caption_style=caption_style or {},
         language=language,
         plan_id=plan_id,
+        voice_path=voice_path,
+        clips_dir=clips_dir,
     )
     return ws
 
@@ -57,7 +61,7 @@ def get_status_table(video_path: Path) -> list[dict]:
 
     p = pl.load(ws)
     rows = []
-    for stage in pl.STAGES:
+    for stage in pl.stage_sequence(p["type"]):
         if stage == "done":
             continue
         info = p["stages"].get(stage, {})

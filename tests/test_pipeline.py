@@ -21,12 +21,12 @@ class TestInit:
 
     def test_stages_present(self, workspace):
         p = pl.load(workspace)
-        for stage in pl.STAGES[:-1]:  # all except "done"
+        for stage in pl.stage_sequence("short")[:-1]:  # all except "done"
             assert stage in p["stages"]
 
     def test_short_skips_overlay(self, workspace):
         p = pl.load(workspace)
-        assert p["stages"]["overlay"]["status"] == "skip"
+        assert "overlay" not in p["stages"]
 
     def test_short_has_caption(self, workspace):
         p = pl.load(workspace)
@@ -39,7 +39,7 @@ class TestInit:
         video.write_text("")
         pl.init(ws, video, "long", "test")
         p = pl.load(ws)
-        assert p["stages"]["caption"]["status"] == "skip"
+        assert "caption" not in p["stages"]
 
     def test_long_has_overlay(self, tmp_path):
         ws = tmp_path / "long_ws"

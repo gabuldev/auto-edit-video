@@ -44,16 +44,16 @@ def _load_pipeline(workspace: Path) -> dict:
 
 def extract(workspace: Path) -> None:
     pipeline = _load_pipeline(workspace)
-    video_path = Path(pipeline["video_path"])
+    source = Path(pipeline.get("voice_path") or pipeline["video_path"])
     model_name = pipeline.get("whisper_model", "small")
     language = pipeline.get("language", "pt")
 
-    print(f"[extract] Video: {video_path.name}")
+    print(f"[extract] Source: {source.name}")
     print(f"[extract] Whisper model: {model_name}")
 
     # 1. Extrair áudio como WAV mono 16kHz
     audio_path = workspace / "audio.wav"
-    _extract_audio(video_path, audio_path)
+    _extract_audio(source, audio_path)
 
     # 2. Duração do vídeo
     duration = _get_duration(audio_path)

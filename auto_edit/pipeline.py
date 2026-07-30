@@ -8,11 +8,24 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail", "done"]
+STAGE_SEQUENCES = {
+    "short":    ["extract", "plan", "review", "execute", "caption",
+                 "evaluate", "metadata", "thumbnail", "done"],
+    "long":     ["extract", "plan", "review", "execute", "overlay",
+                 "evaluate", "metadata", "thumbnail", "done"],
+    "narrated": ["parse-script", "extract-vo", "align-blocks", "analyze-clips",
+                 "match", "review", "assemble", "caption", "metadata",
+                 "thumbnail", "done"],
+}
 
-# Stages that are skipped per video type
-SKIP_FOR_LONG = {"caption"}
-SKIP_FOR_SHORT = {"overlay"}
+# Stages that loop back when the evaluator rejects (only types with evaluate)
+LOOPBACK_STAGES = {"plan", "review", "execute", "overlay", "caption", "evaluate"}
+
+
+def stage_sequence(video_type: str) -> list[str]:
+    if video_type not in STAGE_SEQUENCES:
+        raise ValueError(f"Unknown video_type: {video_type}")
+    return STAGE_SEQUENCES[video_type]
 
 
 def _now() -> str:
@@ -29,18 +42,12 @@ def init(
     caption_style: dict | None = None,
     language: str = "pt",
     plan_id: str | None = None,
+    voice_path: Path | None = None,
+    clips_dir: Path | None = None,
 ) -> dict:
     """Create initial pipeline.json. Returns the pipeline dict."""
-    stages = {}
-    for stage in STAGES:
-        if stage == "done":
-            continue
-        if stage in SKIP_FOR_LONG and video_type == "long":
-            stages[stage] = {"status": "skip"}
-        elif stage in SKIP_FOR_SHORT and video_type == "short":
-            stages[stage] = {"status": "skip"}
-        else:
-            stages[stage] = {"status": "pending"}
+    seq = stage_sequence(video_type)
+    stages = {s: {"status": "pending"} for s in seq if s != "done"}
 
     pipeline = {
         "video_path": str(video_path.resolve()),
@@ -51,13 +58,18 @@ def init(
         "language": language,
         "iteration": 1,
         "max_iterations": max_iterations,
-        "current_stage": "extract",
+        "current_stage": seq[0],
         "evaluator_feedback": None,
         "caption_style": caption_style or {},
         "plan_id": plan_id,
         "stages": stages,
         "created_at": _now(),
     }
+
+    if voice_path is not None:
+        pipeline["voice_path"] = str(voice_path.resolve())
+    if clips_dir is not None:
+        pipeline["clips_dir"] = str(clips_dir.resolve())
 
     save(workspace, pipeline)
     return pipeline
@@ -83,9 +95,9 @@ def set_stage_status(workspace: Path, stage: str, status: str, error: str | None
 
     if status == "complete":
         pipeline["stages"][stage]["completed_at"] = _now()
-        # Advance to next non-skip stage
-        current_idx = STAGES.index(stage)
-        for next_stage in STAGES[current_idx + 1 :]:
+        seq = stage_sequence(pipeline["type"])
+        current_idx = seq.index(stage)
+        for next_stage in seq[current_idx + 1:]:
             if next_stage == "done":
                 pipeline["current_stage"] = "done"
                 break
@@ -113,9 +125,9 @@ def loop_back(workspace: Path) -> dict:
 
     pipeline["iteration"] += 1
 
-    # Reset plan, review, execute, overlay, caption, evaluate to pending
-    for stage in ["plan", "review", "execute", "overlay", "caption", "evaluate"]:
-        if pipeline["stages"].get(stage, {}).get("status") != "skip":
+    # Reset loopback stages to pending (only those present in this type's sequence)
+    for stage in LOOPBACK_STAGES:
+        if stage in pipeline["stages"] and pipeline["stages"][stage].get("status") != "skip":
             pipeline["stages"][stage] = {"status": "pending"}
 
     # Clean stale intermediary files so they get regenerated with new cuts
@@ -136,13 +148,14 @@ def loop_back(workspace: Path) -> dict:
 def set_stage(workspace: Path, stage: str) -> dict:
     """Force current_stage to a specific stage (used by resume command)."""
     pipeline = load(workspace)
-    if stage not in STAGES:
-        raise ValueError(f"Unknown stage: {stage}. Valid: {STAGES}")
+    seq = stage_sequence(pipeline["type"])
+    if stage not in seq:
+        raise ValueError(f"Unknown stage '{stage}' for type '{pipeline['type']}'")
 
     pipeline["current_stage"] = stage
     # Reset that stage and everything after it
-    idx = STAGES.index(stage)
-    for s in STAGES[idx:]:
+    idx = seq.index(stage)
+    for s in seq[idx:]:
         if s == "done":
             continue
         if pipeline["stages"].get(s, {}).get("status") != "skip":
