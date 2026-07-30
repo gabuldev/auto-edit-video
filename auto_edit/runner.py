@@ -66,12 +66,28 @@ def invoke_cursor(prompt_path: Path, output_path: Path, repo_root: Path) -> int:
         return 1
 
 
+def _resolve_prompt_file(stage: str, video_type: str, prompt_file: Path) -> Path:
+    """Long-form planning uses a dedicated curation prompt when available.
+
+    ralph.sh always passes agents/planner.md; for `long` we swap in
+    agents/planner_long.md (editorial curation + dropped_blocks) if present.
+    """
+    if stage == "plan" and video_type == "long":
+        long_prompt = prompt_file.parent / "planner_long.md"
+        if long_prompt.exists():
+            return long_prompt
+    return prompt_file
+
+
 def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
-    base_prompt = prompt_file.read_text(encoding="utf-8")
     pipeline = pl.load(workspace)
 
     context = pipeline.get("context", "")
     video_type = pipeline.get("type", "short")
+
+    prompt_file = _resolve_prompt_file(stage, video_type, prompt_file)
+    base_prompt = prompt_file.read_text(encoding="utf-8")
+    uses_long_planner = prompt_file.name == "planner_long.md"
     iteration = pipeline.get("iteration", 1)
     max_iterations = pipeline.get("max_iterations", 3)
     feedback = pipeline.get("evaluator_feedback")
@@ -101,7 +117,9 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 '- Kill false starts, filler, repeated hooks, and long breaths between clauses.\n'
                 '- Prefer jump-cuts / energetic rhythm over leaving “comfort pauses”.'
             )
-        else:
+        elif not uses_long_planner:
+            # Generic planner running on a long video — the dedicated
+            # planner_long.md already carries its own pacing rules.
             sections.append(
                 '\n## Pacing (long-form)\n'
                 '- Still aim for a **dynamic** feel: trim pauses **> ~1.0s** that are not deliberate emphasis.\n'
@@ -133,6 +151,15 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 '- Prefer **tighter** plans: challenge pauses and weak segments that hurt momentum.\n'
                 '- Do not undo good trims just to add “breathing room” unless the sentence would clip.'
             )
+            if cut_plan.get("dropped_blocks"):
+                sections.append(
+                    '\n## Curation Review (long-form)\n'
+                    '- The plan dropped whole thematic blocks (see `dropped_blocks`). Judge each one: '
+                    'restore it **only** if it carries information, proof, or story found nowhere else in the video.\n'
+                    '- A block being slow or low-energy is not grounds for restoring or dropping it — that is a trimming call.\n'
+                    '- Carry `dropped_blocks`, `target_rationale`, and `estimated_final_duration` through to your output, '
+                    'updated to match your decisions (drop the entry when you restore a block).'
+                )
         sections += [
             "\n## Proposed Cut Plan",
             _compact_json(cut_plan),

@@ -302,6 +302,18 @@ print(f'[dry-run] Cuts planned: {len(cuts)}')
 print(f'[dry-run] Segments to keep: {len(kept)}')
 total_cut = sum(float(c[\"end\"]) - float(c[\"start\"]) for c in cuts)
 print(f'[dry-run] Total time to cut: {total_cut:.1f}s')
+dropped = plan.get('dropped_blocks', [])
+if dropped:
+    print(f'[dry-run] Blocks dropped: {len(dropped)}')
+    for b in dropped:
+        s, e = float(b.get('start', 0)), float(b.get('end', 0))
+        print(f'[dry-run]   {s/60:.0f}:{s%60:04.1f}-{e/60:.0f}:{e%60:04.1f} ({e-s:.0f}s) {b.get(\"topic\", \"?\")} — {b.get(\"reason\", \"\")}')
+rationale = plan.get('target_rationale')
+if rationale:
+    print(f'[dry-run] Length rationale: {rationale}')
+est = plan.get('estimated_final_duration')
+if est:
+    print(f'[dry-run] Estimated final duration: {float(est)/60:.1f}min')
 "
                 break
             fi

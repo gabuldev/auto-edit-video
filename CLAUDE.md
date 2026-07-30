@@ -33,8 +33,10 @@ extract → plan → review → execute → overlay → caption → evaluate →
 Whisper   Claude  Claude   FFmpeg   FFmpeg    FFmpeg    Claude     Claude
 ```
 
-- **short**: pula overlay, faz caption (legendas estilo CapCut)
-- **long**: faz overlay, pula caption
+- **short**: pula overlay, faz caption (legendas estilo CapCut) — planner = `agents/planner.md` (limpeza)
+- **long**: faz overlay, pula caption — planner = `agents/planner_long.md` (curadoria editorial: descarta blocos temáticos, define duração pela densidade do conteúdo, reporta `dropped_blocks`)
+
+O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
 
 Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iterações).
 

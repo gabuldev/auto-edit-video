@@ -43,3 +43,5 @@ Schema:
   ],
   "approved": true
 }
+
+If the incoming plan carries curation fields (`dropped_blocks`, `target_rationale`, `estimated_final_duration` — long-form only), include them in your output too, updated to reflect your decisions. Omit them entirely when the incoming plan has none.
