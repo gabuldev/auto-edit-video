@@ -284,6 +284,8 @@ while true; do
 
         review)
             run_agent "review" "$WORKSPACE/reviewed_plan.json" "$AGENTS_DIR/reviewer.md"
+            # Agents place boundaries a few ms inside spoken words; fix mechanically.
+            $PYTHON -m auto_edit.snap "$WORKSPACE" || { log "ERROR: snap failed"; exit 1; }
             ;;
 
         execute)

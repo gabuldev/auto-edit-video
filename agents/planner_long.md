@@ -48,9 +48,9 @@ Keep pauses that read as intentional: a beat before a punchline, emphasis, an em
 
 ## Constraints
 
-- Never cut mid-word — put every boundary in the gap **between** two words, never inside one. Prefer sentence or clause edges.
+- Prefer boundaries at sentence or clause edges. Exact millisecond placement is corrected automatically downstream (boundaries are snapped out of any word they land inside), so **never drop a worthwhile cut over boundary precision** — place it and move on. Dead air is still dead air.
 - Never leave a kept segment that starts mid-sentence with no lead-in, or ends before the sentence closes.
-- **Read the splice.** For every cut, read the words immediately before it joined to the words immediately after: the result must be grammatical and must not repeat a phrase ("eu indico, eu indico para vocês"). If it does, move the boundary so the repeat lands **inside** the cut.
+- **Read the splice.** For every cut, read the words immediately before it joined to the words immediately after. The result must be grammatical and must not repeat a phrase ("eu indico, eu indico para vocês") or start on an orphaned fragment ("…não tem problema. **que**, galera, eu atualizei…" — the cut ate the "Só"). When it does, extend the cut so the repeat or the fragment falls **inside** it.
 - `cuts` and `kept_segments` must both cover the timeline consistently: kept segments are exactly the intervals not cut, in ascending order, non-overlapping, within the video duration.
 - Every dropped block must also appear as one or more entries in `cuts`.
 

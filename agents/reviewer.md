@@ -21,8 +21,8 @@ You will receive:
 - Are there consecutive silence cuts that should be merged into one?
 
 **Check every splice:**
-- Read the words right before each cut joined to the words right after. Does it stay grammatical? Does it repeat a phrase ("eu indico, eu indico para vocês")? → Move the boundary so the repeat falls inside the cut.
-- Does any boundary land **inside** a word instead of in the gap between two words? → Move it to the nearest word gap so nothing gets clipped.
+- Read the words right before each cut joined to the words right after. Does it stay grammatical? Does it repeat a phrase ("eu indico, eu indico para vocês")? Does it start on an orphaned fragment ("…não tem problema. **que**, galera, eu atualizei…")? → Extend the cut so the repeat or the fragment falls inside it.
+- **Do not police millisecond placement.** Boundaries are snapped out of any word they land inside automatically, after this stage. Removing a silence trim because its edge looks imprecise leaves the video sluggish — that is the failure this stage exists to prevent. Only remove a cut when the audio genuinely should stay: the pause does rhetorical work, or the words carry content.
 
 ## Pacing bias
 
