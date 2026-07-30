@@ -34,7 +34,7 @@
             # Copy full project (pipeline needs tools/, agents/, ralph.sh)
             mkdir -p $out/share/auto-edit-video $out/bin
             cp -r auto_edit tools agents $out/share/auto-edit-video/
-            cp pyproject.toml ralph.sh $out/share/auto-edit-video/
+            cp pyproject.toml ralph.sh LICENSE $out/share/auto-edit-video/
             chmod +x $out/share/auto-edit-video/ralph.sh
             # assets/ is optional (fonts, overlays, sounds)
             if [ -d assets ]; then
