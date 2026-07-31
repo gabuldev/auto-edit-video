@@ -135,3 +135,28 @@ def test_evaluate_warns_loudly_when_only_raw_footage_exists(tmp_path):
 
     assert "ORIGINAL Transcription — NOT the edited video" in prompt
     assert "never report a timestamp" in prompt
+
+
+# -- Performance section (metadata stage) ------------------------------------
+
+
+class TestPerformanceSection:
+    def test_empty_when_no_db(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path))
+        assert runner._performance_section("short") == ""
+
+    def test_injects_when_db_has_data(self, tmp_path, monkeypatch):
+        from auto_edit import config as cfg
+        from auto_edit.insights import store as ist
+
+        monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path))
+        conn = ist.connect(cfg.insights_db_path())
+        for i, ret in enumerate([80.0, 60.0, 40.0]):
+            ist.upsert_video(conn, "youtube", f"s{i}", title=f"Vid{i}", url="u",
+                             thumbnail_url="t", published_at=None, duration_sec=30)
+            ist.add_snapshot(conn, "youtube", f"s{i}",
+                             {"avg_view_pct": ret, "views": 100})
+        conn.close()
+        section = runner._performance_section("short")
+        assert "retenção" in section
+        assert "Vid0" in section

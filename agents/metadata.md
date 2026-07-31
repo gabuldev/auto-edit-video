@@ -35,6 +35,14 @@ Generate a `thumbnail` object with text optimized for a video thumbnail image. T
 
 Always generate in the same language as the transcription. If the video is in Portuguese, all output must be in Portuguese.
 
+## Performance do canal (quando presente)
+
+Se o prompt trouxer uma seção "O que retém no teu canal", use-a como sinal —
+não como regra. Os de maior retenção mostram que tema/ângulo/gancho seguram a
+audiência; os de menor, o que evitar. Ajuste `main_text`, `sub_text`, `hook` e
+a escolha de `template` nessa direção, sempre fiel a ESTE vídeo. Amostra
+pequena = trate como dica, não lei.
+
 ## Output Format
 
 Respond with ONLY valid JSON. No markdown fences, no explanation text.
