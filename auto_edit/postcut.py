@@ -94,8 +94,18 @@ def remap(transcription: dict, intervals: list[tuple[float, float]]) -> dict:
         segment = {**seg, "start": new_start, "end": new_end}
         if kept_span < (seg_end - seg_start) - EPS:
             # Flag partial survivors so the evaluator does not read a sentence
-            # as intact when the edit cut through it.
+            # as intact when the edit cut through it -- and rebuild the text
+            # from the words that survived, or it would show speech the edit
+            # already removed.
             segment["partial"] = True
+            surviving = [
+                w["word"]
+                for w in words
+                if new_start - EPS <= float(w["start"]) and float(w["end"]) <= new_end + EPS
+            ]
+            if surviving:
+                segment["text"] = " ".join(x.strip() for x in surviving if x.strip())
+            segment["original_text"] = seg.get("text", "")
         segments.append(segment)
 
     return {

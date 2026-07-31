@@ -129,3 +129,37 @@ def test_main_without_transcription_is_a_noop(tmp_path, capsys):
     ws.mkdir()
     assert postcut.main(ws) == 0
     assert "skipping" in capsys.readouterr().out
+
+
+def test_partial_segment_text_is_rebuilt_from_surviving_words():
+    """A partial segment must not show speech the edit removed."""
+    transcription = {
+        "duration": 8.0,
+        "words": [
+            {"word": "fica", "start": 0.2, "end": 0.8},
+            {"word": "isso", "start": 1.0, "end": 1.6},
+            {"word": "sai", "start": 3.0, "end": 3.4},
+            {"word": "tambem", "start": 3.5, "end": 3.9},
+            {"word": "volta", "start": 5.2, "end": 5.8},
+        ],
+        "segments": [{"start": 0.0, "end": 5.8, "text": "fica isso sai tambem volta"}],
+    }
+    result = postcut.remap(transcription, INTERVALS)
+    seg = result["segments"][0]
+
+    assert seg["partial"] is True
+    assert seg["text"] == "fica isso volta"
+    assert "sai" not in seg["text"]
+    assert seg["original_text"] == "fica isso sai tambem volta"
+
+
+def test_partial_segment_without_words_keeps_its_text():
+    transcription = {
+        "duration": 8.0,
+        "words": [],
+        "segments": [{"start": 1.0, "end": 6.0, "text": "sem word timestamps"}],
+    }
+    seg = postcut.remap(transcription, INTERVALS)["segments"][0]
+
+    assert seg["partial"] is True
+    assert seg["text"] == "sem word timestamps"
