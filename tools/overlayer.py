@@ -175,6 +175,22 @@ def _has_audio_stream(path: Path) -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
+def _video_fps(path: Path) -> str | None:
+    """Nominal frame rate of the video stream, as the "30000/1001" fraction."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=r_frame_rate",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    value = result.stdout.strip()
+    if result.returncode != 0 or not value or value in ("0/0", "N/A"):
+        return None
+    return value
+
+
 def _video_size(path: Path) -> tuple[int, int]:
     cmd = [
         "ffprobe", "-v", "error",
@@ -206,14 +222,23 @@ def _run_ffmpeg_overlay(
 
     # Scale each overlay to the main video frame (letterbox pad), then chromakey, then overlay.
     # Plain overlay=0:0 without scaling hides 1080p assets in a corner of a 4K edit.
+    # The concat'd edit is slightly VFR, so `overlay` resolves the output to a
+    # doubled timebase and the encoder emits every frame as if it were 60fps --
+    # video runs at 2x while audio stays put. Pin both sides to the edit's own
+    # frame rate instead.
+    fps = _video_fps(video)
     filter_parts: list[str] = []
     prev = "0:v"
+    if fps:
+        filter_parts.append(f"[0:v]fps={fps}[base]")
+        prev = "base"
     for i, p in enumerate(placed):
         idx = asset_index[p["asset"]]
         out_label = "outv" if i == len(placed) - 1 else f"ovchain{i}"
         enable = f"between(t,{p['start']:.3f},{p['end']:.3f})"
         filter_parts.append(
-            f"[{idx}:v]scale=w={vw}:h={vh}:force_original_aspect_ratio=decrease,"
+            f"[{idx}:v]" + (f"fps={fps}," if fps else "")
+            + f"scale=w={vw}:h={vh}:force_original_aspect_ratio=decrease,"
             f"pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2,setsar=1[ov_s{i}]"
         )
         filter_parts.append(
@@ -235,10 +260,11 @@ def _run_ffmpeg_overlay(
     ]
     if _has_audio_stream(video):
         cmd += ["-map", "0:a", "-c:a", "copy"]
-    cmd += [
-        "-c:v", codec, *codec_flags,
-        str(output),
-    ]
+    cmd += ["-c:v", codec, *codec_flags]
+    if fps:
+        # Constant frame rate on the way out, so the muxed duration matches audio.
+        cmd += ["-r", fps, "-fps_mode", "cfr"]
+    cmd += [str(output)]
 
     print(f"[overlayer] Running FFmpeg ({len(placed)} overlays)...")
     result = subprocess.run(cmd)
