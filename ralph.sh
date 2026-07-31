@@ -321,6 +321,9 @@ if final:
                 break
             fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
+            # Transcript of the edited video, so evaluate judges the cut and
+            # not the raw footage.
+            $PYTHON -m auto_edit.postcut "$WORKSPACE" || { log "ERROR: postcut failed"; exit 1; }
             ;;
 
         overlay)

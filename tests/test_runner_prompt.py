@@ -92,3 +92,46 @@ def test_long_review_prompt_omits_curation_notes_without_blocks(tmp_path):
     prompt = runner.build_prompt("review", ws, AGENTS_DIR / "reviewer.md")
 
     assert "## Curation Review (long-form)" not in prompt
+
+
+# -- Evaluate stage: which transcript the evaluator is handed --------------------
+
+
+def _evaluate_workspace(tmp_path: Path, post_cut: dict | None) -> Path:
+    ws = _workspace(tmp_path, "long")
+    if post_cut is not None:
+        (ws / "post_cut_transcription.json").write_text(json.dumps(post_cut), encoding="utf-8")
+    return ws
+
+
+def test_evaluate_uses_post_cut_transcript_when_present(tmp_path):
+    ws = _evaluate_workspace(
+        tmp_path,
+        {"duration": 5.0, "segments": [{"start": 0.0, "end": 5.0, "text": "editado"}]},
+    )
+    prompt = runner.build_prompt("evaluate", ws, AGENTS_DIR / "evaluator.md")
+
+    assert "editado" in prompt
+    assert "ORIGINAL Transcription" not in prompt
+
+
+def test_evaluate_flags_partial_segments_for_the_evaluator(tmp_path):
+    ws = _evaluate_workspace(
+        tmp_path,
+        {
+            "duration": 5.0,
+            "segments": [{"start": 0.0, "end": 5.0, "text": "frase", "partial": True}],
+        },
+    )
+    prompt = runner.build_prompt("evaluate", ws, AGENTS_DIR / "evaluator.md")
+
+    assert '"partial":true' in prompt.replace(" ", "")
+    assert "cut through by the edit" in prompt
+
+
+def test_evaluate_warns_loudly_when_only_raw_footage_exists(tmp_path):
+    ws = _evaluate_workspace(tmp_path, None)
+    prompt = runner.build_prompt("evaluate", ws, AGENTS_DIR / "evaluator.md")
+
+    assert "ORIGINAL Transcription — NOT the edited video" in prompt
+    assert "never report a timestamp" in prompt
