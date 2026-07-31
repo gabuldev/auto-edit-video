@@ -14,6 +14,7 @@ class VideoRef:
     url: str
     thumbnail_url: str
     published_at: str  # ISO 8601
+    duration_sec: int | None = None
 
 
 @dataclass

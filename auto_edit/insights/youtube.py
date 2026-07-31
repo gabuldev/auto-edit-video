@@ -33,6 +33,17 @@ _ANALYTICS_METRICS = [
 
 _SHORTS_RE = re.compile(r"/shorts/([A-Za-z0-9_-]+)")
 
+_DURATION_RE = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+
+
+def _parse_duration(iso: str) -> int | None:
+    m = _DURATION_RE.match(iso or "")
+    if not m or not any(m.groups()):
+        return None
+    h, mi, s = (int(x) if x else 0 for x in m.groups())
+    return h * 3600 + mi * 60 + s
+
+
 _SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
@@ -148,6 +159,19 @@ class YouTubeConnector:
     def authenticate(self) -> None:
         self._credentials()
 
+    def _fetch_durations(self, ids: list[str]) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for batch in _chunks(ids, 50):
+            resp = self._data.videos().list(
+                part="contentDetails", id=",".join(batch), maxResults=50,
+            ).execute()
+            for it in resp.get("items", []):
+                dur = _parse_duration(
+                    it.get("contentDetails", {}).get("duration", ""))
+                if dur is not None:
+                    out[it["id"]] = dur
+        return out
+
     def list_videos(self, since: str | None = None) -> list[VideoRef]:
         self._build_services()
         ch = self._data.channels().list(mine=True, part="contentDetails").execute()
@@ -163,6 +187,9 @@ class YouTubeConnector:
             page = resp.get("nextPageToken")
             if not page:
                 break
+        durations = self._fetch_durations([r.platform_video_id for r in refs])
+        for r in refs:
+            r.duration_sec = durations.get(r.platform_video_id)
         if since:
             refs = [r for r in refs if r.published_at >= since]
         return refs
