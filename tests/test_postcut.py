@@ -163,3 +163,18 @@ def test_partial_segment_without_words_keeps_its_text():
 
     assert seg["partial"] is True
     assert seg["text"] == "sem word timestamps"
+
+
+def test_residue_of_a_removed_sentence_is_dropped():
+    """0.2s left over with no words is not a sentence -- it is edit residue."""
+    transcription = {
+        "duration": 8.0,
+        "words": [{"word": "fica", "start": 0.2, "end": 0.8}],
+        "segments": [
+            {"start": 0.0, "end": 0.8, "text": "fica"},
+            {"start": 1.9, "end": 4.5, "text": "frase inteira removida pelo corte"},
+        ],
+    }
+    result = postcut.remap(transcription, INTERVALS)
+
+    assert [s["text"] for s in result["segments"]] == ["fica"]

@@ -20,6 +20,9 @@ from pathlib import Path
 
 EPS = 0.001
 
+# A partial segment shorter than this with no surviving words is edit residue.
+RESIDUE_DURATION = 0.5
+
 
 def load_intervals(workspace: Path, duration: float) -> list[tuple[float, float]]:
     """The intervals FFmpeg actually kept, or the planned ones as a fallback."""
@@ -105,6 +108,11 @@ def remap(transcription: dict, intervals: list[tuple[float, float]]) -> dict:
             ]
             if surviving:
                 segment["text"] = " ".join(x.strip() for x in surviving if x.strip())
+            elif new_end - new_start < RESIDUE_DURATION and (transcription.get("words") or []):
+                # Nothing but a sliver of audio is left and no word landed in
+                # it: the edit removed this sentence. Keeping it would show the
+                # evaluator speech that is not in the video.
+                continue
             segment["original_text"] = seg.get("text", "")
         segments.append(segment)
 
