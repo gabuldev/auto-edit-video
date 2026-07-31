@@ -70,3 +70,46 @@ class TestReport:
         dev = [r for r in rows if r["template"] == "dev"][0]
         assert dev["videos"] == 2
         assert dev["views"] == 150  # soma
+
+
+class TestDeriveKind:
+    def test_short_and_long(self):
+        assert svc._derive_kind(60) == "short"
+        assert svc._derive_kind(180) == "short"
+        assert svc._derive_kind(181) == "long"
+        assert svc._derive_kind(None) is None
+
+
+class TestPerformanceBrief:
+    def _seed(self, conn, vid, dur, ret, views):
+        st.upsert_video(conn, "youtube", vid, title=f"T{vid}", url="u",
+                        thumbnail_url="t", published_at=None, duration_sec=dur)
+        st.add_snapshot(conn, "youtube", vid,
+                        {"avg_view_pct": ret, "views": views})
+
+    def test_filters_by_kind_and_orders(self, tmp_path):
+        conn = st.connect(tmp_path / "b.db")
+        # 3 shorts + 1 long
+        self._seed(conn, "s1", 30, 80.0, 100)
+        self._seed(conn, "s2", 40, 50.0, 200)
+        self._seed(conn, "s3", 50, 65.0, 150)
+        self._seed(conn, "l1", 600, 40.0, 999)
+        brief = svc.performance_brief(conn, kind="short", top=2, bottom=1)
+        assert "T s1" not in brief  # título é "Ts1"
+        assert "Ts1" in brief and "Ts2" in brief  # melhor e pior entram
+        assert "Tl1" not in brief  # long fica de fora
+        # melhor retenção (s1, 80%) aparece antes do pior (s2, 50%)
+        assert brief.index("Ts1") < brief.index("Ts2")
+
+    def test_empty_when_small_sample(self, tmp_path):
+        conn = st.connect(tmp_path / "s.db")
+        self._seed(conn, "s1", 30, 80.0, 100)
+        self._seed(conn, "s2", 40, 50.0, 200)  # só 2 shorts (< 3)
+        assert svc.performance_brief(conn, kind="short") == ""
+
+    def test_ignores_rows_without_metrics(self, tmp_path):
+        conn = st.connect(tmp_path / "n.db")
+        # vídeo sem snapshot / sem duração não entra
+        st.upsert_video(conn, "youtube", "x", title="X", url="u",
+                        thumbnail_url="t", published_at=None, duration_sec=None)
+        assert svc.performance_brief(conn, kind="short") == ""

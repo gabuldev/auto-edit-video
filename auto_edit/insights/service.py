@@ -8,6 +8,42 @@ from pathlib import Path
 from auto_edit.insights import connector, store
 
 
+SHORT_MAX_SEC = 180
+
+
+def _derive_kind(duration_sec: int | None) -> str | None:
+    if duration_sec is None:
+        return None
+    return "short" if duration_sec <= SHORT_MAX_SEC else "long"
+
+
+def performance_brief(conn, kind: str | None = None, top: int = 8,
+                      bottom: int = 4) -> str:
+    rows = [
+        r for r in store.latest_snapshots(conn, "youtube")
+        if r.get("avg_view_pct") is not None and r.get("duration_sec") is not None
+    ]
+    if kind:
+        rows = [r for r in rows if _derive_kind(r["duration_sec"]) == kind]
+    if len(rows) < 3:
+        return ""
+    rows.sort(key=lambda r: r["avg_view_pct"], reverse=True)
+    best = rows[:top]
+    worst = [r for r in rows[-bottom:] if r not in best]
+    label = f"teus {kind}s" if kind else "teu canal"
+
+    def _line(r: dict) -> str:
+        return (f'- "{r.get("title", "")}" — {round(r["avg_view_pct"], 1)}% '
+                f'retenção, {r.get("views") or 0} views')
+
+    parts = [f"### Maior retenção ({label})"]
+    parts += [_line(r) for r in best]
+    if worst:
+        parts.append(f"### Menor retenção ({label})")
+        parts += [_line(r) for r in worst]
+    return "\n".join(parts)
+
+
 @dataclass
 class SyncResult:
     videos_seen: int
@@ -28,7 +64,7 @@ def sync(conn, conn_obj, since: str | None = None) -> SyncResult:
         store.upsert_video(
             conn, conn_obj.platform, v.platform_video_id,
             title=v.title, url=v.url, thumbnail_url=v.thumbnail_url,
-            published_at=v.published_at,
+            published_at=v.published_at, duration_sec=v.duration_sec,
         )
     points = conn_obj.fetch_metrics([v.platform_video_id for v in videos])
     written = 0
