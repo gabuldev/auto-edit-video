@@ -99,6 +99,18 @@ def execute(workspace: Path) -> None:
 
     output = workspace / "edited_video.mp4"
     _run_ffmpeg_cuts(video_path, kept, output, reframe=reframe)
+
+    # The intervals that actually reached FFmpeg -- padding and onset-snapping
+    # applied. Downstream stages (post-cut transcript for the evaluator) need
+    # these, not the planned ones.
+    (workspace / "applied_intervals.json").write_text(
+        json.dumps(
+            {"intervals": [{"start": s, "end": e} for s, e in kept]},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     print(f"[executor] Done → {output}")
 
 

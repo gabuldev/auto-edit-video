@@ -284,6 +284,8 @@ while true; do
 
         review)
             run_agent "review" "$WORKSPACE/reviewed_plan.json" "$AGENTS_DIR/reviewer.md"
+            # Agents place boundaries a few ms inside spoken words; fix mechanically.
+            $PYTHON -m auto_edit.snap "$WORKSPACE" || { log "ERROR: snap failed"; exit 1; }
             ;;
 
         execute)
@@ -302,10 +304,26 @@ print(f'[dry-run] Cuts planned: {len(cuts)}')
 print(f'[dry-run] Segments to keep: {len(kept)}')
 total_cut = sum(float(c[\"end\"]) - float(c[\"start\"]) for c in cuts)
 print(f'[dry-run] Total time to cut: {total_cut:.1f}s')
+dropped = sorted(plan.get('dropped_blocks', []), key=lambda b: float(b.get('start', 0)))
+if dropped:
+    print(f'[dry-run] Blocks dropped: {len(dropped)}')
+    for b in dropped:
+        s, e = float(b.get('start', 0)), float(b.get('end', 0))
+        print(f'[dry-run]   {int(s//60)}:{s%60:04.1f}-{int(e//60)}:{e%60:04.1f} ({e-s:.0f}s) {b.get(\"topic\", \"?\")} — {b.get(\"reason\", \"\")}')
+rationale = plan.get('target_rationale')
+if rationale:
+    print(f'[dry-run] Length rationale: {rationale}')
+# Computed from the plan itself -- the planner's own estimate is often off.
+final = sum(float(s[\"end\"]) - float(s[\"start\"]) for s in kept)
+if final:
+    print(f'[dry-run] Final duration: {final/60:.1f}min (from kept segments)')
 "
                 break
             fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
+            # Transcript of the edited video, so evaluate judges the cut and
+            # not the raw footage.
+            $PYTHON -m auto_edit.postcut "$WORKSPACE" || { log "ERROR: postcut failed"; exit 1; }
             ;;
 
         overlay)

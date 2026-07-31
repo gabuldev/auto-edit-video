@@ -3,6 +3,7 @@ auto-edit CLI — entry point for all commands.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -596,6 +597,60 @@ def status(
         f"\nCurrent stage: [bold cyan]{current_row['status']}[/bold cyan]  "
         f"({current_row['completed_at']})"
     )
+
+    _print_curation_summary(get_workspace(video))
+
+
+def _print_curation_summary(ws: Path) -> None:
+    """Long-form only: show which thematic blocks the planner dropped, and why."""
+    plan_file = ws / "reviewed_plan.json"
+    if not plan_file.exists():
+        plan_file = ws / "cut_plan.json"
+    if not plan_file.exists():
+        return
+    try:
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    dropped = plan.get("dropped_blocks") or []
+    rationale = plan.get("target_rationale")
+    if not dropped and not rationale:
+        return
+
+    console.print("\n[bold]Curadoria (long-form)[/bold]")
+    if rationale:
+        console.print(f"  [dim]{rationale}[/dim]")
+
+    # Computed from kept_segments -- the planner's own
+    # estimated_final_duration is frequently off by tens of seconds.
+    final = 0.0
+    for seg in plan.get("kept_segments") or []:
+        try:
+            final += float(seg["end"]) - float(seg["start"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    if final:
+        console.print(f"  Duração final: [bold]{final / 60:.1f}min[/bold] [dim](soma dos segmentos mantidos)[/dim]")
+
+    if dropped:
+        table = Table(show_lines=False)
+        table.add_column("Trecho")
+        table.add_column("Dur")
+        table.add_column("Tema")
+        table.add_column("Motivo")
+        for b in sorted(dropped, key=lambda x: float(x.get("start") or 0)):
+            try:
+                start, end = float(b.get("start", 0)), float(b.get("end", 0))
+            except (TypeError, ValueError):
+                continue
+            table.add_row(
+                f"{int(start // 60)}:{start % 60:04.1f}–{int(end // 60)}:{end % 60:04.1f}",
+                f"{end - start:.0f}s",
+                str(b.get("topic", "?")),
+                str(b.get("reason", "")),
+            )
+        console.print(table)
 
 
 @app.command("apply-overlays")
