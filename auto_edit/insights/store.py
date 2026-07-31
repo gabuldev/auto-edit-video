@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS videos (
   url               TEXT NOT NULL DEFAULT '',
   thumbnail_url     TEXT NOT NULL DEFAULT '',
   published_at      TEXT,
+  duration_sec      INTEGER,
   workspace_path    TEXT,
   template          TEXT,
   topic             TEXT,
@@ -48,6 +49,13 @@ _METRIC_COLS = [
 ]
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(videos)")}
+    if "duration_sec" not in cols:
+        conn.execute("ALTER TABLE videos ADD COLUMN duration_sec INTEGER")
+        conn.commit()
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -58,24 +66,26 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
 
 
 def upsert_video(conn, platform, platform_video_id, *, title, url,
-                 thumbnail_url, published_at) -> None:
+                 thumbnail_url, published_at, duration_sec=None) -> None:
     conn.execute(
         """
         INSERT INTO videos (platform, platform_video_id, title, url,
-                            thumbnail_url, published_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+                            thumbnail_url, published_at, duration_sec, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(platform, platform_video_id) DO UPDATE SET
           title = excluded.title,
           url = excluded.url,
           thumbnail_url = excluded.thumbnail_url,
-          published_at = excluded.published_at
+          published_at = excluded.published_at,
+          duration_sec = COALESCE(excluded.duration_sec, videos.duration_sec)
         """,
         (platform, platform_video_id, title, url, thumbnail_url,
-         published_at, _now()),
+         published_at, duration_sec, _now()),
     )
     conn.commit()
 
