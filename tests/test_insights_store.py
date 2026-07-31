@@ -1,6 +1,7 @@
 """Tests for auto_edit/insights — config paths, store CRUD."""
 from __future__ import annotations
 
+import sqlite3 as _sqlite3
 import sys
 from pathlib import Path
 
@@ -64,3 +65,35 @@ class TestStore:
         st.upsert_video(conn, "instagram", "v1", title="I", url="u", thumbnail_url="t", published_at=None)
         assert len(st.list_videos(conn, "youtube")) == 1
         assert len(st.list_videos(conn)) == 2
+
+
+class TestDurationColumn:
+    def test_migrate_adds_column_to_old_db(self, tmp_path):
+        # db pré-existente SEM duration_sec
+        path = tmp_path / "old.db"
+        raw = _sqlite3.connect(str(path))
+        raw.execute(
+            "CREATE TABLE videos (platform TEXT, platform_video_id TEXT, "
+            "title TEXT, url TEXT, thumbnail_url TEXT, published_at TEXT, "
+            "workspace_path TEXT, template TEXT, topic TEXT, linked_at TEXT, "
+            "created_at TEXT, PRIMARY KEY (platform, platform_video_id))"
+        )
+        raw.commit()
+        raw.close()
+        conn = st.connect(path)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(videos)")}
+        assert "duration_sec" in cols
+
+    def test_upsert_stores_and_preserves_duration(self, tmp_path):
+        conn = st.connect(tmp_path / "d.db")
+        st.upsert_video(conn, "youtube", "v1", title="A", url="u",
+                        thumbnail_url="t", published_at=None, duration_sec=90)
+        assert st.list_videos(conn, "youtube")[0]["duration_sec"] == 90
+        # re-sync sem duração NÃO apaga
+        st.upsert_video(conn, "youtube", "v1", title="A2", url="u",
+                        thumbnail_url="t", published_at=None, duration_sec=None)
+        assert st.list_videos(conn, "youtube")[0]["duration_sec"] == 90
+        # re-sync com nova duração atualiza
+        st.upsert_video(conn, "youtube", "v1", title="A3", url="u",
+                        thumbnail_url="t", published_at=None, duration_sec=200)
+        assert st.list_videos(conn, "youtube")[0]["duration_sec"] == 200

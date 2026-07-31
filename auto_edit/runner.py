@@ -226,6 +226,15 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             "\n## Final Video Transcription (text only)",
             text,
         ]
+        brief = _performance_section(video_type)
+        if brief:
+            sections += [
+                "\n## O que retém no teu canal (sinal, não regra)",
+                brief,
+                "Imita o padrão de TEMA e GANCHO dos de maior retenção e evita o "
+                "dos de menor — sem copiar títulos, priorizando o que é fiel a "
+                "ESTE vídeo.",
+            ]
 
     sections.append(
         "\nRespond with ONLY valid JSON. No markdown code fences, no explanation."
@@ -246,6 +255,26 @@ def _read_json_optional(path: Path) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _performance_section(video_type: str) -> str:
+    """Resumo de retenção do canal (do insights.db) pro tipo do vídeo.
+
+    Degrada pra "" se o insights não estiver disponível — nunca quebra a edição.
+    """
+    kind = "short" if video_type == "short" else "long"
+    try:
+        from auto_edit import config as cfg
+        from auto_edit.insights import service as isvc
+        from auto_edit.insights import store as ist
+
+        db_path = cfg.insights_db_path()
+        if not db_path.exists():
+            return ""
+        conn = ist.connect(db_path)
+        return isvc.performance_brief(conn, kind=kind)
+    except Exception:
+        return ""
 
 
 # -- Transcription slimming ---------------------------------------------------

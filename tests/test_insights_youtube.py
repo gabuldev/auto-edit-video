@@ -10,6 +10,7 @@ from auto_edit.insights.youtube import (
     YouTubeConnector,
     _parse_uploads,
     _parse_analytics,
+    _parse_duration,
 )
 
 
@@ -65,6 +66,20 @@ class TestParseAnalytics:
                          "averageViewPercentage": 47.5, "subscribersGained": 12}
 
 
+class TestParseDuration:
+    def test_minutes_seconds(self):
+        assert _parse_duration("PT1M30S") == 90
+
+    def test_seconds_only(self):
+        assert _parse_duration("PT45S") == 45
+
+    def test_hours(self):
+        assert _parse_duration("PT1H2M3S") == 3723
+
+    def test_garbage(self):
+        assert _parse_duration("banana") is None
+
+
 class _FakeReq:
     def __init__(self, resp):
         self._resp = resp
@@ -91,6 +106,13 @@ class _FakeData:
                 }], "nextPageToken": None})
         return P()
 
+    def videos(self):
+        class V:
+            def list(inner, **kw):
+                return _FakeReq({"items": [
+                    {"id": "v1", "contentDetails": {"duration": "PT2M10S"}}]})
+        return V()
+
 
 class _FakeAnalytics:
     def reports(self):
@@ -115,6 +137,11 @@ class TestYouTubeApiCalls:
         c = _connector_with_fakes()
         refs = c.list_videos()
         assert [r.platform_video_id for r in refs] == ["v1"]
+
+    def test_list_videos_enriches_duration(self):
+        c = _connector_with_fakes()
+        refs = c.list_videos()
+        assert refs[0].duration_sec == 130  # PT2M10S
 
     def test_fetch_metrics_base_only(self):
         c = _connector_with_fakes()
