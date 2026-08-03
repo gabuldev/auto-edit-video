@@ -49,6 +49,11 @@ MAX_ORPHAN_REWIND = 2.5
 # around -45dB and below; speech sits around -15dB.
 SILENCE_MAX_DB = -32.0
 
+# When a cut gutted the head of a sentence, this much of its tail may be
+# swallowed too so no dangling fragment survives ("...comentei ⟹ aqui,").
+# Beyond it the leftover is real content the agent meant to keep.
+MAX_SEGMENT_RESIDUE = 1.5
+
 
 def _word_at(words: list[dict], t: float) -> dict | None:
     """The word strictly containing t, if any."""
@@ -141,6 +146,46 @@ def trim_loud_silences(
         kept.append({**cut, "start": new_start, "end": new_end})
 
     return kept, notes
+
+
+def swallow_segment_residue(
+    cuts: list[dict], segments: list[dict]
+) -> tuple[list[dict], list[str]]:
+    """Finish off a sentence the cut already gutted.
+
+    When the speaker restarts a line, the cut removes the botched take -- but if
+    its end lands a word short of the sentence, that last word survives alone
+    ("...que eu comentei ⟹ aqui,") and shows up as a caption nobody said. If the
+    cut already swallowed the head of that sentence, extend it over the scrap.
+
+    Only ever applies when the cut starts at or before the segment, so an intact
+    sentence is never bitten into.
+    """
+    adjusted: list[dict] = []
+    notes: list[str] = []
+
+    for cut in cuts:
+        start, end = float(cut["start"]), float(cut["end"])
+        for seg in segments:
+            try:
+                seg_start, seg_end = float(seg["start"]), float(seg["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if start > seg_start + EPS:
+                continue  # the cut did not take this sentence's head
+            if not (seg_start < end < seg_end - EPS):
+                continue
+            if seg_end - end > MAX_SEGMENT_RESIDUE:
+                continue  # too much left to be a scrap
+            notes.append(
+                f"extended cut {start:.2f}-{end:.2f}s → {start:.2f}-{seg_end:.2f}s "
+                f"(left a {seg_end - end:.2f}s fragment of “{(seg.get('text') or '').strip()[-30:]}”)"
+            )
+            end = seg_end
+            break
+        adjusted.append({**cut, "start": start, "end": end})
+
+    return _merge_overlaps(adjusted), notes
 
 
 def snap_cuts(
@@ -381,7 +426,8 @@ def snap_plan(
     # Grammar repairs run on boundaries that already sit in word gaps.
     cuts, orphan_notes = unorphan_splices(cuts, words)
     cuts, repeat_notes = dedupe_splices(cuts, words)
-    notes += orphan_notes + repeat_notes
+    cuts, residue_notes = swallow_segment_residue(cuts, segments or [])
+    notes += orphan_notes + repeat_notes + residue_notes
 
     cuts = _merge_overlaps(cuts)
 

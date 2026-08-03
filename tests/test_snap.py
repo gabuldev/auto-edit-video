@@ -397,3 +397,36 @@ def test_snap_plan_drops_a_fake_silence_before_snapping():
     assert snapped["cuts"] == []
     assert snapped["kept_segments"] == [{"start": 0.0, "end": DURATION}]
     assert any("that is speech" in n for n in notes)
+
+
+# --- dangling fragments of a gutted sentence -------------------------------
+# The speaker restarts a line; the cut removes the botched take but stops one
+# word short, leaving "aqui," alone on screen.
+RESTART_SEGMENTS = [
+    {"start": 93.76, "end": 97.88, "text": "Então se você quiser saber mais... que eu comentei aqui,"},
+    {"start": 98.9, "end": 103.72, "text": "Então se você quiser saber mais... que eu te mando o link."},
+]
+
+
+def test_fragment_left_by_a_gutted_sentence_is_swallowed():
+    cuts, notes = snap.swallow_segment_residue(
+        [{"start": 92.9, "end": 97.14, "type": "content"}], RESTART_SEGMENTS
+    )
+    assert cuts[0]["end"] == 97.88
+    assert "fragment" in notes[0]
+
+
+def test_intact_sentence_is_never_bitten_into():
+    # The cut starts inside the segment, so it did not gut its head.
+    cut = {"start": 96.0, "end": 97.14, "type": "content"}
+    assert snap.swallow_segment_residue([cut], RESTART_SEGMENTS) == ([cut], [])
+
+
+def test_large_leftover_is_left_alone():
+    cut = {"start": 92.9, "end": 94.5, "type": "content"}
+    assert snap.swallow_segment_residue([cut], RESTART_SEGMENTS) == ([cut], [])
+
+
+def test_cut_ending_on_a_segment_edge_is_untouched():
+    cut = {"start": 92.9, "end": 97.88, "type": "content"}
+    assert snap.swallow_segment_residue([cut], RESTART_SEGMENTS) == ([cut], [])
