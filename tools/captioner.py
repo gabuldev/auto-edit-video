@@ -196,7 +196,14 @@ def caption(workspace: Path) -> None:
     if not edited_video.exists():
         edited_video = workspace / "edited_video.mp4"
     if not edited_video.exists():
-        raise FileNotFoundError(f"Neither overlaid_video.mp4 nor edited_video.mp4 found in {workspace}")
+        # finalize deletes edited_video.mp4 to reclaim disk, so `resume --from
+        # caption` on an already-finished pipeline lands here. The cut itself has
+        # to be rebuilt before captions can be burned onto it.
+        raise FileNotFoundError(
+            f"Nem overlaid_video.mp4 nem edited_video.mp4 existem em {workspace} — "
+            "o stage finalize apaga o vídeo cortado depois que o pipeline termina. "
+            "Rode `auto-edit resume <video> --from execute` pra reconstruí-lo."
+        )
 
     # Merge pipeline caption_style over defaults
     style = {**DEFAULTS, **pipeline.get("caption_style", {})}
