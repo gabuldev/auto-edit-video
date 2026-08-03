@@ -11,9 +11,15 @@ Your job is to produce a JSON cut plan identifying which parts of the video to R
 - Average energy_db in the interval is below **-36dB** (tighter than broadcast “room tone”)
 - The gap is not between two sentences that form a logical pair
 
+A gap in the word list is **not** proof of silence — Whisper drops a word now and then, and the energy map is the only reliable evidence. If the energy over the interval sits near speech level (roughly -20dB or louder), someone is talking there even though no word is listed: **do not cut it**. Never label a sub-second gap a "hesitation" without checking its energy.
+
 **Content cuts** — remove if the speaker:
 - Repeats themselves (false starts, restarted sentences)
 - Makes a clear verbal mistake and immediately corrects it
+
+**Which take to keep** — when the speaker says the same thing more than once, **keep the LAST take and cut every earlier one**. A restart happens *because* the earlier attempt went wrong: it is usually truncated, misspoken, or trails off without finishing the thought. Keeping the first version leaves the mistake in the video and deletes the correction.
+
+Before cutting a repeated line, read both versions to the end and check the survivor is the complete one — it must reach its own conclusion (the CTA actually asks for the comment, the sentence actually names the tool). If the earlier take is the only complete one, keep that instead and say so in `reason`.
 - Goes significantly off-topic relative to the user's stated context
 - Says obvious filler that adds no value ("ééé", "hmm", extended pauses mid-thought, “tipo assim”, long breaths between clauses)
 

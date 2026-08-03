@@ -344,3 +344,56 @@ def test_segments_are_optional():
     cuts, _ = snap.snap_cuts([{"start": 4.6, "end": 5.3}], GAP_WORDS, 10.0)
 
     assert cuts[0]["end"] == 5.3
+
+
+# --- fake silences over audible speech -------------------------------------
+# 0.5s buckets over 6s: quiet everywhere except 1.5-2.5s, which is speech the
+# word list never reported.
+ENERGY = [-50.0, -50.0, -50.0, -15.0, -15.0, -50.0, -50.0, -50.0, -50.0, -50.0, -50.0, -50.0]
+RESOLUTION = 0.5
+
+
+def test_silence_cut_over_speech_is_dropped():
+    cuts, notes = snap.trim_loud_silences(
+        [{"start": 1.6, "end": 2.4, "type": "silence"}], ENERGY, RESOLUTION
+    )
+    assert cuts == []
+    assert "that is speech, not silence" in notes[0]
+
+
+def test_silence_cut_over_room_tone_survives():
+    cuts, notes = snap.trim_loud_silences(
+        [{"start": 3.0, "end": 4.0, "type": "silence"}], ENERGY, RESOLUTION
+    )
+    assert cuts == [{"start": 3.0, "end": 4.0, "type": "silence"}]
+    assert notes == []
+
+
+def test_silence_cut_is_trimmed_back_to_the_quiet_part():
+    cuts, notes = snap.trim_loud_silences(
+        [{"start": 1.6, "end": 4.0, "type": "silence"}], ENERGY, RESOLUTION
+    )
+    assert cuts[0]["start"] == 2.5
+    assert cuts[0]["end"] == 4.0
+    assert "edges were over audible speech" in notes[0]
+
+
+def test_content_cuts_are_never_second_guessed_by_energy():
+    cut = {"start": 1.6, "end": 2.4, "type": "content"}
+    cuts, notes = snap.trim_loud_silences([cut], ENERGY, RESOLUTION)
+    assert cuts == [cut]
+    assert notes == []
+
+
+def test_no_energy_map_leaves_cuts_alone():
+    cut = {"start": 1.6, "end": 2.4, "type": "silence"}
+    assert snap.trim_loud_silences([cut], [], 0.5) == ([cut], [])
+    assert snap.trim_loud_silences([cut], ENERGY, 0.0) == ([cut], [])
+
+
+def test_snap_plan_drops_a_fake_silence_before_snapping():
+    plan = {"cuts": [{"start": 1.7, "end": 2.3, "type": "silence"}], "kept_segments": []}
+    snapped, notes = snap.snap_plan(plan, WORDS, DURATION, [], ENERGY, RESOLUTION)
+    assert snapped["cuts"] == []
+    assert snapped["kept_segments"] == [{"start": 0.0, "end": DURATION}]
+    assert any("that is speech" in n for n in notes)

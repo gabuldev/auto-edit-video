@@ -57,3 +57,4 @@ upload/
 workspace/
 output/
 
+.claude/worktrees/

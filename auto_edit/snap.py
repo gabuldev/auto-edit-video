@@ -44,6 +44,11 @@ SEGMENT_EDGE_GUARD = 0.6
 # would undo the edit the agent intended.
 MAX_ORPHAN_REWIND = 2.5
 
+# A "silence" cut over audio louder than this is not silence: the word list just
+# failed to report the speech there. Real room tone in these recordings sits
+# around -45dB and below; speech sits around -15dB.
+SILENCE_MAX_DB = -32.0
+
 
 def _word_at(words: list[dict], t: float) -> dict | None:
     """The word strictly containing t, if any."""
@@ -79,6 +84,63 @@ def _protect_segment_edges(
             note = (seg.get("text") or "").strip()[-40:]
             start = seg_end
     return start, end, note
+
+
+def trim_loud_silences(
+    cuts: list[dict], energy_db: list[float], resolution: float
+) -> tuple[list[dict], list[str]]:
+    """Drop or shrink "silence" cuts that sit over audible speech.
+
+    Whisper's word list drops a word every so often. When it does, the planner
+    sees a gap between consecutive words and calls it a hesitation -- so the cut
+    deletes the very word the word list forgot ("eu tenho esse ⟹ aqui", the
+    word "windows" gone). The energy map settles it: real room tone here is
+    around -45dB, speech around -15dB. Anything a "silence" cut covers that is
+    louder than SILENCE_MAX_DB is speech and must survive.
+    """
+    if not energy_db or resolution <= 0:
+        return cuts, []
+
+    kept: list[dict] = []
+    notes: list[str] = []
+
+    for cut in cuts:
+        if (cut.get("type") or "silence") != "silence":
+            kept.append(cut)
+            continue
+
+        start, end = float(cut["start"]), float(cut["end"])
+        first = max(0, int(start / resolution))
+        last = min(len(energy_db) - 1, int((end - EPS) / resolution))
+        if last < first:
+            kept.append(cut)
+            continue
+
+        quiet = [i for i in range(first, last + 1) if energy_db[i] <= SILENCE_MAX_DB]
+        if not quiet:
+            notes.append(
+                f"dropped silence cut {start:.2f}-{end:.2f}s: audio there peaks at "
+                f"{max(energy_db[first:last + 1]):.1f}dB — that is speech, not silence"
+            )
+            continue
+
+        new_start = max(start, quiet[0] * resolution)
+        new_end = min(end, (quiet[-1] + 1) * resolution)
+        if new_end - new_start <= EPS:
+            notes.append(
+                f"dropped silence cut {start:.2f}-{end:.2f}s: nothing quiet left after "
+                f"trimming audible audio"
+            )
+            continue
+
+        if (new_start, new_end) != (start, end):
+            notes.append(
+                f"trimmed silence cut {start:.2f}-{end:.2f}s → "
+                f"{new_start:.2f}-{new_end:.2f}s (edges were over audible speech)"
+            )
+        kept.append({**cut, "start": new_start, "end": new_end})
+
+    return kept, notes
 
 
 def snap_cuts(
@@ -302,9 +364,19 @@ def _best_summary(segment: dict, previous: list[dict]) -> str | None:
 
 
 def snap_plan(
-    plan: dict, words: list[dict], duration: float, segments: list[dict] | None = None
+    plan: dict,
+    words: list[dict],
+    duration: float,
+    segments: list[dict] | None = None,
+    energy_db: list[float] | None = None,
+    resolution: float = 0.0,
 ) -> tuple[dict, list[str]]:
-    cuts, notes = snap_cuts(plan.get("cuts") or [], words, duration, segments)
+    # Reject fake silences first: a cut over speech must not get "snapped" to a
+    # word gap that only exists because the word list is incomplete.
+    cuts, notes = trim_loud_silences(plan.get("cuts") or [], energy_db or [], resolution)
+
+    cuts, snap_notes = snap_cuts(cuts, words, duration, segments)
+    notes += snap_notes
 
     # Grammar repairs run on boundaries that already sit in word gaps.
     cuts, orphan_notes = unorphan_splices(cuts, words)
@@ -336,7 +408,14 @@ def main(workspace: Path) -> int:
         print("[snap] No word timestamps — leaving the plan untouched")
         return 0
 
-    snapped, notes = snap_plan(plan, words, duration, segments)
+    snapped, notes = snap_plan(
+        plan,
+        words,
+        duration,
+        segments,
+        transcription.get("energy_db") or [],
+        float(transcription.get("resolution_seconds") or 0.0),
+    )
 
     for note in notes:
         print(f"[snap] {note}")
