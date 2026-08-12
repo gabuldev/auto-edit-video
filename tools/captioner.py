@@ -92,10 +92,18 @@ def _remap(original_ts: float, kept: list[tuple[float, float]]) -> float | None:
     return None
 
 
-def _build_kept_intervals(reviewed_plan: dict, duration: float) -> list[tuple[float, float]]:
+def _build_kept_intervals(
+    reviewed_plan: dict,
+    duration: float,
+    energy_db: list[float] | None = None,
+    resolution: float = 0.0,
+) -> list[tuple[float, float]]:
     """Build (start, end) kept intervals from reviewed_plan, inverting cuts if needed.
     Applies the same END_PADDING as executor.py so timestamps match the actual edited video."""
+    from auto_edit import snap  # same padding rule as the executor
+
     end_padding = float(os.environ.get("AUTO_EDIT_END_PADDING", "0.2"))
+    threshold = snap.silence_threshold_db(energy_db or [])
     segs = reviewed_plan.get("kept_segments", [])
     if not segs:
         # Invert cuts to find kept intervals
@@ -114,7 +122,9 @@ def _build_kept_intervals(reviewed_plan: dict, duration: float) -> list[tuple[fl
     padded: list[tuple[float, float]] = []
     for s in segs:
         start = max(0.0, float(s["start"]))
-        end = min(duration, float(s["end"]) + end_padding)
+        raw_end = float(s["end"])
+        pad = snap.audible_tail(raw_end, end_padding, energy_db or [], resolution, threshold)
+        end = min(duration, raw_end + pad)
         if end > start:
             padded.append((start, end))
 
@@ -243,7 +253,11 @@ def caption(workspace: Path) -> None:
             # Use original video duration for building kept intervals
             # (kept_segments timestamps are in the original timeline, not the edited one)
             original_duration = original_transcription.get("duration", _get_duration(edited_video))
-            kept = _build_kept_intervals(reviewed_plan, original_duration)
+            from auto_edit import snap as _snap
+            energy_db, energy_resolution = _snap.load_energy_map(workspace)
+            kept = _build_kept_intervals(
+                reviewed_plan, original_duration, energy_db, energy_resolution
+            )
 
             orig_words = original_transcription.get("words", [])
             orig_segments = original_transcription.get("segments", [])

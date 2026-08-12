@@ -136,6 +136,64 @@ def silence_threshold_db(energy_db: list[float]) -> float:
     return min(floor + FLOOR_MARGIN_RATIO * (speech - floor), SILENCE_CEILING_DB)
 
 
+def load_energy_map(workspace: Path) -> tuple[list[float], float]:
+    """The finest energy map the workspace has, as (levels, seconds per bucket).
+
+    ([], 0.0) when there is none: an older workspace then keeps whatever
+    behaviour it was originally rendered with.
+    """
+    transcription_file = workspace / "transcription.json"
+    if not transcription_file.exists():
+        return [], 0.0
+    try:
+        transcription = json.loads(transcription_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return [], 0.0
+
+    fine = transcription.get("energy_db_fine") or []
+    fine_resolution = float(transcription.get("fine_resolution_seconds") or 0.0)
+    if fine and fine_resolution > 0:
+        return fine, fine_resolution
+    return (
+        transcription.get("energy_db") or [],
+        float(transcription.get("resolution_seconds") or 0.0),
+    )
+
+
+def audible_tail(
+    end: float,
+    padding: float,
+    energy_db: list[float],
+    resolution: float,
+    threshold: float,
+) -> float:
+    """How much of `padding` past `end` still carries audible speech.
+
+    The executor pads each kept segment's end so a word Whisper timestamped a
+    hair early does not lose its tail. Applied blindly the pad does the opposite
+    of the edit: a kept segment ends exactly where a silence cut begins, so the
+    pad hands back the first 0.2s of the very pause that was removed -- which is
+    the moment the speaker starts moving the camera. The scene change survives
+    and the cut reads as sloppy.
+    """
+    if padding <= 0 or not energy_db or resolution <= 0:
+        return padding
+
+    # The bucket index drives the walk, never the timestamp: 68.8 / 0.1 is
+    # 687.9999…, so bucket 688 "starts" at 68.8 again and recomputing the next
+    # edge from the timestamp would loop forever without advancing.
+    limit = end + padding
+    index = int(end / resolution)
+    reach = end
+    while reach < limit - EPS:
+        if index >= len(energy_db) or energy_db[index] <= threshold:
+            break
+        index += 1
+        reach = max(reach, index * resolution)
+
+    return max(0.0, min(padding, reach - end))
+
+
 def trim_loud_silences(
     cuts: list[dict], energy_db: list[float], resolution: float
 ) -> tuple[list[dict], list[str]]:
