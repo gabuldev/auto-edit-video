@@ -14,6 +14,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from auto_edit import snap  # noqa: E402  -- needs the repo root on sys.path
+
 FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MAX)
 MIN_INTERVAL_DURATION = 1.0 / 30  # 1 frame at 30fps ≈ 0.033s
 
@@ -68,7 +71,8 @@ def execute(workspace: Path) -> None:
 
     reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
     _validate_plan(reviewed_plan, duration)  # validate before processing
-    kept = _build_keep_intervals(reviewed_plan, duration)
+    energy_db, resolution = snap.load_energy_map(workspace)
+    kept = _build_keep_intervals(reviewed_plan, duration, energy_db, resolution)
 
     # Snap the first segment's start to the actual audio onset (silencedetect).
     # Without this, the LLM planner often leaves 0.3-1.0s of leading silence
@@ -158,14 +162,21 @@ def _validate_plan(plan: dict, duration: float) -> None:
             print(f"[executor] Ignoring degenerate cut[{i}] start={start:.3f} >= end={end:.3f} (no-op)")
 
 
-def _build_keep_intervals(plan: dict, duration: float) -> list[tuple[float, float]]:
+def _build_keep_intervals(
+    plan: dict,
+    duration: float,
+    energy_db: list[float] | None = None,
+    resolution: float = 0.0,
+) -> list[tuple[float, float]]:
     """
     Convert kept_segments from reviewed_plan.json into (start, end) tuples.
     Applies end-padding (default 0.2s, override AUTO_EDIT_END_PADDING) to each
-    segment end (not start) to avoid cutting word tails.
+    segment end (not start) to avoid cutting word tails -- but only as far as
+    the audio stays audible, so the pad never reaches into a silence cut.
     Clamps to video duration and merges overlapping intervals.
     """
     end_padding = float(os.environ.get("AUTO_EDIT_END_PADDING", "0.2"))
+    threshold = snap.silence_threshold_db(energy_db or [])
     raw = plan.get("kept_segments", [])
     if not raw:
         # Fallback: invert the cuts list
@@ -175,7 +186,9 @@ def _build_keep_intervals(plan: dict, duration: float) -> list[tuple[float, floa
     padded: list[tuple[float, float]] = []
     for seg in raw:
         start = max(0.0, float(seg["start"]))
-        end = min(duration, float(seg["end"]) + end_padding)
+        raw_end = float(seg["end"])
+        pad = snap.audible_tail(raw_end, end_padding, energy_db or [], resolution, threshold)
+        end = min(duration, raw_end + pad)
         if end > start:
             padded.append((start, end))
 

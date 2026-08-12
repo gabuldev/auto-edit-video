@@ -179,6 +179,47 @@ class TestBuildKeepIntervals:
         assert intervals[0][1] - intervals[0][0] >= MIN_INTERVAL_DURATION
 
 
+# ── end padding vs. silence ─────────────────────────────────────────────────
+# 0.1s buckets: speech until 10.0s, then the pause the cut removes.
+SPEECH_DB, ROOM_DB = -14.0, -30.0
+ENERGY = [SPEECH_DB] * 100 + [ROOM_DB] * 100 + [SPEECH_DB] * 400
+ENERGY_RES = 0.1
+
+
+class TestEndPaddingStopsAtSilence:
+    def test_padding_does_not_reach_into_a_silent_cut(self):
+        """The 0.2s tail guard was re-adding the head of every camera move."""
+        plan = {"kept_segments": [{"start": 0, "end": 10.0}]}
+        intervals = _build_keep_intervals(plan, 60.0, ENERGY, ENERGY_RES)
+        assert intervals[0][1] == 10.0
+
+    def test_padding_still_protects_a_word_tail(self):
+        """Audio still audible past the boundary — the pad is doing its job."""
+        plan = {"kept_segments": [{"start": 0, "end": 5.0}]}
+        intervals = _build_keep_intervals(plan, 60.0, ENERGY, ENERGY_RES)
+        assert intervals[0][1] == pytest.approx(5.2)
+
+    def test_padding_stops_where_the_speech_stops(self):
+        """Boundary 0.1s before the pause: pad that 0.1s, not the full 0.2s."""
+        plan = {"kept_segments": [{"start": 0, "end": 9.9}]}
+        intervals = _build_keep_intervals(plan, 60.0, ENERGY, ENERGY_RES)
+        assert intervals[0][1] == pytest.approx(10.0)
+
+    def test_no_energy_map_keeps_the_old_blind_padding(self):
+        plan = {"kept_segments": [{"start": 0, "end": 10.0}]}
+        assert _build_keep_intervals(plan, 60.0)[0][1] == pytest.approx(10.2)
+
+    def test_boundary_that_lands_on_a_float_bucket_edge_terminates(self):
+        """68.8/0.1 is 687.9999…, so bucket 688 starts at exactly 68.8 again.
+
+        Walking the map by recomputing the next edge as (index+1)*resolution
+        then never advances past the boundary — the executor hangs forever.
+        """
+        plan = {"kept_segments": [{"start": 0, "end": 68.8}]}
+        intervals = _build_keep_intervals(plan, 120.0, [-14.0] * 1200, 0.1)
+        assert intervals[0][1] == pytest.approx(69.0)
+
+
 # ── _build_filter ────────────────────────────────────────────────────────────
 
 
