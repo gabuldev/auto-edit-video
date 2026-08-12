@@ -73,6 +73,45 @@ def test_short_plan_prompt_unchanged(tmp_path):
     assert "## Pacing (short-form)" in prompt
 
 
+def _with_energy(ws: Path) -> Path:
+    """A noisy recording: pauses at -30dB, speech at -14dB."""
+    transcription = json.loads((ws / "transcription.json").read_text(encoding="utf-8"))
+    transcription["resolution_seconds"] = 0.5
+    transcription["energy_db"] = [-30.0] * 10 + [-14.0] * 10
+    transcription["fine_resolution_seconds"] = 0.1
+    transcription["energy_db_fine"] = [-30.0] * 50 + [-14.0] * 50
+    (ws / "transcription.json").write_text(json.dumps(transcription), encoding="utf-8")
+    return ws
+
+
+def test_plan_prompt_reports_the_measured_audio_levels(tmp_path):
+    prompt = runner.build_prompt(
+        "plan", _with_energy(_workspace(tmp_path, "short")), AGENTS_DIR / "planner.md"
+    )
+
+    assert "## Audio Levels (measured on this recording)" in prompt
+    assert "-30.0dB" in prompt  # noise floor of this recording, not -45dB
+    assert "Silence threshold" in prompt
+
+
+def test_plan_prompt_omits_audio_levels_without_an_energy_map(tmp_path):
+    prompt = runner.build_prompt(
+        "plan", _workspace(tmp_path, "short"), AGENTS_DIR / "planner.md"
+    )
+
+    assert "## Audio Levels" not in prompt
+
+
+def test_plan_prompt_leaves_the_fine_energy_map_out(tmp_path):
+    """The fine map is for snap; in a prompt it is thousands of tokens of noise."""
+    prompt = runner.build_prompt(
+        "plan", _with_energy(_workspace(tmp_path, "short")), AGENTS_DIR / "planner.md"
+    )
+
+    assert "energy_db_fine" not in prompt
+    assert "energy_db" in prompt
+
+
 def test_long_review_prompt_gets_curation_notes_when_blocks_dropped(tmp_path):
     ws = _workspace(
         tmp_path,

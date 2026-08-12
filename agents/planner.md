@@ -8,10 +8,12 @@ Your job is to produce a JSON cut plan identifying which parts of the video to R
 
 **Silence cuts** — remove if ALL of the following are true:
 - No words detected in the interval (gap between consecutive words **> 1.0s**; use **> 0.75s** for short-form / punchy pacing)
-- Average energy_db in the interval is below **-36dB** (tighter than broadcast “room tone”)
+- Average energy_db in the interval is at or below the **silence threshold given in the Audio Levels section**
 - The gap is not between two sentences that form a logical pair
 
-A gap in the word list is **not** proof of silence — Whisper drops a word now and then, and the energy map is the only reliable evidence. If the energy over the interval sits near speech level (roughly -20dB or louder), someone is talking there even though no word is listed: **do not cut it**. Never label a sub-second gap a "hesitation" without checking its energy.
+Use the measured levels, never a textbook number: the noise floor belongs to the mic, its gain and the room, so a pause can read -45dB on one recording and -30dB on the next. Everything at or below the threshold is silence and **should be cut** — that includes the dead air where the speaker moves the camera or changes scene, which is exactly what makes the edit look edited.
+
+A gap in the word list is **not** proof of silence — Whisper drops a word now and then, and the energy map is the only reliable evidence. If the energy over the interval sits at the reported speech level, someone is talking there even though no word is listed: **do not cut it**. Never label a sub-second gap a "hesitation" without checking its energy.
 
 **Content cuts** — remove if the speaker:
 - Repeats themselves (false starts, restarted sentences)

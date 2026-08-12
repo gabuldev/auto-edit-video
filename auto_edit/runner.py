@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from auto_edit import pipeline as pl
+from auto_edit import snap
 
 
 def invoke_cursor(prompt_path: Path, output_path: Path, repo_root: Path) -> int:
@@ -126,9 +127,12 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 '- Remove redundancy and sluggish transitions; keep intentional rhetorical pauses only.\n'
                 '- Avoid a “podcast slow” cadence unless the content demands it.'
             )
+        levels = _audio_levels_brief(transcription)
+        if levels:
+            sections.append(levels)
         sections += [
             "\n## Transcription Data",
-            _compact_json(transcription),
+            _compact_json(_slim_for_plan(transcription)),
         ]
 
     elif stage == "review":
@@ -278,6 +282,40 @@ def _performance_section(video_type: str) -> str:
 
 
 # -- Transcription slimming ---------------------------------------------------
+
+
+def _slim_for_plan(t: dict) -> dict:
+    """Everything except the fine energy map, which is for `snap`, not the agent.
+
+    At 0.1s a 20-minute recording is 12k numbers of prompt for a judgement the
+    agent makes from the 0.5s map just as well.
+    """
+    return {k: v for k, v in t.items() if k not in ("energy_db_fine", "fine_resolution_seconds")}
+
+
+def _audio_levels_brief(t: dict) -> str:
+    """Tell the planner where silence actually sits in *this* recording.
+
+    The noise floor is a property of the mic, its gain and the room: a treated
+    room tones out near -45dB, a camera mic with the gain up near -30dB. A fixed
+    number in the prompt makes the agent call every pause in the second
+    recording "speech" and leave the scene changes uncut.
+    """
+    energy = t.get("energy_db_fine") or t.get("energy_db") or []
+    audible = sorted(v for v in energy if v > snap.DIGITAL_SILENCE_DB)
+    if not audible:
+        return ""
+    floor = audible[min(len(audible) - 1, len(audible) // 20)]
+    speech = audible[min(len(audible) - 1, len(audible) * 9 // 10)]
+    threshold = snap.silence_threshold_db(energy)
+    return (
+        "\n## Audio Levels (measured on this recording)\n"
+        f"- Noise floor: **{floor:.1f}dB** — this is what silence sounds like here.\n"
+        f"- Speech level: **{speech:.1f}dB**.\n"
+        f"- Silence threshold: **{threshold:.1f}dB** — treat any interval at or below "
+        "this as silence, and anything above it as speech. Use these numbers, not "
+        "textbook ones: room tone varies by mic and gain."
+    )
 
 
 def _slim_for_review(t: dict) -> dict:

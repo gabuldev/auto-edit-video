@@ -44,10 +44,24 @@ SEGMENT_EDGE_GUARD = 0.6
 # would undo the edit the agent intended.
 MAX_ORPHAN_REWIND = 2.5
 
-# A "silence" cut over audio louder than this is not silence: the word list just
-# failed to report the speech there. Real room tone in these recordings sits
-# around -45dB and below; speech sits around -15dB.
+# Fallback for when the energy map shows no dynamic range to measure. A treated
+# room tones out around -45dB; a camera mic with the gain up idles near -30dB.
 SILENCE_MAX_DB = -32.0
+
+# No adaptive threshold may climb past this: above it we are inside speech.
+SILENCE_CEILING_DB = -24.0
+
+# Buckets below this are digital silence (a muted stretch, a gap in the file).
+# They describe the encoder, not the room, so they never define the floor.
+DIGITAL_SILENCE_DB = -80.0
+
+# Least distance between floor and speech for the recording to be measurable.
+MIN_DYNAMIC_RANGE_DB = 10.0
+
+# Where the threshold sits between the measured floor and the measured speech
+# level. Low enough that speech never passes as silence, high enough that the
+# room's own hiss does.
+FLOOR_MARGIN_RATIO = 0.4
 
 # When a cut gutted the head of a sentence, this much of its tail may be
 # swallowed too so no dangling fragment survives ("...comentei ⟹ aqui,").
@@ -91,6 +105,37 @@ def _protect_segment_edges(
     return start, end, note
 
 
+def _percentile(sorted_values: list[float], q: float) -> float:
+    index = min(len(sorted_values) - 1, int(q / 100.0 * len(sorted_values)))
+    return sorted_values[index]
+
+
+def silence_threshold_db(energy_db: list[float]) -> float:
+    """The dB level below which *this recording* is silent.
+
+    A fixed threshold cannot work: the noise floor is a property of the mic, its
+    gain and the room. A treated room tones out around -45dB, while a camera mic
+    with the gain up idles near -30dB -- and a -32dB constant then reads every
+    pause in that second recording as speech, so nothing between takes ever gets
+    cut and the edit comes out looking untouched.
+
+    So measure it. The quiet tail of the energy map is the floor, the loud head
+    is speech, and the threshold sits a fraction of the way up between them.
+    When the two are not far enough apart to tell, there is nothing to measure
+    and the absolute fallback stands.
+    """
+    audible = sorted(v for v in energy_db if v > DIGITAL_SILENCE_DB)
+    if not audible:
+        return SILENCE_MAX_DB
+
+    floor = _percentile(audible, 5)
+    speech = _percentile(audible, 90)
+    if speech - floor < MIN_DYNAMIC_RANGE_DB:
+        return SILENCE_MAX_DB
+
+    return min(floor + FLOOR_MARGIN_RATIO * (speech - floor), SILENCE_CEILING_DB)
+
+
 def trim_loud_silences(
     cuts: list[dict], energy_db: list[float], resolution: float
 ) -> tuple[list[dict], list[str]]:
@@ -99,13 +144,14 @@ def trim_loud_silences(
     Whisper's word list drops a word every so often. When it does, the planner
     sees a gap between consecutive words and calls it a hesitation -- so the cut
     deletes the very word the word list forgot ("eu tenho esse ⟹ aqui", the
-    word "windows" gone). The energy map settles it: real room tone here is
-    around -45dB, speech around -15dB. Anything a "silence" cut covers that is
-    louder than SILENCE_MAX_DB is speech and must survive.
+    word "windows" gone). The energy map settles it: speech sits well above the
+    recording's own noise floor, so anything a "silence" cut covers that is
+    louder than this recording's threshold is speech and must survive.
     """
     if not energy_db or resolution <= 0:
         return cuts, []
 
+    threshold = silence_threshold_db(energy_db)
     kept: list[dict] = []
     notes: list[str] = []
 
@@ -121,11 +167,12 @@ def trim_loud_silences(
             kept.append(cut)
             continue
 
-        quiet = [i for i in range(first, last + 1) if energy_db[i] <= SILENCE_MAX_DB]
+        quiet = [i for i in range(first, last + 1) if energy_db[i] <= threshold]
         if not quiet:
             notes.append(
                 f"dropped silence cut {start:.2f}-{end:.2f}s: audio there peaks at "
-                f"{max(energy_db[first:last + 1]):.1f}dB — that is speech, not silence"
+                f"{max(energy_db[first:last + 1]):.1f}dB, over this recording's "
+                f"{threshold:.1f}dB silence threshold — that is speech, not silence"
             )
             continue
 
@@ -415,7 +462,14 @@ def snap_plan(
     segments: list[dict] | None = None,
     energy_db: list[float] | None = None,
     resolution: float = 0.0,
+    energy_db_fine: list[float] | None = None,
+    fine_resolution: float = 0.0,
 ) -> tuple[dict, list[str]]:
+    # The fine map resolves sub-second pauses; the coarse one smears the speech
+    # on either side into them and reads a 0.3s beat as loud.
+    if energy_db_fine and fine_resolution > 0:
+        energy_db, resolution = energy_db_fine, fine_resolution
+
     # Reject fake silences first: a cut over speech must not get "snapped" to a
     # word gap that only exists because the word list is incomplete.
     cuts, notes = trim_loud_silences(plan.get("cuts") or [], energy_db or [], resolution)
@@ -461,6 +515,8 @@ def main(workspace: Path) -> int:
         segments,
         transcription.get("energy_db") or [],
         float(transcription.get("resolution_seconds") or 0.0),
+        transcription.get("energy_db_fine") or [],
+        float(transcription.get("fine_resolution_seconds") or 0.0),
     )
 
     for note in notes:

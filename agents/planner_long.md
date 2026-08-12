@@ -39,7 +39,7 @@ Do **not** delete a block only because it feels low-energy, is an explanation, o
 ## Step 4 — Tighten inside the blocks you kept
 
 Within surviving blocks, also remove:
-- Silence: no words in the interval, gap **> 1.0s**, average energy_db below **-36dB**, and the gap is not doing rhetorical work
+- Silence: no words in the interval, gap **> 1.0s**, average energy_db at or below the **silence threshold in the Audio Levels section** (measured on this recording — never a textbook number), and the gap is not doing rhetorical work. Dead air where the speaker changes scene or repositions the camera counts.
 - False starts, restarted sentences, immediate self-corrections
 - Filler and hesitation ("ééé", "hmm", "tipo assim"), long breaths between clauses
 - Sluggish leading/trailing dead air on each beat
