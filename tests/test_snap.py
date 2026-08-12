@@ -399,6 +399,83 @@ def test_snap_plan_drops_a_fake_silence_before_snapping():
     assert any("that is speech" in n for n in notes)
 
 
+# --- the noise floor is a property of the recording, not a constant ---------
+# A camera-mounted mic with gain up: the pauses between takes sit at -30dB, far
+# above the -45dB room tone of a treated room, while speech still sits at -14dB.
+NOISY_ENERGY = [-30.0, -30.0, -30.0, -14.0, -14.0, -30.0, -30.0, -30.0, -30.0, -30.0, -30.0, -30.0]
+QUIET_ENERGY = ENERGY
+
+
+def test_threshold_sits_between_the_floor_and_speech_on_a_noisy_recording():
+    threshold = snap.silence_threshold_db(NOISY_ENERGY)
+    assert -30.0 < threshold < -14.0
+
+
+def test_threshold_sits_between_the_floor_and_speech_on_a_quiet_recording():
+    threshold = snap.silence_threshold_db(QUIET_ENERGY)
+    assert -50.0 < threshold < -15.0
+
+
+def test_camera_transition_on_a_noisy_recording_is_still_cut():
+    """The regression this fixes: a silent scene change read as 'speech'."""
+    cut = {"start": 3.0, "end": 4.0, "type": "silence"}
+    cuts, notes = snap.trim_loud_silences([cut], NOISY_ENERGY, RESOLUTION)
+    assert cuts == [cut]
+    assert notes == []
+
+
+def test_missing_word_speech_is_still_rejected_on_a_noisy_recording():
+    cuts, notes = snap.trim_loud_silences(
+        [{"start": 1.6, "end": 2.4, "type": "silence"}], NOISY_ENERGY, RESOLUTION
+    )
+    assert cuts == []
+    assert "that is speech, not silence" in notes[0]
+
+
+def test_flat_energy_map_falls_back_to_the_absolute_threshold():
+    """No dynamic range means no evidence — do not invent a floor."""
+    assert snap.silence_threshold_db([-25.0] * 12) == snap.SILENCE_MAX_DB
+
+
+def test_digital_silence_does_not_drag_the_floor_down():
+    """A muted stretch reads -120dB; it must not define the room's floor."""
+    with_mute = [-120.0] * 4 + NOISY_ENERGY
+    assert snap.silence_threshold_db(with_mute) == snap.silence_threshold_db(NOISY_ENERGY)
+
+
+def test_threshold_never_climbs_into_speech_level():
+    loud = [-12.0] * 10 + [-40.0, -40.0]
+    assert snap.silence_threshold_db(loud) <= snap.SILENCE_CEILING_DB
+
+
+# --- the fine energy map wins when it is available --------------------------
+
+
+def test_snap_plan_prefers_the_fine_energy_map():
+    """0.5s buckets smear speech into a neighbouring 0.3s pause; 0.1s do not."""
+    # The pause runs 2.0-2.4s and speech resumes at 2.4s. The 2.0-2.5s coarse
+    # bucket therefore reads -14dB and hides the pause entirely.
+    fine = [-14.0] * 20 + [-30.0] * 4 + [-14.0] * 36
+    cut = {"start": 2.0, "end": 2.4, "type": "silence"}
+
+    coarse_only, _ = snap.snap_plan(
+        {"cuts": [dict(cut)], "kept_segments": []}, WORDS, DURATION, [], NOISY_ENERGY, RESOLUTION
+    )
+    assert coarse_only["cuts"] == []
+
+    snapped, _ = snap.snap_plan(
+        {"cuts": [dict(cut)], "kept_segments": []},
+        WORDS, DURATION, [], NOISY_ENERGY, RESOLUTION, fine, 0.1,
+    )
+    assert snapped["cuts"] == [cut]
+
+
+def test_snap_plan_falls_back_to_the_coarse_map():
+    plan = {"cuts": [{"start": 3.0, "end": 4.0, "type": "silence"}], "kept_segments": []}
+    snapped, _ = snap.snap_plan(plan, WORDS, DURATION, [], NOISY_ENERGY, RESOLUTION, [], 0.0)
+    assert snapped["cuts"] == [{"start": 3.0, "end": 4.0, "type": "silence"}]
+
+
 # --- dangling fragments of a gutted sentence -------------------------------
 # The speaker restarts a line; the cut removes the botched take but stops one
 # word short, leaving "aqui," alone on screen.

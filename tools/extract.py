@@ -30,7 +30,10 @@ except ImportError:
     sys.modules["numba.core"] = mock.MagicMock()
 
 
-ENERGY_RESOLUTION = 0.5   # segundos por bucket do energy map
+ENERGY_RESOLUTION = 0.5   # segundos por bucket do energy map (vai pro prompt)
+# Mapa fino: usado só pelo snap. Com buckets de 0.5s a fala vizinha vaza pra
+# dentro de uma pausa de 0.3s e ela passa a medir como fala.
+ENERGY_FINE_RESOLUTION = 0.1
 WORD_CONFIDENCE_THRESHOLD = 0.3
 NO_SPEECH_PROB_THRESHOLD = 0.8
 SAMPLE_RATE = 16000        # Hz — Whisper usa 16kHz internamente
@@ -61,8 +64,8 @@ def extract(workspace: Path) -> None:
 
     # 3. Energy map via PCM raw
     print("[extract] Computing energy map...")
-    energy_db = _compute_energy_map(audio_path, duration)
-    print(f"[extract] Energy buckets: {len(energy_db)}")
+    energy_db, energy_db_fine = _compute_energy_maps(audio_path, duration)
+    print(f"[extract] Energy buckets: {len(energy_db)} (+{len(energy_db_fine)} fine)")
 
     # 4. Whisper transcription com word_timestamps
     context = pipeline.get("context", "")
@@ -78,6 +81,8 @@ def extract(workspace: Path) -> None:
         "duration": round(duration, 3),
         "resolution_seconds": ENERGY_RESOLUTION,
         "energy_db": energy_db,
+        "fine_resolution_seconds": ENERGY_FINE_RESOLUTION,
+        "energy_db_fine": energy_db_fine,
         "words": words,
         "segments": segments,
     }
@@ -122,13 +127,26 @@ def _get_duration(audio: Path) -> float:
 
 # ── Energy map ────────────────────────────────────────────────────────────────
 
-def _compute_energy_map(audio: Path, duration: float) -> list[float]:
+def _rms_db(sum_squares: float, count: int) -> float:
+    if count <= 0:
+        return SILENCE_DB
+    rms = math.sqrt(sum_squares / count)
+    return round(20.0 * math.log10(rms), 1) if rms > 1e-9 else SILENCE_DB
+
+
+def _compute_energy_maps(audio: Path, duration: float) -> tuple[list[float], list[float]]:
     """
-    Lê PCM f32le do FFmpeg via pipe e calcula RMS dB por janela de ENERGY_RESOLUTION segundos.
+    Lê PCM f32le do FFmpeg via pipe e calcula RMS dB por janela.
+
+    Devolve (mapa de ENERGY_RESOLUTION, mapa de ENERGY_FINE_RESOLUTION). O
+    grosso vai pro prompt do planner; o fino fica pro snap, que precisa medir
+    pausas menores que um bucket grosso. Os dois saem do mesmo decode: o grosso
+    é a soma dos quadrados dos buckets finos que ele cobre.
     Evita dependências extras (librosa, soundfile, etc).
     """
-    samples_per_bucket = int(SAMPLE_RATE * ENERGY_RESOLUTION)
-    n_buckets = math.ceil(duration / ENERGY_RESOLUTION)
+    fine_per_coarse = max(1, round(ENERGY_RESOLUTION / ENERGY_FINE_RESOLUTION))
+    samples_per_bucket = int(SAMPLE_RATE * ENERGY_FINE_RESOLUTION)
+    n_buckets = math.ceil(duration / ENERGY_FINE_RESOLUTION)
 
     # FFmpeg → raw PCM float32 little-endian, mono 16kHz
     cmd = [
@@ -144,19 +162,27 @@ def _compute_energy_map(audio: Path, duration: float) -> list[float]:
     n_samples = len(raw) // 4  # float32 = 4 bytes
     samples = struct.unpack(f"<{n_samples}f", raw[: n_samples * 4])
 
-    energy_db: list[float] = []
+    fine_db: list[float] = []
+    coarse_db: list[float] = []
+    coarse_sum, coarse_count = 0.0, 0
+
     for i in range(n_buckets):
         start = i * samples_per_bucket
         end = min(start + samples_per_bucket, n_samples)
         bucket = samples[start:end]
-        if not bucket:
-            energy_db.append(SILENCE_DB)
-            continue
-        rms = math.sqrt(sum(s * s for s in bucket) / len(bucket))
-        db = 20.0 * math.log10(rms) if rms > 1e-9 else SILENCE_DB
-        energy_db.append(round(db, 1))
+        sum_squares = sum(s * s for s in bucket)
+        fine_db.append(_rms_db(sum_squares, len(bucket)))
 
-    return energy_db
+        coarse_sum += sum_squares
+        coarse_count += len(bucket)
+        if (i + 1) % fine_per_coarse == 0:
+            coarse_db.append(_rms_db(coarse_sum, coarse_count))
+            coarse_sum, coarse_count = 0.0, 0
+
+    if coarse_count or n_buckets % fine_per_coarse:
+        coarse_db.append(_rms_db(coarse_sum, coarse_count))
+
+    return coarse_db, fine_db
 
 
 # ── Whisper transcription ─────────────────────────────────────────────────────
