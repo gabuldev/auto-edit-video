@@ -338,6 +338,19 @@ def _score_sharpness(gray: np.ndarray) -> float:
     return float(np.var(lap))
 
 
+def _skin_mask(rgb: np.ndarray) -> np.ndarray:
+    """Boolean skin-tone mask (works across skin tones)."""
+    roi = rgb.astype(np.float32)
+    r, g, b = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
+    return (
+        (r > 60) & (g > 40) & (b > 20)
+        & (r > g) & (r > b)
+        & ((r - g) > 10)
+        & (np.abs(r - g) < 120)
+        & (r < 240) & (g < 230) & (b < 220)
+    )
+
+
 def _score_face_region(rgb: np.ndarray) -> float:
     """Skin-tone ratio in the upper-center region where faces typically are.
 
@@ -347,18 +360,60 @@ def _score_face_region(rgb: np.ndarray) -> float:
     # Upper-center crop (face zone in selfie/vlog framing)
     y0, y1 = int(h * 0.15), int(h * 0.65)
     x0, x1 = int(w * 0.20), int(w * 0.80)
-    roi = rgb[y0:y1, x0:x1].astype(np.float32)
+    roi = rgb[y0:y1, x0:x1]
 
-    r, g, b = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
-    # Skin-tone heuristic (works across skin tones)
-    skin = (
-        (r > 60) & (g > 40) & (b > 20)
-        & (r > g) & (r > b)
-        & ((r - g) > 10)
-        & (np.abs(r - g) < 120)
-        & (r < 240) & (g < 230) & (b < 220)
-    )
+    skin = _skin_mask(roi)
     return float(skin.sum()) / max(roi.shape[0] * roi.shape[1], 1)
+
+
+# Mouth band, as a fraction of the skin bounding box
+MOUTH_BAND_TOP = 0.55
+MOUTH_BAND_BOT = 0.88
+MOUTH_BAND_LEFT = 0.30
+MOUTH_BAND_RIGHT = 0.70
+# Luma thresholds, relative to the median luma of the skin pixels
+MOUTH_DARK_RATIO = 0.45    # open mouth = dark cavity
+MOUTH_BRIGHT_RATIO = 1.45  # open mouth = visible teeth
+
+
+def _score_mouth_closed(rgb: np.ndarray) -> float:
+    """1.0 = mouth closed, 0.0 = wide open (or no face found).
+
+    A talking frame is the worst possible thumbnail: an open mouth reads as a
+    caught-mid-sentence screenshot. Without a face detector (no cv2/mediapipe
+    in the runtime) this locates the face by its skin bounding box and looks at
+    the mouth band for the two signatures of an open mouth — a dark cavity and
+    bright teeth — both measured relative to the face's own luma so it holds up
+    across skin tones and exposures.
+
+    A frame with no detectable face scores 0.0: it should lose to any frame
+    where the face is visible and shut.
+    """
+    mask = _skin_mask(rgb)
+    if mask.sum() < 0.01 * mask.size:
+        return 0.0
+
+    ys, xs = np.nonzero(mask)
+    # Percentiles instead of min/max: robust to stray skin-coloured pixels
+    y0, y1 = np.percentile(ys, [5, 95])
+    x0, x1 = np.percentile(xs, [5, 95])
+    box_h, box_w = y1 - y0, x1 - x0
+
+    my0, my1 = int(y0 + MOUTH_BAND_TOP * box_h), int(y0 + MOUTH_BAND_BOT * box_h)
+    mx0, mx1 = int(x0 + MOUTH_BAND_LEFT * box_w), int(x0 + MOUTH_BAND_RIGHT * box_w)
+    if my1 - my0 < 3 or mx1 - mx0 < 3:
+        return 0.0
+
+    gray = np.mean(rgb.astype(np.float32), axis=2)
+    band = gray[my0:my1, mx0:mx1]
+    face_luma = float(np.median(gray[mask]))
+    if face_luma <= 0:
+        return 0.0
+
+    dark = float((band < MOUTH_DARK_RATIO * face_luma).mean())
+    bright = float((band > MOUTH_BRIGHT_RATIO * face_luma).mean())
+    openness = min(1.0, dark * 2.0 + bright * 3.0)
+    return 1.0 - openness
 
 
 def _score_center_clarity(gray: np.ndarray) -> float:
@@ -387,13 +442,51 @@ def _score_frame(img: Image.Image) -> dict:
     face = _score_face_region(rgb)
     clarity = _score_center_clarity(gray)
     brightness = _score_brightness(gray)
+    mouth_closed = _score_mouth_closed(rgb)
 
     return {
         "sharpness": sharpness,
         "face": face,
         "clarity": clarity,
         "brightness": brightness,
+        "mouth_closed": mouth_closed,
     }
+
+
+# Strong enough to sink a talking frame, small enough that a visible talking
+# face still beats a frame with no face in it (face term spans ~0-25 points).
+MOUTH_WEIGHT = 12.0
+
+
+def _combined_score(scores: dict) -> float:
+    """Weighted combination of the per-frame scores.
+
+    Face visibility dominates; the mouth-closed term is strong enough to sink a
+    talking frame but not to override a clearly better-framed shot.
+    """
+    return (
+        scores["face"] * 50.0
+        + scores.get("mouth_closed", 1.0) * MOUTH_WEIGHT
+        + scores["sharpness"] / 500.0
+        + scores["clarity"] / 10.0
+        + scores["brightness"] * 5.0
+    )
+
+
+def _forced_timestamp() -> float | None:
+    """AUTO_EDIT_THUMB_TS overrides frame selection with a fixed timestamp."""
+    raw = os.environ.get("AUTO_EDIT_THUMB_TS", "").strip()
+    if not raw:
+        return None
+    try:
+        ts = float(raw)
+    except ValueError:
+        print(f"[thumbnailer] Ignoring invalid AUTO_EDIT_THUMB_TS={raw!r}")
+        return None
+    if ts < 0:
+        print(f"[thumbnailer] Ignoring negative AUTO_EDIT_THUMB_TS={raw!r}")
+        return None
+    return ts
 
 
 def _pick_best_frame(
@@ -401,6 +494,13 @@ def _pick_best_frame(
     energy_peak: float | None = None,
 ) -> Path:
     """Extract multiple candidate frames, score them, and return the best one."""
+    forced = _forced_timestamp()
+    if forced is not None:
+        path = workspace / "_thumb_cand_forced.jpg"
+        _extract_frame(video_path, forced, path)
+        print(f"[thumbnailer] Forced frame at {forced:.1f}s (AUTO_EDIT_THUMB_TS)")
+        return path
+
     # Generate candidate timestamps: regular intervals + energy peak
     margin = max(1.0, duration * 0.05)
     usable = duration - 2 * margin
@@ -419,15 +519,7 @@ def _pick_best_frame(
             continue
         img = Image.open(path)
         scores = _score_frame(img)
-
-        # Weighted combination (face visibility is most important for thumbnails)
-        combined = (
-            scores["face"] * 50.0
-            + scores["sharpness"] / 500.0
-            + scores["clarity"] / 10.0
-            + scores["brightness"] * 5.0
-        )
-        candidates.append((combined, ts, path))
+        candidates.append((_combined_score(scores), ts, path))
 
     if not candidates:
         fallback = workspace / "_thumb_cand_fallback.jpg"
@@ -952,6 +1044,10 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
 # ── Cover frame embedding ───────────────────────────────────────────────────
 
+COVER_FRAMES = 2              # still frames prepended as the cover
+COVER_MAX_DURATION = 0.35     # a leading segment shorter than this is our own cover
+COVER_TAG = "auto-edit-cover"
+
 
 def _cover_concat_cmd(concat_list: Path, output: Path) -> list[str]:
     """Build the ffmpeg concat command for the cover+video mux.
@@ -971,11 +1067,117 @@ def _cover_concat_cmd(concat_list: Path, output: Path) -> list[str]:
     ]
 
 
+def _cover_clip_cmd(
+    thumb_path: Path, width: int, height: int, fps: str, output: Path
+) -> list[str]:
+    """Encode the thumbnail as a video-only still clip of COVER_FRAMES frames."""
+    return [
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", str(thumb_path),
+        "-frames:v", str(COVER_FRAMES),
+        "-vf", f"scale={width}:{height}:flags=lanczos,format=yuv420p",
+        "-r", fps,
+        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+        str(output),
+    ]
+
+
+def _cover_body_cmd(video_path: Path, strip_at: float | None, output: Path) -> list[str]:
+    """Copy the video stream, dropping a previously embedded cover.
+
+    Video only, and never the audio: trimming an audio stream with `-c copy`
+    cuts it at packet boundaries that do NOT line up with the video keyframe,
+    which shifted the audio ~85ms out of sync. The audio is re-attached
+    untouched by `_cover_mux_cmd`.
+    """
+    cmd = ["ffmpeg", "-y"]
+    if strip_at is not None:
+        cmd += ["-ss", f"{strip_at:.3f}"]
+    cmd += [
+        "-i", str(video_path),
+        "-an", "-c:v", "copy",
+        "-reset_timestamps", "1", "-avoid_negative_ts", "make_zero",
+        str(output),
+    ]
+    return cmd
+
+
+def _cover_mux_cmd(
+    video_only: Path, source: Path, output: Path, has_audio: bool
+) -> list[str]:
+    """Mux the rebuilt video stream with the ORIGINAL, untrimmed audio stream."""
+    cmd = ["ffmpeg", "-y", "-i", str(video_only), "-i", str(source), "-map", "0:v:0"]
+    if has_audio:
+        cmd += ["-map", "1:a:0"]
+    cmd += [
+        "-c", "copy",
+        "-metadata", f"comment={COVER_TAG}",
+        "-movflags", "+faststart", "-brand", "mp42",
+        str(output),
+    ]
+    return cmd
+
+
+def _cover_strip_point(packets: list[tuple[float, bool]]) -> float | None:
+    """Timestamp where the real content starts, if a cover is already embedded.
+
+    Returns None when the video has no cover to replace. A cover written by
+    `_embed_cover_frame` is a separate concat segment, so it shows up as a
+    handful of frames between the first two keyframes.
+    """
+    keyframes = [pts for pts, is_key in packets if is_key]
+    if len(keyframes) < 2:
+        return None
+
+    content_start = keyframes[1]
+    if content_start - keyframes[0] > COVER_MAX_DURATION:
+        return None
+    if sum(1 for pts, _ in packets if pts < content_start) > COVER_FRAMES + 1:
+        return None
+    return content_start
+
+
+def _probe_video_packets(video_path: Path, window: float = 1.0) -> list[tuple[float, bool]]:
+    """Return (pts, is_keyframe) for the video packets in the first `window` seconds."""
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "packet=pts_time,flags",
+        "-of", "csv=p=0",
+        "-read_intervals", f"%+{window}",
+        str(video_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    packets: list[tuple[float, bool]] = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split(",")
+        if len(parts) < 2 or not parts[0]:
+            continue
+        try:
+            pts = float(parts[0])
+        except ValueError:
+            continue
+        packets.append((pts, "K" in parts[1]))
+    return sorted(packets)
+
+
+def _has_audio_stream(video_path: Path) -> bool:
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "a:0",
+        "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(video_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return "audio" in result.stdout
+
+
 def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
     """Prepend the thumbnail as a brief still frame at the start of the final video.
 
     This makes platforms like YouTube Shorts and Instagram pick it up
     as the cover/thumbnail automatically (since they use the first frame).
+
+    Idempotent: a cover left by an earlier run is replaced, not stacked on top
+    of. Only the video stream is rebuilt — the audio is carried over untouched
+    so A/V sync is bit-for-bit identical to the input.
     """
     # Find the final video (captioned > overlaid > edited)
     for name in ["captioned_video.mp4", "overlaid_video.mp4", "edited_video.mp4"]:
@@ -986,7 +1188,7 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
         print("[thumbnailer] No video found to embed cover frame — skipping")
         return
 
-    # Get video specs (fps, resolution, audio sample rate) to match
+    # Get video specs (fps, resolution) to match
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "v:0",
         "-show_entries", "stream=r_frame_rate,width,height",
@@ -997,40 +1199,41 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
     vid_w, vid_h = int(parts[0]), int(parts[1])
     fps_str = parts[2]  # e.g. "30/1"
 
-    # Create a short video clip from the thumbnail image (0.1s)
+    strip_at = _cover_strip_point(_probe_video_packets(video_path))
+    if strip_at is not None:
+        print(f"[thumbnailer] Replacing existing cover (content starts at {strip_at:.3f}s)")
+
     cover_clip = workspace / "thumb_cover.mp4"
-    # Scale thumbnail to match video dimensions, generate 0.1s of silent video
-    cmd = [
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", str(thumb_path),
-        "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-        "-t", "0.1",
-        "-vf", f"scale={vid_w}:{vid_h}:flags=lanczos,format=yuv420p",
-        "-r", fps_str,
-        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
-        "-c:a", "aac", "-b:a", "192k",
-        "-shortest",
-        str(cover_clip),
-    ]
-    subprocess.run(cmd, capture_output=True, check=True)
-
-    # Concat: cover clip + original video
+    body_clip = workspace / "thumb_body.mp4"
+    video_only = workspace / "thumb_video_only.mp4"
     concat_list = workspace / "thumb_concat.txt"
-    concat_list.write_text(
-        f"file '{cover_clip.resolve()}'\nfile '{video_path.resolve()}'\n"
-    )
-
     output = workspace / "cover_video.mp4"
-    cmd = _cover_concat_cmd(concat_list, output)
-    subprocess.run(cmd, capture_output=True, check=True)
 
-    # Replace the original video with the cover version
-    output.replace(video_path)
-    print(f"[thumbnailer] Cover frame embedded into {video_path.name}")
-
-    # Cleanup temp files
-    cover_clip.unlink(missing_ok=True)
-    concat_list.unlink(missing_ok=True)
+    try:
+        subprocess.run(
+            _cover_clip_cmd(thumb_path, vid_w, vid_h, fps_str, cover_clip),
+            capture_output=True, check=True,
+        )
+        subprocess.run(
+            _cover_body_cmd(video_path, strip_at, body_clip),
+            capture_output=True, check=True,
+        )
+        concat_list.write_text(
+            f"file '{cover_clip.resolve()}'\nfile '{body_clip.resolve()}'\n"
+        )
+        subprocess.run(
+            _cover_concat_cmd(concat_list, video_only),
+            capture_output=True, check=True,
+        )
+        subprocess.run(
+            _cover_mux_cmd(video_only, video_path, output, _has_audio_stream(video_path)),
+            capture_output=True, check=True,
+        )
+        output.replace(video_path)
+        print(f"[thumbnailer] Cover frame embedded into {video_path.name}")
+    finally:
+        for tmp in (cover_clip, body_clip, video_only, concat_list, output):
+            tmp.unlink(missing_ok=True)
 
 
 # ── Entry point ─────────────────────────────────────────────────────────────
