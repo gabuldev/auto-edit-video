@@ -19,6 +19,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from auto_edit import probe  # noqa: E402  -- needs the repo root on sys.path
+
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
 SHORT_SIZE = (1080, 1920)   # 9:16 portrait
@@ -1161,12 +1164,7 @@ def _probe_video_packets(video_path: Path, window: float = 1.0) -> list[tuple[fl
 
 
 def _has_audio_stream(video_path: Path) -> bool:
-    cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "a:0",
-        "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(video_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return "audio" in result.stdout
+    return probe.has_audio_stream(video_path)
 
 
 def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
@@ -1189,15 +1187,10 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
         return
 
     # Get video specs (fps, resolution) to match
-    cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=r_frame_rate,width,height",
-        "-of", "csv=p=0", str(video_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    parts = result.stdout.strip().split(",")
-    vid_w, vid_h = int(parts[0]), int(parts[1])
-    fps_str = parts[2]  # e.g. "30/1"
+    vid_w, vid_h, fps_str = probe.video_specs(video_path)
+    if fps_str is None:
+        print("[thumbnailer] Unknown frame rate — skipping cover frame")
+        return
 
     strip_at = _cover_strip_point(_probe_video_packets(video_path))
     if strip_at is not None:
