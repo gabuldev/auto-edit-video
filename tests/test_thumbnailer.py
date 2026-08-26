@@ -9,7 +9,16 @@ from PIL import Image, ImageFont
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.thumbnailer import (
+    COVER_FRAMES,
+    COVER_TAG,
+    _combined_score,
+    _cover_body_cmd,
+    _cover_clip_cmd,
     _cover_concat_cmd,
+    _cover_mux_cmd,
+    _cover_strip_point,
+    _forced_timestamp,
+    _score_mouth_closed,
     _BUILTIN_TEMPLATES,
     _TEMPLATE_TO_STYLE,
     _load_templates,
@@ -182,3 +191,171 @@ class TestCoverConcatCmd:
         cmd = _cover_concat_cmd(Path("/tmp/list.txt"), Path("/tmp/out.mp4"))
         assert cmd.index("-movflags") < cmd.index("/tmp/out.mp4")
         assert cmd[-1] == "/tmp/out.mp4"
+
+
+# ── _score_mouth_closed ──────────────────────────────────────────────────────
+
+def _face_patch(mouth: str) -> np.ndarray:
+    """Synthetic 120x120 skin-toned face; `mouth` is closed / open / teeth."""
+    rgb = np.zeros((120, 120, 3), dtype=np.uint8)
+    rgb[:, :] = (190, 140, 110)  # skin
+    if mouth == "open":
+        rgb[75:100, 45:75] = (20, 12, 10)          # dark cavity
+    elif mouth == "teeth":
+        rgb[75:100, 45:75] = (20, 12, 10)
+        rgb[78:86, 48:72] = (250, 248, 245)        # teeth
+    return rgb
+
+
+class TestScoreMouthClosed:
+    def test_closed_mouth_scores_high(self):
+        assert _score_mouth_closed(_face_patch("closed")) > 0.9
+
+    def test_open_mouth_scores_lower_than_closed(self):
+        assert _score_mouth_closed(_face_patch("open")) < _score_mouth_closed(
+            _face_patch("closed")
+        )
+
+    def test_visible_teeth_penalized(self):
+        assert _score_mouth_closed(_face_patch("teeth")) < 0.5
+
+    def test_no_face_scores_zero(self):
+        blank = np.zeros((120, 120, 3), dtype=np.uint8)
+        assert _score_mouth_closed(blank) == 0.0
+
+    def test_score_in_unit_range(self):
+        for mouth in ("closed", "open", "teeth"):
+            score = _score_mouth_closed(_face_patch(mouth))
+            assert 0.0 <= score <= 1.0
+
+
+# ── _combined_score ──────────────────────────────────────────────────────────
+
+BASE_SCORES = {
+    "face": 0.30, "sharpness": 1000.0, "clarity": 40.0,
+    "brightness": 0.9, "mouth_closed": 1.0,
+}
+
+
+class TestCombinedScore:
+    def test_open_mouth_loses_to_closed_mouth(self):
+        closed = _combined_score(BASE_SCORES)
+        talking = _combined_score({**BASE_SCORES, "mouth_closed": 0.0})
+        assert talking < closed
+
+    def test_mouth_does_not_outweigh_face_visibility(self):
+        # A frame with a visible, talking face still beats a faceless one
+        talking_face = _combined_score({**BASE_SCORES, "face": 0.30, "mouth_closed": 0.0})
+        no_face = _combined_score({**BASE_SCORES, "face": 0.02, "mouth_closed": 1.0})
+        assert talking_face > no_face
+
+    def test_missing_mouth_key_does_not_raise(self):
+        scores = {k: v for k, v in BASE_SCORES.items() if k != "mouth_closed"}
+        assert _combined_score(scores) > 0
+
+
+# ── _forced_timestamp (AUTO_EDIT_THUMB_TS) ───────────────────────────────────
+
+class TestForcedTimestamp:
+    def test_unset_returns_none(self, monkeypatch):
+        monkeypatch.delenv("AUTO_EDIT_THUMB_TS", raising=False)
+        assert _forced_timestamp() is None
+
+    def test_parses_float(self, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_THUMB_TS", "42.5")
+        assert _forced_timestamp() == 42.5
+
+    def test_invalid_ignored(self, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_THUMB_TS", "meio-do-video")
+        assert _forced_timestamp() is None
+
+    def test_negative_ignored(self, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_THUMB_TS", "-3")
+        assert _forced_timestamp() is None
+
+
+# ── _cover_strip_point (idempotência) ────────────────────────────────────────
+
+class TestCoverStripPoint:
+    def test_detects_previously_embedded_cover(self):
+        # 2 cover frames, then the real content keyframe
+        packets = [(0.021, True), (0.054, False), (0.121, True), (0.154, False)]
+        assert _cover_strip_point(packets) == 0.121
+
+    def test_no_second_keyframe_means_no_cover(self):
+        packets = [(0.0, True), (0.033, False), (0.066, False)]
+        assert _cover_strip_point(packets) is None
+
+    def test_distant_keyframe_is_not_a_cover(self):
+        packets = [(0.0, True)] + [(i * 0.033, False) for i in range(1, 20)] + [(2.0, True)]
+        assert _cover_strip_point(packets) is None
+
+    def test_too_many_leading_frames_is_not_a_cover(self):
+        packets = [
+            (0.0, True), (0.033, False), (0.066, False), (0.1, False),
+            (0.133, False), (0.166, False), (0.2, True),
+        ]
+        assert _cover_strip_point(packets) is None
+
+
+# ── cover ffmpeg commands ────────────────────────────────────────────────────
+
+class TestCoverClipCmd:
+    def test_encodes_fixed_frame_count(self):
+        cmd = _cover_clip_cmd(Path("/tmp/t.png"), 1080, 1920, "30/1", Path("/tmp/c.mp4"))
+        assert cmd[cmd.index("-frames:v") + 1] == str(COVER_FRAMES)
+
+    def test_scales_to_video_size(self):
+        cmd = _cover_clip_cmd(Path("/tmp/t.png"), 1080, 1920, "30/1", Path("/tmp/c.mp4"))
+        assert "scale=1080:1920:flags=lanczos,format=yuv420p" in cmd[cmd.index("-vf") + 1]
+
+    def test_has_no_audio_input(self):
+        cmd = _cover_clip_cmd(Path("/tmp/t.png"), 1080, 1920, "30/1", Path("/tmp/c.mp4"))
+        assert "anullsrc" not in " ".join(cmd)
+
+
+class TestCoverBodyCmd:
+    def test_drops_audio_and_copies_video(self):
+        cmd = _cover_body_cmd(Path("/tmp/in.mp4"), None, Path("/tmp/body.mp4"))
+        assert "-an" in cmd
+        assert cmd[cmd.index("-c:v") + 1] == "copy"
+
+    def test_no_strip_point_means_no_seek(self):
+        cmd = _cover_body_cmd(Path("/tmp/in.mp4"), None, Path("/tmp/body.mp4"))
+        assert "-ss" not in cmd
+
+    def test_strip_point_seeks_before_input(self):
+        cmd = _cover_body_cmd(Path("/tmp/in.mp4"), 0.121, Path("/tmp/body.mp4"))
+        assert cmd.index("-ss") < cmd.index("-i")
+        assert cmd[cmd.index("-ss") + 1] == "0.121"
+
+
+class TestCoverMuxCmd:
+    def test_audio_comes_from_the_original_file(self):
+        cmd = _cover_mux_cmd(
+            Path("/tmp/v.mp4"), Path("/tmp/src.mp4"), Path("/tmp/out.mp4"), True
+        )
+        assert cmd[cmd.index("-map") + 1] == "0:v:0"
+        assert "1:a:0" in cmd
+        # the untrimmed source is the second input
+        assert cmd.index("/tmp/src.mp4") > cmd.index("/tmp/v.mp4")
+
+    def test_silent_video_maps_no_audio(self):
+        cmd = _cover_mux_cmd(
+            Path("/tmp/v.mp4"), Path("/tmp/src.mp4"), Path("/tmp/out.mp4"), False
+        )
+        assert "1:a:0" not in cmd
+
+    def test_keeps_faststart_and_mp42(self):
+        cmd = _cover_mux_cmd(
+            Path("/tmp/v.mp4"), Path("/tmp/src.mp4"), Path("/tmp/out.mp4"), True
+        )
+        assert cmd[cmd.index("-movflags") + 1] == "+faststart"
+        assert cmd[cmd.index("-brand") + 1] == "mp42"
+        assert cmd[-1] == "/tmp/out.mp4"
+
+    def test_tags_the_file_as_covered(self):
+        cmd = _cover_mux_cmd(
+            Path("/tmp/v.mp4"), Path("/tmp/src.mp4"), Path("/tmp/out.mp4"), True
+        )
+        assert f"comment={COVER_TAG}" in cmd
