@@ -229,7 +229,7 @@ auto-edit short video.mp4 --plan-id 2026-W19/S2
 auto-edit merge folder/ --type long --plan-id L1
 ```
 
-Sem `--plan-id`, se houver slots pendentes, a CLI pergunta interativamente. Use `--no-plan-prompt` pra desligar o prompt.
+Sem `--plan-id` o vídeo não é linkado a nenhum slot e o pipeline roda direto. Use `--plan-prompt` pra escolher um slot pendente interativamente.
 
 ## Claude Code Extension
 
