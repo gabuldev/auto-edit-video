@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import snap  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, snap  # noqa: E402  -- needs the repo root on sys.path
 
 FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MAX)
 MIN_INTERVAL_DURATION = 1.0 / 30  # 1 frame at 30fps ≈ 0.033s
@@ -319,16 +319,7 @@ def _get_duration(video: Path) -> float:
 
 def _get_video_dimensions(video: Path) -> tuple[int, int]:
     """Return (width, height) of the first video stream."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "csv=p=0",
-        str(video),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    w, h = result.stdout.strip().split(",")
-    return int(w), int(h)
+    return probe.video_size(video)
 
 
 def _build_filter(

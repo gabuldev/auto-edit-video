@@ -13,6 +13,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from auto_edit import probe  # noqa: E402  -- needs the repo root on sys.path
+
 
 def _repo_root() -> Path:
     root = os.environ.get("AUTO_EDIT_REPO_ROOT")
@@ -164,44 +167,16 @@ def _get_duration(path: Path) -> float:
 
 
 def _has_audio_stream(path: Path) -> bool:
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "a:0",
-        "-show_entries", "stream=index",
-        "-of", "csv=p=0",
-        str(path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0 and bool(result.stdout.strip())
+    return probe.has_audio_stream(path)
 
 
 def _video_fps(path: Path) -> str | None:
     """Nominal frame rate of the video stream, as the "30000/1001" fraction."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=r_frame_rate",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    value = result.stdout.strip()
-    if result.returncode != 0 or not value or value in ("0/0", "N/A"):
-        return None
-    return value
+    return probe.video_fps(path)
 
 
 def _video_size(path: Path) -> tuple[int, int]:
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "csv=p=0:s=x",
-        str(path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    w, h = result.stdout.strip().split("x", 1)
-    return int(w), int(h)
+    return probe.video_size(path)
 
 
 def _run_ffmpeg_overlay(

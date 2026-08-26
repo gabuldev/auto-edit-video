@@ -17,6 +17,7 @@ from rich.table import Table
 
 from auto_edit import pipeline as pl
 from auto_edit import plan as plan_mod
+from auto_edit import probe as probe_mod
 from auto_edit._version import __version__
 from auto_edit.ideas import ideas_app
 from auto_edit.insights import insights_app
@@ -456,16 +457,11 @@ def merge(
     # Probe each video's resolution to decide merge strategy
     resolutions: list[tuple[int, int]] = []
     for v in videos:
-        probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=width,height",
-             "-of", "csv=p=0:s=x", str(v)],
-            capture_output=True, text=True,
-        )
-        if probe.returncode != 0 or not probe.stdout.strip():
-            console.print(f"[red]Error probing {v.name}:[/red] {probe.stderr}")
+        try:
+            w, h = probe_mod.video_size(v)
+        except probe_mod.ProbeError as exc:
+            console.print(f"[red]Error probing {v.name}:[/red] {exc}")
             raise typer.Exit(1)
-        w, h = (int(x) for x in probe.stdout.strip().split("x"))
         resolutions.append((w, h))
         aspect = f"{w/h:.2f}"
         console.print(f"  {v.name}: {w}x{h} (aspect {aspect})")
