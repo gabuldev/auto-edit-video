@@ -14,28 +14,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe  # noqa: E402  -- needs the repo root on sys.path
-
-
-def _repo_root() -> Path:
-    root = os.environ.get("AUTO_EDIT_REPO_ROOT")
-    if root:
-        return Path(root).resolve()
-    return Path(__file__).resolve().parent.parent
+from auto_edit import overlay_assets, probe  # noqa: E402  -- needs repo root on sys.path
 
 
 def _overlay_search_dirs() -> list[Path]:
-    """
-    Directories to look for overlay MP4s, in order:
+    """Folders to look for overlay MP4s (see overlay_assets.overlay_search_dirs).
+
     1) AUTO_EDIT_ASSETS_OVERLAYS — single explicit path
     2) <repo>/assets/overlays (canonical)
     3) <repo>/overlays — optional flat folder at repo root (same filenames)
     """
-    o = os.environ.get("AUTO_EDIT_ASSETS_OVERLAYS")
-    if o:
-        return [Path(o).expanduser().resolve()]
-    r = _repo_root()
-    return [r / "assets" / "overlays", r / "overlays"]
+    return overlay_assets.overlay_search_dirs()
 
 
 def _find_overlay_file(name: str, dirs: list[Path]) -> Path | None:
@@ -44,6 +33,72 @@ def _find_overlay_file(name: str, dirs: list[Path]) -> Path | None:
         if p.is_file():
             return p
     return None
+
+
+def _overlays_optional() -> bool:
+    """Whether a missing overlay asset is a warning rather than a hard error.
+
+    Default: a planned overlay whose .mp4 can't be found fails the stage — the
+    whole point of the overlay is that it appears, and silently shipping the
+    video without it is how the problem went unnoticed. Set
+    AUTO_EDIT_OVERLAYS_OPTIONAL=1 to skip missing overlays and render anyway.
+    """
+    return os.environ.get("AUTO_EDIT_OVERLAYS_OPTIONAL", "").lower() in ("1", "true", "yes")
+
+
+def _missing_assets_message(missing: list[str], search_dirs: list[Path]) -> str:
+    files = "\n".join(f"    - {n}" for n in missing)
+    dirs = "\n".join(f"    - {d}" for d in search_dirs)
+    return (
+        "overlay asset(s) not found:\n"
+        f"{files}\n"
+        "  searched in:\n"
+        f"{dirs}\n"
+        "  Fix: put the .mp4 file(s) in one of those folders, or point\n"
+        "  AUTO_EDIT_ASSETS_OVERLAYS at the folder that has them, e.g.\n"
+        "    export AUTO_EDIT_ASSETS_OVERLAYS=/path/to/your/overlays\n"
+        "  To render the video WITHOUT these overlays instead of failing,\n"
+        "  set AUTO_EDIT_OVERLAYS_OPTIONAL=1."
+    )
+
+
+def _resolve_overlays(
+    overlays: list[dict],
+    search_dirs: list[Path],
+    kept: list[tuple[float, float]],
+) -> tuple[list[tuple[dict, Path, float]], list[str], list[str]]:
+    """Split planned overlays into (found, missing_asset, removed_by_cut).
+
+    - found: ``(overlay, asset_path, post_cut_start)`` tuples ready to place.
+    - missing_asset: file names not present in any search dir (a setup error).
+    - removed_by_cut: trigger timestamps that fell inside a removed section.
+    """
+    found: list[tuple[dict, Path, float]] = []
+    missing: list[str] = []
+    removed: list[str] = []
+    for ov in overlays:
+        name = ov["file"]
+        asset = _find_overlay_file(name, search_dirs)
+        if asset is None:
+            missing.append(name)
+            continue
+        post_cut_start = _remap(float(ov["original_start"]), kept)
+        if post_cut_start is None:
+            removed.append(name)
+            continue
+        found.append((ov, asset, post_cut_start))
+    return found, missing, removed
+
+
+def _require_assets_present(missing: list[str], search_dirs: list[Path]) -> None:
+    """Raise on any missing overlay asset, unless overlays are opted-out."""
+    if not missing:
+        return
+    msg = _missing_assets_message(missing, search_dirs)
+    if _overlays_optional():
+        print(f"[overlayer] WARNING (AUTO_EDIT_OVERLAYS_OPTIONAL): {msg}")
+        return
+    raise FileNotFoundError(msg)
 
 
 _CODEC_PREFERENCE = [
@@ -85,40 +140,24 @@ def overlay(workspace: Path) -> None:
     reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
     kept = _build_kept_intervals(reviewed_plan, pipeline)
 
+    found, missing, removed = _resolve_overlays(overlays, search_dirs, kept)
+
+    # A missing asset is a setup error, not a content miss: fail loudly instead
+    # of silently shipping a video without the overlay the planner asked for.
+    # (Opt out with AUTO_EDIT_OVERLAYS_OPTIONAL=1.)
+    _require_assets_present(missing, search_dirs)
+
+    for name in removed:
+        print(
+            f"[overlayer] WARNING: {name}: its trigger timestamp was removed by "
+            "cuts — overlay skipped (pick a moment inside a kept segment)."
+        )
+
     placed = []
-    skip_reasons: list[str] = []
-    for ov in overlays:
-        asset = _find_overlay_file(ov["file"], search_dirs)
-        if asset is None:
-            msg = (
-                f"{ov['file']}: not found in: "
-                + ", ".join(str(d) for d in search_dirs)
-                + " (see assets/overlays/README.md; or run: auto-edit sync-overlays)"
-            )
-            print(f"[overlayer] WARNING: {msg}")
-            skip_reasons.append(msg)
-            continue
-
-        post_cut_start = _remap(float(ov["original_start"]), kept)
-        if post_cut_start is None:
-            msg = (
-                f"{ov['file']}: timestamp {ov['original_start']}s was removed by cuts "
-                "(pick a moment that survives in reviewed_plan kept_segments)"
-            )
-            print(f"[overlayer] WARNING: {msg}")
-            skip_reasons.append(msg)
-            continue
-
+    for ov, asset, post_cut_start in found:
         duration = _get_duration(asset)
         placed.append({"asset": asset, "start": post_cut_start, "end": post_cut_start + duration})
         print(f"[overlayer] '{ov['file']}' -> post-cut {post_cut_start:.2f}s-{post_cut_start + duration:.2f}s")
-
-    if skip_reasons:
-        print(
-            "[overlayer] WARNING: some overlays could not be applied:\n"
-            + "\n".join(f"  - {r}" for r in skip_reasons)
-            + f"\n  Searched: {', '.join(str(d) for d in search_dirs)}"
-        )
 
     input_video = workspace / "edited_video.mp4"
     output_video = workspace / "overlaid_video.mp4"
