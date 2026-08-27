@@ -8,6 +8,7 @@ from auto_edit.probe import (
     parse_fps,
     parse_size,
     parse_streams,
+    parse_timescale,
 )
 
 # Captured from a DJI clip that crashed `auto-edit merge`: the video stream
@@ -81,3 +82,22 @@ class TestParseStreams:
     def test_returns_all_streams(self):
         payload = json.dumps({"streams": [{"index": 0}, {"index": 1}]})
         assert len(parse_streams(payload)) == 2
+
+
+class TestParseTimescale:
+    def test_reads_time_base_denominator(self):
+        payload = json.dumps({"streams": [{"time_base": "1/90000"}]})
+        assert parse_timescale(payload) == 90000
+
+    def test_thirty_thousand_timescale(self):
+        payload = json.dumps({"streams": [{"time_base": "1/30000"}]})
+        assert parse_timescale(payload) == 30000
+
+    def test_missing_time_base_is_none(self):
+        assert parse_timescale(json.dumps({"streams": [{"width": 1920}]})) is None
+
+    def test_garbage_time_base_is_none(self):
+        assert parse_timescale(json.dumps({"streams": [{"time_base": "N/A"}]})) is None
+
+    def test_empty_payload_is_none(self):
+        assert parse_timescale("") is None
