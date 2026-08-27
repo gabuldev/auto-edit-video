@@ -4,13 +4,16 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from tools import thumbnailer
 from tools.thumbnailer import (
     COVER_FRAMES,
     COVER_TAG,
+    _assert_frame_rate_preserved,
     _combined_score,
     _cover_body_cmd,
     _cover_clip_cmd,
@@ -313,6 +316,27 @@ class TestCoverClipCmd:
         cmd = _cover_clip_cmd(Path("/tmp/t.png"), 1080, 1920, "30/1", Path("/tmp/c.mp4"))
         assert "anullsrc" not in " ".join(cmd)
 
+    def test_matches_the_body_track_timescale(self):
+        # The executor writes segments at 1/90000. A cover muxed at ffmpeg's
+        # default 1/30000 makes the concat demuxer read every body timestamp
+        # 3x too large -> the delivered video plays in slow motion.
+        cmd = _cover_clip_cmd(
+            Path("/tmp/t.png"), 3840, 2160, "30000/1001", Path("/tmp/c.mp4"), 90000
+        )
+        assert cmd[cmd.index("-video_track_timescale") + 1] == "90000"
+
+    def test_output_path_stays_last(self):
+        cmd = _cover_clip_cmd(
+            Path("/tmp/t.png"), 3840, 2160, "30000/1001", Path("/tmp/c.mp4"), 90000
+        )
+        assert cmd[-1] == "/tmp/c.mp4"
+
+    def test_unknown_timescale_omits_the_flag(self):
+        cmd = _cover_clip_cmd(
+            Path("/tmp/t.png"), 1080, 1920, "30/1", Path("/tmp/c.mp4"), None
+        )
+        assert "-video_track_timescale" not in cmd
+
 
 class TestCoverBodyCmd:
     def test_drops_audio_and_copies_video(self):
@@ -359,3 +383,18 @@ class TestCoverMuxCmd:
             Path("/tmp/v.mp4"), Path("/tmp/src.mp4"), Path("/tmp/out.mp4"), True
         )
         assert f"comment={COVER_TAG}" in cmd
+
+
+class TestAssertFrameRatePreserved:
+    def test_raises_when_the_concat_stretched_the_timestamps(self, monkeypatch):
+        monkeypatch.setattr(thumbnailer.probe, "video_fps", lambda _p: "10000/1001")
+        with pytest.raises(RuntimeError, match="changed the frame rate"):
+            _assert_frame_rate_preserved(Path("/tmp/out.mp4"), "30000/1001")
+
+    def test_passes_when_the_frame_rate_survived(self, monkeypatch):
+        monkeypatch.setattr(thumbnailer.probe, "video_fps", lambda _p: "30000/1001")
+        _assert_frame_rate_preserved(Path("/tmp/out.mp4"), "30000/1001")
+
+    def test_unknown_frame_rate_does_not_block(self, monkeypatch):
+        monkeypatch.setattr(thumbnailer.probe, "video_fps", lambda _p: None)
+        _assert_frame_rate_preserved(Path("/tmp/out.mp4"), "30000/1001")

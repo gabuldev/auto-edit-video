@@ -1071,18 +1071,33 @@ def _cover_concat_cmd(concat_list: Path, output: Path) -> list[str]:
 
 
 def _cover_clip_cmd(
-    thumb_path: Path, width: int, height: int, fps: str, output: Path
+    thumb_path: Path,
+    width: int,
+    height: int,
+    fps: str,
+    output: Path,
+    timescale: int | None = None,
 ) -> list[str]:
-    """Encode the thumbnail as a video-only still clip of COVER_FRAMES frames."""
-    return [
+    """Encode the thumbnail as a video-only still clip of COVER_FRAMES frames.
+
+    `timescale` MUST match the body's track timescale. The concat demuxer keeps
+    the FIRST file's timebase for the whole virtual stream and does not rescale
+    the packets that follow, so a cover written at 1/30000 in front of a body at
+    1/90000 makes every body timestamp read 3x too large: the video plays at a
+    third of its frame rate (slow motion) while the audio stays put.
+    """
+    cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", str(thumb_path),
         "-frames:v", str(COVER_FRAMES),
         "-vf", f"scale={width}:{height}:flags=lanczos,format=yuv420p",
         "-r", fps,
         "-c:v", "libx264", "-crf", "18", "-preset", "fast",
-        str(output),
     ]
+    if timescale:
+        cmd += ["-video_track_timescale", str(timescale)]
+    cmd.append(str(output))
+    return cmd
 
 
 def _cover_body_cmd(video_path: Path, strip_at: float | None, output: Path) -> list[str]:
@@ -1167,6 +1182,21 @@ def _has_audio_stream(video_path: Path) -> bool:
     return probe.has_audio_stream(video_path)
 
 
+def _assert_frame_rate_preserved(concatenated: Path, expected_fps: str) -> None:
+    """Fail loudly if the cover concat changed the body's frame rate.
+
+    A timebase mismatch between the cover and the body silently stretches every
+    timestamp, which ships as a slow-motion video with in-sync-looking audio.
+    Catch it here rather than in the delivered file.
+    """
+    actual = probe.video_fps(concatenated)
+    if actual and actual != expected_fps:
+        raise RuntimeError(
+            f"cover concat changed the frame rate ({expected_fps} -> {actual}); "
+            "the cover clip's track timescale does not match the video's"
+        )
+
+
 def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
     """Prepend the thumbnail as a brief still frame at the start of the final video.
 
@@ -1192,6 +1222,8 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
         print("[thumbnailer] Unknown frame rate — skipping cover frame")
         return
 
+    timescale = probe.video_timescale(video_path)
+
     strip_at = _cover_strip_point(_probe_video_packets(video_path))
     if strip_at is not None:
         print(f"[thumbnailer] Replacing existing cover (content starts at {strip_at:.3f}s)")
@@ -1204,7 +1236,7 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
 
     try:
         subprocess.run(
-            _cover_clip_cmd(thumb_path, vid_w, vid_h, fps_str, cover_clip),
+            _cover_clip_cmd(thumb_path, vid_w, vid_h, fps_str, cover_clip, timescale),
             capture_output=True, check=True,
         )
         subprocess.run(
@@ -1218,6 +1250,7 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
             _cover_concat_cmd(concat_list, video_only),
             capture_output=True, check=True,
         )
+        _assert_frame_rate_preserved(video_only, fps_str)
         subprocess.run(
             _cover_mux_cmd(video_only, video_path, output, _has_audio_stream(video_path)),
             capture_output=True, check=True,

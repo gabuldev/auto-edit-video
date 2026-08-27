@@ -63,6 +63,22 @@ def parse_fps(payload: str) -> str | None:
     return None
 
 
+def parse_timescale(payload: str) -> int | None:
+    """Track timescale (the `time_base` denominator), or None if unknown."""
+    for stream in parse_streams(payload):
+        value = stream.get("time_base")
+        if not value or "/" not in str(value):
+            continue
+        _, _, denominator = str(value).partition("/")
+        try:
+            ticks = int(denominator)
+        except ValueError:
+            continue
+        if ticks > 0:
+            return ticks
+    return None
+
+
 def video_size(path: Path | str) -> tuple[int, int]:
     """(width, height) of the first video stream."""
     return parse_size(_run_probe(path, "v:0", "stream=width,height"))
@@ -72,6 +88,14 @@ def video_fps(path: Path | str) -> str | None:
     """Frame rate of the first video stream, as a fraction string."""
     try:
         return parse_fps(_run_probe(path, "v:0", "stream=r_frame_rate"))
+    except ProbeError:
+        return None
+
+
+def video_timescale(path: Path | str) -> int | None:
+    """Track timescale of the first video stream, e.g. 90000."""
+    try:
+        return parse_timescale(_run_probe(path, "v:0", "stream=time_base"))
     except ProbeError:
         return None
 
