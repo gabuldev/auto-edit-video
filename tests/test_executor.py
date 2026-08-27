@@ -243,6 +243,70 @@ class TestBuildFilter:
         assert "[outa]" in f
 
 
+# ── _reframe_vf ──────────────────────────────────────────────────────────────
+
+class TestReframeVf:
+    def test_contains_crop_scale_and_setsar(self):
+        from tools.executor import _reframe_vf
+        vf = _reframe_vf((1080, 1920))
+        assert "crop=ih*1080/1920:ih:(iw-ih*1080/1920)/2:0" in vf
+        assert "scale=1080:1920:flags=lanczos" in vf
+        assert "setsar=1" in vf
+
+
+# ── _run_ffmpeg_cuts routing (single-pass vs. memory-safe segmented) ─────────
+
+class TestRunFfmpegCutsRouting:
+    def _stub_single_pass(self, monkeypatch):
+        """Neutralize the single-pass FFmpeg work so routing can be tested."""
+        from tools import executor
+
+        class _Ok:
+            returncode = 0
+
+        monkeypatch.setattr(executor, "_get_video_codec", lambda: ("libx264", []))
+        monkeypatch.setattr(executor, "_fix_av_duration_mismatch", lambda *a, **k: None)
+        monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: _Ok())
+
+    def test_few_intervals_use_single_pass(self, monkeypatch):
+        from tools import executor
+        self._stub_single_pass(monkeypatch)
+        seg_called = []
+        monkeypatch.setattr(executor, "_run_ffmpeg_cuts_segmented",
+                            lambda *a, **k: seg_called.append(True))
+        executor._run_ffmpeg_cuts(Path("v.mp4"), [(0.0, 5.0), (10.0, 15.0)], Path("out.mp4"))
+        assert seg_called == []  # 2 <= threshold → single-pass
+
+    def test_many_intervals_use_segmented(self, monkeypatch):
+        from tools import executor
+        seg_called = []
+        monkeypatch.setattr(executor, "_run_ffmpeg_cuts_segmented",
+                            lambda *a, **k: seg_called.append(True))
+        # The single-pass path must not even be built for a large edit.
+        monkeypatch.setattr(executor, "_build_filter",
+                            lambda *a, **k: pytest.fail("single-pass entered for large edit"))
+        intervals = [(float(i), float(i) + 0.5) for i in range(20)]  # 20 > 12
+        executor._run_ffmpeg_cuts(Path("v.mp4"), intervals, Path("out.mp4"))
+        assert seg_called == [True]
+
+    def test_threshold_env_override(self, monkeypatch):
+        from tools import executor
+        monkeypatch.setenv("AUTO_EDIT_SEGMENT_THRESHOLD", "3")
+        seg_called = []
+        monkeypatch.setattr(executor, "_run_ffmpeg_cuts_segmented",
+                            lambda *a, **k: seg_called.append(True))
+        monkeypatch.setattr(executor, "_build_filter",
+                            lambda *a, **k: pytest.fail("single-pass entered below override"))
+        intervals = [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]  # 4 > 3
+        executor._run_ffmpeg_cuts(Path("v.mp4"), intervals, Path("out.mp4"))
+        assert seg_called == [True]
+
+    def test_bad_threshold_env_falls_back_to_default(self, monkeypatch):
+        from tools import executor
+        monkeypatch.setenv("AUTO_EDIT_SEGMENT_THRESHOLD", "not-a-number")
+        assert executor._segment_threshold() == executor.DEFAULT_SEGMENT_THRESHOLD
+
+
 # ── _resolve_reframe ─────────────────────────────────────────────────────────
 
 class TestResolveReframe:

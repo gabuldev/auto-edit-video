@@ -20,6 +20,20 @@ from auto_edit import probe, snap  # noqa: E402  -- needs the repo root on sys.p
 FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MAX)
 MIN_INTERVAL_DURATION = 1.0 / 30  # 1 frame at 30fps ≈ 0.033s
 
+# Above this many kept segments, cut each one on its own and concat the parts
+# instead of building one filter_complex with a trim branch per segment. The
+# single-graph fan-out buffers decoded frames for every branch at once and is
+# OOM-killed on long, high-resolution sources (FFmpeg stalls, then dies).
+# Override with AUTO_EDIT_SEGMENT_THRESHOLD.
+DEFAULT_SEGMENT_THRESHOLD = 12
+
+
+def _segment_threshold() -> int:
+    try:
+        return int(os.environ.get("AUTO_EDIT_SEGMENT_THRESHOLD", str(DEFAULT_SEGMENT_THRESHOLD)))
+    except ValueError:
+        return DEFAULT_SEGMENT_THRESHOLD
+
 _CODEC_PREFERENCE = [
     ("h264_videotoolbox", ["-q:v", "50"]),
     ("libx264",           ["-crf", "23", "-preset", "fast"]),
@@ -322,6 +336,20 @@ def _get_video_dimensions(video: Path) -> tuple[int, int]:
     return probe.video_size(video)
 
 
+def _reframe_vf(reframe: tuple[int, int]) -> str:
+    """`-vf` chain that center-crops to the target aspect ratio and scales to it.
+
+    Same geometry as the single-pass reframe in :func:`_build_filter`, but as a
+    plain per-segment video filter (no concat), with setsar so every extracted
+    part shares one SAR and concatenates cleanly.
+    """
+    tw, th = reframe
+    return (
+        f"crop=ih*{tw}/{th}:ih:(iw-ih*{tw}/{th})/2:0,"
+        f"scale={tw}:{th}:flags=lanczos,setsar=1"
+    )
+
+
 def _build_filter(
     intervals: list[tuple[float, float]],
     reframe: tuple[int, int] | None = None,
@@ -357,12 +385,91 @@ def _build_filter(
     return ";".join(parts)
 
 
+def _run_ffmpeg_cuts_segmented(
+    video: Path,
+    intervals: list[tuple[float, float]],
+    output: Path,
+    reframe: tuple[int, int] | None = None,
+) -> None:
+    """Cut by extracting each kept interval on its own, then concatenating.
+
+    The single-filtergraph path (:func:`_build_filter`) reads the source once
+    and fans it into one trim branch per segment. On a long, high-resolution
+    source that fan-out buffers decoded frames for every branch at once, and
+    FFmpeg is OOM-killed — it stalls (frozen frame counter, falling fps) and
+    then exits non-zero. Extracting one segment at a time keeps memory flat no
+    matter how many segments there are.
+    """
+    codec, codec_flags = _get_video_codec()
+    fps = probe.video_fps(video) or "30000/1001"
+    has_audio = probe.has_audio_stream(video)
+    vf = _reframe_vf(reframe) if reframe else None
+
+    print(f"[executor] Cutting {len(intervals)} segments individually (memory-safe path)...")
+    with tempfile.TemporaryDirectory(prefix="auto-edit-cuts-") as td:
+        tmp = Path(td)
+        entries: list[str] = []
+        for i, (start, end) in enumerate(intervals):
+            part = tmp / f"seg_{i:04d}.mp4"
+            # -ss before -i seeks fast and stays frame-accurate when re-encoding.
+            # -r + cfr pins every part to one frame rate so concat is seamless.
+            cmd = ["ffmpeg", "-y", "-hide_banner",
+                   "-ss", f"{start:.3f}", "-i", str(video), "-t", f"{end - start:.3f}"]
+            if vf:
+                cmd += ["-vf", vf]
+            cmd += ["-fps_mode", "cfr", "-r", fps, "-c:v", codec, *codec_flags]
+            if has_audio:
+                cmd += ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+            else:
+                cmd += ["-an"]
+            cmd += ["-video_track_timescale", "90000", str(part)]
+            print(f"  [{i + 1}/{len(intervals)}] {start:.2f}s → {end:.2f}s")
+            if subprocess.run(cmd).returncode != 0:
+                raise RuntimeError(
+                    f"FFmpeg failed on segment {i + 1}/{len(intervals)} — see output above"
+                )
+            entries.append(f"file '{part.as_posix()}'")
+
+        concat_list = tmp / "concat.txt"
+        concat_list.write_text("\n".join(entries) + "\n", encoding="utf-8")
+
+        # Without audio the concat is the final output; with audio we loudnorm it.
+        assembled = (tmp / "assembled.mp4") if has_audio else output
+        concat_cmd = [
+            "ffmpeg", "-y", "-hide_banner",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-c", "copy", "-movflags", "+faststart", "-brand", "mp42", str(assembled),
+        ]
+        if subprocess.run(concat_cmd).returncode != 0:
+            raise RuntimeError("FFmpeg concat failed — see output above")
+
+        if has_audio:
+            # Loudness-normalize the whole assembled program once (EBU R128),
+            # matching the single-pass path. Audio-only re-encode; video copied.
+            norm_cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-i", str(assembled), "-c:v", "copy",
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:channel_layouts=stereo",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart", "-brand", "mp42", str(output),
+            ]
+            if subprocess.run(norm_cmd).returncode != 0:
+                raise RuntimeError("FFmpeg loudnorm pass failed — see output above")
+
+    _fix_av_duration_mismatch(output)
+
+
 def _run_ffmpeg_cuts(
     video: Path,
     intervals: list[tuple[float, float]],
     output: Path,
     reframe: tuple[int, int] | None = None,
 ) -> None:
+    # Many segments on a single graph OOM-kills FFmpeg; cut them one at a time.
+    if len(intervals) > _segment_threshold():
+        _run_ffmpeg_cuts_segmented(video, intervals, output, reframe=reframe)
+        return
+
     filter_str = _build_filter(intervals, reframe=reframe)
     codec, codec_flags = _get_video_codec()
 
