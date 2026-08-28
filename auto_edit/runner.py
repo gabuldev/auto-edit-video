@@ -216,10 +216,27 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
 
     elif stage == "clip":
         post_cut = _read_json(workspace / "post_cut_transcription.json")
+        # O teto vem do `--max-dur` da CLI: sem ele no prompt o agente devolve
+        # clipes de até 90s que a validação depois descarta em massa.
+        raw_cap = os.environ.get("AUTO_EDIT_CLIP_MAX_DUR", "").strip()
+        try:
+            max_dur = float(raw_cap) if raw_cap else 90.0
+        except ValueError:
+            max_dur = 90.0
         sections += [
             "\n## Video Information",
             f"- Context: {context or '(no context provided)'}",
             f"- Source duration: {post_cut.get('duration')}s (vídeo já editado)",
+            f"- **Duração máxima de um clipe: {max_dur:g} segundos.** "
+            "Nunca proponha um candidato mais longo que isso.",
+        ]
+        long_metadata = _read_json_optional(workspace / "metadata.json")
+        if long_metadata:
+            sections += [
+                "\n## Metadata do Long (título, descrição, tags já gerados)",
+                _compact_json(long_metadata),
+            ]
+        sections += [
             "\n## Post-Cut Transcription",
             _compact_json(_slim_for_plan(post_cut)),
         ]

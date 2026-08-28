@@ -13,7 +13,7 @@ Você **não** corta nada. Sua saída é uma lista de candidatos que um humano v
 
 ## Duração
 
-Alvo de 20 a 60 segundos. Nunca passe de 90 segundos. Trechos abaixo de 5 segundos são inúteis.
+Alvo de 20 a 60 segundos. **Nunca passe da duração máxima informada em "Video Information" abaixo** — ela vem do `--max-dur` e qualquer candidato acima dela é descartado. Trechos abaixo de 5 segundos são inúteis e também são descartados.
 
 ## Quantos
 
