@@ -117,3 +117,15 @@ class TestSnapClipToWords:
     def test_words_with_bad_timestamps_are_ignored(self):
         words = [{"word": "x", "start": None, "end": 1.0}, *WORDS]
         assert snap_clip_to_words(0.70, 3.10, words)[0] == 0.86
+
+    def test_word_straddling_end_edge_is_not_snapped(self):
+        # Only word in window straddles the end edge (starts inside, ends outside).
+        # Window is returned unchanged to avoid cutting mid-syllable.
+        assert snap_clip_to_words(0.9, 1.0, WORDS) == (0.9, 1.0)
+
+    def test_straddling_words_are_excluded_from_snap(self):
+        # Words straddling either edge (start or end) are not fully contained.
+        # Only "saga" (0.86-1.26) is fully contained in (0.70, 3.0).
+        # "a" straddles start (0.68-0.86, starts before 0.70).
+        # "continua." straddles end (2.44-3.10, ends after 3.0).
+        assert snap_clip_to_words(0.70, 3.0, WORDS) == (0.86, 1.26)
