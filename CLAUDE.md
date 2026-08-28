@@ -14,6 +14,10 @@ auto-edit long video.mp4 --context "tutorial de Python"
 # Batch (vários vídeos)
 auto-edit batch upload/ --type short --context "vlogs de viagem"
 
+# Shorts a partir de um long já editado
+auto-edit shorts video.mp4              # propõe candidatos
+auto-edit shorts video.mp4 --pick 1,3   # corta os escolhidos
+
 # Status / Resume / Doctor
 auto-edit status video.mp4
 auto-edit resume video.mp4 --from plan
@@ -39,6 +43,14 @@ Whisper   Claude  Claude   FFmpeg   FFmpeg    FFmpeg    Claude     Claude
 O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
 
 Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iterações).
+
+### Shorts derivados
+
+`auto-edit shorts <video>` roda depois que o `long` termina. O agente `clipper`
+lê a transcrição pós-corte e propõe trechos auto-contidos; você escolhe com
+`--pick`. Cada escolhido vira um workspace `<stem>_shortN/` cujo vídeo de
+origem é o `edited_video.mp4` do long, e roda o pipeline `short` a partir do
+`execute` (sem extract/plan/review/overlay/evaluate).
 
 ## Arquitetura
 

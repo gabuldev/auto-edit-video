@@ -220,3 +220,45 @@ def seed_short_workspace(
         encoding="utf-8",
     )
     return ws
+
+
+def load_clips_plan(
+    long_ws: Path, max_duration: float = DEFAULT_MAX_DURATION
+) -> tuple[list[dict], list[str]]:
+    """Lê e valida o clips_plan.json do workspace do long."""
+    path = long_ws / CLIPS_PLAN_NAME
+    if not path.exists():
+        raise ShortsError(
+            f"Nenhum {CLIPS_PLAN_NAME} em {long_ws}. "
+            "Rode `auto-edit shorts <video>` sem --pick pra gerar os candidatos."
+        )
+
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    duration = plan.get("source_duration")
+    if not duration:
+        post_cut = json.loads(
+            (long_ws / POST_CUT_NAME).read_text(encoding="utf-8")
+        )
+        duration = float(post_cut.get("duration") or 0.0)
+
+    return validate_clips(plan.get("clips") or [], float(duration), max_duration)
+
+
+def _mmss(seconds: float) -> str:
+    return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
+
+
+def format_clips_table(clips: list[dict]) -> str:
+    """Tabela de candidatos, numerada a partir de 1 — os números do --pick."""
+    if not clips:
+        return "Nenhum candidato a short neste vídeo."
+
+    lines = [f"{'#':<3} {'JANELA':<16} {'DUR':>6}  {'NOTA':>4}  GANCHO"]
+    for i, clip in enumerate(clips, start=1):
+        start, end = float(clip["start"]), float(clip["end"])
+        window = f"{_mmss(start)}-{_mmss(end)}"
+        lines.append(
+            f"{i:<3} {window:<16} {end - start:>5.0f}s  {clip.get('score', '-'):>4}  "
+            f"{clip.get('hook', '')}"
+        )
+    return "\n".join(lines)

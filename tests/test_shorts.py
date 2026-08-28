@@ -7,6 +7,8 @@ import pytest
 from auto_edit.shorts import (
     DEFAULT_MAX_DURATION,
     ShortsError,
+    format_clips_table,
+    load_clips_plan,
     long_source_video,
     parse_pick,
     require_finished_long,
@@ -274,3 +276,51 @@ class TestSeedShortWorkspace:
         ws = seed_short_workspace(long_ws, LONG_PIPELINE, {"start": 50.0, "end": 80.0, "hook": "h"}, 1)
         kept = json.loads((ws / "reviewed_plan.json").read_text())["kept_segments"][0]
         assert kept["start"] == 50.0
+
+
+class TestLoadClipsPlan:
+    def test_reads_and_validates(self, tmp_path):
+        ws = make_long_ws(tmp_path)
+        (ws / "clips_plan.json").write_text(json.dumps({
+            "source_duration": 378.75,
+            "clips": [
+                {"start": 10.0, "end": 40.0, "hook": "h", "reason": "r", "score": 8},
+                {"start": 400.0, "end": 430.0, "hook": "x", "reason": "r", "score": 5},
+            ],
+        }))
+        valid, rejected = load_clips_plan(ws, max_duration=DEFAULT_MAX_DURATION)
+        assert len(valid) == 1
+        assert len(rejected) == 1
+
+    def test_missing_plan_points_at_running_without_pick(self, tmp_path):
+        ws = make_long_ws(tmp_path)
+        with pytest.raises(ShortsError, match="--pick"):
+            load_clips_plan(ws, max_duration=DEFAULT_MAX_DURATION)
+
+    def test_falls_back_to_the_transcription_duration(self, tmp_path):
+        # O agente pode omitir source_duration; o post-cut tem a verdade.
+        ws = make_long_ws(tmp_path)
+        (ws / "clips_plan.json").write_text(json.dumps({
+            "clips": [{"start": 10.0, "end": 40.0, "hook": "h"}]
+        }))
+        valid, _ = load_clips_plan(ws, max_duration=DEFAULT_MAX_DURATION)
+        assert len(valid) == 1
+
+
+class TestFormatClipsTable:
+    def test_numbers_the_clips_from_one(self):
+        table = format_clips_table([
+            {"start": 10.0, "end": 40.0, "hook": "gancho um", "reason": "r", "score": 8},
+            {"start": 50.0, "end": 90.0, "hook": "gancho dois", "reason": "r", "score": 6},
+        ])
+        assert "1" in table and "2" in table
+        assert "gancho um" in table
+
+    def test_shows_the_duration(self):
+        table = format_clips_table([
+            {"start": 10.0, "end": 40.0, "hook": "h", "reason": "r", "score": 8}
+        ])
+        assert "30" in table
+
+    def test_empty_list_says_so(self):
+        assert "nenhum" in format_clips_table([]).lower()
