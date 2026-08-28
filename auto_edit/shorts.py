@@ -8,9 +8,22 @@ alteração.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 CLIPS_PLAN_NAME = "clips_plan.json"
 DEFAULT_MAX_DURATION = 90.0
 MIN_DURATION = 5.0
+SOURCE_VIDEO_NAME = "edited_video.mp4"
+POST_CUT_NAME = "post_cut_transcription.json"
+
+# Stages que não fazem sentido num workspace derivado. `evaluate` entra na
+# lista porque `pipeline.loop_back` volta pro stage `plan` incondicionalmente,
+# mesmo com ele marcado `skip` — num derivado isso re-planejaria a partir da
+# transcrição inteira do long e destruiria a janela do clipe.
+SKIPPED_STAGES = ("extract", "plan", "review", "overlay", "evaluate")
+ACTIVE_STAGES = ("execute", "caption", "metadata", "thumbnail")
 
 
 class ShortsError(RuntimeError):
@@ -105,3 +118,105 @@ def snap_clip_to_words(
         return start, end
 
     return inside[0][0], inside[-1][1]
+
+
+def require_finished_long(long_ws: Path) -> dict:
+    """Carrega o pipeline.json do long, exigindo que ele tenha terminado."""
+    path = long_ws / "pipeline.json"
+    if not path.exists():
+        raise ShortsError(
+            f"Nenhum workspace de long em {long_ws}. "
+            "Rode `auto-edit long <video>` primeiro."
+        )
+
+    pipeline = json.loads(path.read_text(encoding="utf-8"))
+    if pipeline.get("type") != "long":
+        raise ShortsError(
+            f"O workspace {long_ws.name} é do tipo '{pipeline.get('type')}'. "
+            "`auto-edit shorts` só deriva de um vídeo long."
+        )
+    if pipeline.get("current_stage") != "done":
+        raise ShortsError(
+            f"O pipeline do long não terminou (stage atual: {pipeline.get('current_stage')}). "
+            "Termine o long antes de extrair shorts."
+        )
+    return pipeline
+
+
+def long_source_video(long_ws: Path) -> Path:
+    """O vídeo de onde os shorts são cortados.
+
+    É o `edited_video.mp4`, e não o `output/<stem>_final.mp4`: o final carrega
+    o cover frame no início (~67ms), o que dessincronizaria todas as legendas.
+    """
+    path = long_ws / SOURCE_VIDEO_NAME
+    if not path.exists():
+        raise ShortsError(
+            f"{SOURCE_VIDEO_NAME} não existe em {long_ws}. "
+            "Rode `auto-edit resume <video> --from execute` pra reconstruí-lo."
+        )
+    return path
+
+
+def seed_short_workspace(
+    long_ws: Path, long_pipeline: dict, clip: dict, index: int
+) -> Path:
+    """Monta o workspace de um short derivado e devolve o caminho.
+
+    O diretório é criado na mão, sem passar por `workspace.init_workspace`:
+    aquelas funções derivam o nome do stem do arquivo de vídeo, que aqui é
+    sempre `edited_video`, e os shorts colidiriam entre si.
+    """
+    post_cut = json.loads(
+        (long_ws / POST_CUT_NAME).read_text(encoding="utf-8")
+    )
+    start, end = snap_clip_to_words(
+        float(clip["start"]), float(clip["end"]), post_cut.get("words") or []
+    )
+
+    stem = long_pipeline["video_name"]
+    name = f"{stem}_short{index}"
+    ws = long_ws.parent / name
+    ws.mkdir(parents=True, exist_ok=True)
+
+    stages = {s: {"status": "skip"} for s in SKIPPED_STAGES}
+    stages.update({s: {"status": "pending"} for s in ACTIVE_STAGES})
+
+    hook = clip.get("hook", "")
+    context = long_pipeline.get("context", "")
+    pipeline = {
+        "video_path": str(long_source_video(long_ws).resolve()),
+        "video_name": name,
+        "type": "short",
+        "context": f"{context} — trecho: {hook}".strip(" —"),
+        "whisper_model": long_pipeline.get("whisper_model", "small"),
+        "language": long_pipeline.get("language", "pt"),
+        "iteration": 1,
+        "max_iterations": 1,
+        "current_stage": "execute",
+        "evaluator_feedback": None,
+        "caption_style": long_pipeline.get("caption_style", {}),
+        "plan_id": None,
+        "stages": stages,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "derived_from": str(long_ws.resolve()),
+    }
+    (ws / "pipeline.json").write_text(
+        json.dumps(pipeline, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    (ws / "transcription.json").write_text(
+        json.dumps(post_cut, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    (ws / "reviewed_plan.json").write_text(
+        json.dumps(
+            {
+                "cuts": [],
+                "kept_segments": [{"start": start, "end": end, "summary": hook}],
+                "approved": True,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return ws
