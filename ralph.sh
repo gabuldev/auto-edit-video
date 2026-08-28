@@ -110,7 +110,7 @@ fail_stage() {
     $PYTHON -c "
 import json
 p = json.load(open('$PIPELINE'))
-p['stages']['$stage']['status'] = 'failed'
+p.setdefault('stages', {}).setdefault('$stage', {})['status'] = 'failed'
 json.dump(p, open('$PIPELINE', 'w'), indent=2, ensure_ascii=False)
 "
     log "ERROR: Stage '$stage' failed."
