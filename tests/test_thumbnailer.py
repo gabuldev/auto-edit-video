@@ -21,6 +21,7 @@ from tools.thumbnailer import (
     _cover_mux_cmd,
     _cover_strip_point,
     _forced_timestamp,
+    _frame_source,
     _score_mouth_closed,
     _BUILTIN_TEMPLATES,
     _TEMPLATE_TO_STYLE,
@@ -398,3 +399,48 @@ class TestAssertFrameRatePreserved:
     def test_unknown_frame_rate_does_not_block(self, monkeypatch):
         monkeypatch.setattr(thumbnailer.probe, "video_fps", lambda _p: None)
         _assert_frame_rate_preserved(Path("/tmp/out.mp4"), "30000/1001")
+
+
+class TestFrameSource:
+    """O frame da thumbnail (e o cover embutido) sai do vídeo DESTE workspace.
+
+    Num short derivado de um long, `pipeline["video_path"]` é o
+    `edited_video.mp4` do long inteiro e `transcription.json` é a transcrição
+    inteira — amostrar dali espalha os candidatos pelos ~378s do long e quase
+    nunca cai dentro do clipe de 30s.
+    """
+
+    def test_prefers_the_workspaces_own_cut_video_and_post_cut_duration(self, tmp_path):
+        (tmp_path / "captioned_video.mp4").write_bytes(b"x")
+        (tmp_path / "post_cut_transcription.json").write_text(
+            json.dumps({"duration": 30.0})
+        )
+        (tmp_path / "transcription.json").write_text(json.dumps({"duration": 378.75}))
+        video, transcription = _frame_source(
+            tmp_path, {"video_path": "/long/edited_video.mp4"}
+        )
+        assert video == str(tmp_path / "captioned_video.mp4")
+        assert transcription["duration"] == 30.0
+
+    def test_falls_back_to_overlaid_then_edited(self, tmp_path):
+        (tmp_path / "edited_video.mp4").write_bytes(b"x")
+        (tmp_path / "post_cut_transcription.json").write_text(
+            json.dumps({"duration": 30.0})
+        )
+        video, _ = _frame_source(tmp_path, {"video_path": "/long/edited_video.mp4"})
+        assert video == str(tmp_path / "edited_video.mp4")
+
+    def test_falls_back_to_the_pipeline_source_when_there_is_no_cut_video(self, tmp_path):
+        (tmp_path / "transcription.json").write_text(json.dumps({"duration": 378.75}))
+        video, transcription = _frame_source(tmp_path, {"video_path": "/raw/v.mp4"})
+        assert video == "/raw/v.mp4"
+        assert transcription["duration"] == 378.75
+
+    def test_cut_video_without_a_post_cut_transcript_keeps_the_pipeline_pair(self, tmp_path):
+        # Sem post-cut não há duração que combine com o vídeo cortado; o par
+        # bruto (vídeo + transcrição originais) é o único consistente.
+        (tmp_path / "captioned_video.mp4").write_bytes(b"x")
+        (tmp_path / "transcription.json").write_text(json.dumps({"duration": 378.75}))
+        video, transcription = _frame_source(tmp_path, {"video_path": "/raw/v.mp4"})
+        assert video == "/raw/v.mp4"
+        assert transcription["duration"] == 378.75

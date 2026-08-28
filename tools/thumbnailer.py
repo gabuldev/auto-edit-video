@@ -492,6 +492,40 @@ def _forced_timestamp() -> float | None:
     return ts
 
 
+CUT_VIDEO_NAMES = ("captioned_video.mp4", "overlaid_video.mp4", "edited_video.mp4")
+
+
+def _frame_source(workspace: Path, pipeline: dict) -> tuple[str, dict]:
+    """Vídeo e transcrição de onde tirar o frame da thumbnail.
+
+    Preferimos o vídeo JÁ CORTADO do workspace e o `post_cut_transcription.json`.
+    `pipeline["video_path"]` é a fonte bruta — num short derivado de um long ele
+    é o `edited_video.mp4` do long INTEIRO (~378s) e a `transcription.json` é a
+    transcrição inteira, então os candidatos a frame se espalhariam pelo long e
+    quase nunca cairiam dentro do clipe de 30s. E o frame escolhido ainda vira o
+    cover embutido no início do vídeo entregue.
+    """
+    for name in CUT_VIDEO_NAMES:
+        cut = workspace / name
+        if cut.exists():
+            post_cut = workspace / "post_cut_transcription.json"
+            if post_cut.exists():
+                try:
+                    return str(cut), json.loads(post_cut.read_text())
+                except (OSError, json.JSONDecodeError):
+                    pass
+            break
+
+    fallback = workspace / "transcription.json"
+    transcription = {}
+    if fallback.exists():
+        try:
+            transcription = json.loads(fallback.read_text())
+        except (OSError, json.JSONDecodeError):
+            transcription = {}
+    return pipeline["video_path"], transcription
+
+
 def _pick_best_frame(
     video_path: str, duration: float, workspace: Path,
     energy_peak: float | None = None,
@@ -946,12 +980,9 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
     w, h = SHORT_SIZE
 
-    transcription_path = workspace / "transcription.json"
-    transcription = json.loads(transcription_path.read_text()) if transcription_path.exists() else {}
-
+    video_path, transcription = _frame_source(workspace, pipeline)
     duration = transcription.get("duration", 30.0)
     energy_peak = _find_energy_peak(transcription)
-    video_path = pipeline["video_path"]
 
     frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
 
@@ -990,11 +1021,9 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     bg = _generate_imagen_bg(w, h, style_hint, context)
 
     if bg is None:
-        transcription_path = workspace / "transcription.json"
-        transcription = json.loads(transcription_path.read_text()) if transcription_path.exists() else {}
+        video_path, transcription = _frame_source(workspace, pipeline)
         duration = transcription.get("duration", 30.0)
         energy_peak = _find_energy_peak(transcription)
-        video_path = pipeline["video_path"]
 
         try:
             frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
