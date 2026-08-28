@@ -15,7 +15,17 @@
 
 set -euo pipefail
 
-WORKSPACE="${1:?Usage: ralph.sh <workspace_dir>}"
+STANDALONE_STAGE=""
+STANDALONE_OUTPUT=""
+STANDALONE_PROMPT=""
+if [ "${1:-}" = "--agent" ]; then
+    WORKSPACE="${2:?Usage: ralph.sh --agent <workspace> <stage> <output_file> <prompt_file>}"
+    STANDALONE_STAGE="${3:?missing stage}"
+    STANDALONE_OUTPUT="${4:?missing output file}"
+    STANDALONE_PROMPT="${5:?missing prompt file}"
+else
+    WORKSPACE="${1:?Usage: ralph.sh <workspace_dir>}"
+fi
 PIPELINE="$WORKSPACE/pipeline.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export AUTO_EDIT_REPO_ROOT="$SCRIPT_DIR"
@@ -100,7 +110,7 @@ fail_stage() {
     $PYTHON -c "
 import json
 p = json.load(open('$PIPELINE'))
-p['stages']['$stage']['status'] = 'failed'
+p.setdefault('stages', {}).setdefault('$stage', {})['status'] = 'failed'
 json.dump(p, open('$PIPELINE', 'w'), indent=2, ensure_ascii=False)
 "
     log "ERROR: Stage '$stage' failed."
@@ -159,6 +169,27 @@ json.dump(p, open('$PIPELINE', 'w'), indent=2, ensure_ascii=False)
 
     rm -f "$tmp_prompt" "$tmp_output"
     advance_stage "$stage"
+}
+
+# Roda um agente avulso, fora da máquina de estados do pipeline.
+# Usado por `auto-edit shorts`, que precisa do LLM mas não tem um stage
+# correspondente em pipeline.json.
+run_standalone_agent() {
+    local stage="$1"
+    local output_file="$2"
+    local prompt_file="$3"
+
+    log "Running standalone agent: $stage"
+
+    local tmp_prompt="$WORKSPACE/.prompt_${stage}.txt"
+    local tmp_output="$WORKSPACE/.output_${stage}.txt"
+
+    $PYTHON "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
+        "$stage" "$WORKSPACE" "$prompt_file" > "$tmp_prompt"
+
+    _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file"
+
+    rm -f "$tmp_prompt" "$tmp_output"
 }
 
 # Cursor Agent: Python wrapper feeds prompt on stdin (see invoke-cursor); avoids argv limits & empty text output.
@@ -259,6 +290,11 @@ if [ -n "$LLM_BACKEND_FALLBACK" ]; then
 else
     log "LLM backend: $LLM_BACKEND"
 fi
+if [ -n "$STANDALONE_STAGE" ]; then
+    run_standalone_agent "$STANDALONE_STAGE" "$STANDALONE_OUTPUT" "$STANDALONE_PROMPT"
+    exit 0
+fi
+
 MAX_LOOP=25  # safety ceiling: stages(7) × max_iterations(3) + buffer
 LOOP_COUNT=0
 

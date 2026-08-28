@@ -176,6 +176,95 @@ def test_evaluate_warns_loudly_when_only_raw_footage_exists(tmp_path):
     assert "never report a timestamp" in prompt
 
 
+# -- Clip stage (shorts-from-long) --------------------------------------------
+
+
+def test_clip_prompt_carries_the_post_cut_transcription(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "pipeline.json").write_text(json.dumps({
+        "video_path": "/v/DJI.MP4",
+        "video_name": "DJI",
+        "type": "long",
+        "context": "review do bmcu",
+        "current_stage": "done",
+        "stages": {},
+    }))
+    (ws / "post_cut_transcription.json").write_text(json.dumps({
+        "duration": 378.75,
+        "segments": [{"start": 0.0, "end": 2.8, "text": "a saga continua"}],
+        "words": [{"word": "saga", "start": 1.0, "end": 1.4}],
+    }))
+    prompt_file = tmp_path / "clipper.md"
+    prompt_file.write_text("# Clipper Agent\n")
+
+    prompt = runner.build_prompt("clip", ws, prompt_file)
+
+    assert "# Clipper Agent" in prompt
+    assert "review do bmcu" in prompt
+    assert "378.75" in prompt
+    assert "a saga continua" in prompt
+
+
+def _clip_ws(tmp_path: Path) -> Path:
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "pipeline.json").write_text(json.dumps({
+        "video_path": "/v/DJI.MP4",
+        "video_name": "DJI",
+        "type": "long",
+        "context": "review do bmcu",
+        "current_stage": "done",
+        "stages": {},
+    }))
+    (ws / "post_cut_transcription.json").write_text(json.dumps({
+        "duration": 378.75,
+        "segments": [{"start": 0.0, "end": 2.8, "text": "a saga continua"}],
+        "words": [{"word": "saga", "start": 1.0, "end": 1.4}],
+    }))
+    return ws
+
+
+def _clipper_prompt_file(tmp_path: Path) -> Path:
+    prompt_file = tmp_path / "clipper.md"
+    prompt_file.write_text("# Clipper Agent\n")
+    return prompt_file
+
+
+def test_clip_prompt_defaults_the_cap_to_90_seconds(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUTO_EDIT_CLIP_MAX_DUR", raising=False)
+    prompt = runner.build_prompt("clip", _clip_ws(tmp_path), _clipper_prompt_file(tmp_path))
+    assert "máxima de um clipe: 90 segundos" in prompt
+
+
+def test_clip_prompt_injects_the_max_dur_cap(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTO_EDIT_CLIP_MAX_DUR", "45")
+    prompt = runner.build_prompt("clip", _clip_ws(tmp_path), _clipper_prompt_file(tmp_path))
+    assert "máxima de um clipe: 45 segundos" in prompt
+    assert "90 segundos" not in prompt
+
+
+def test_clip_prompt_ignores_a_junk_cap(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTO_EDIT_CLIP_MAX_DUR", "abc")
+    prompt = runner.build_prompt("clip", _clip_ws(tmp_path), _clipper_prompt_file(tmp_path))
+    assert "máxima de um clipe: 90 segundos" in prompt
+
+
+def test_clip_prompt_carries_the_long_metadata(tmp_path):
+    ws = _clip_ws(tmp_path)
+    (ws / "metadata.json").write_text(json.dumps({
+        "youtube_title": "Consertei o BMCU de vez",
+        "tags": ["bmcu", "impressao3d"],
+    }))
+    prompt = runner.build_prompt("clip", ws, _clipper_prompt_file(tmp_path))
+    assert "Consertei o BMCU de vez" in prompt
+
+
+def test_clip_prompt_tolerates_a_missing_metadata(tmp_path):
+    prompt = runner.build_prompt("clip", _clip_ws(tmp_path), _clipper_prompt_file(tmp_path))
+    assert "Metadata do Long" not in prompt
+
+
 # -- Performance section (metadata stage) ------------------------------------
 
 

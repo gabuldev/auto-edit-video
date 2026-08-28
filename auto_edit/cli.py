@@ -18,6 +18,7 @@ from rich.table import Table
 from auto_edit import pipeline as pl
 from auto_edit import plan as plan_mod
 from auto_edit import probe as probe_mod
+from auto_edit import shorts as sh
 from auto_edit._version import __version__
 from auto_edit.ideas import ideas_app
 from auto_edit.insights import insights_app
@@ -155,6 +156,21 @@ def _resolve_llm(
     return primary, fb
 
 
+def _ralph_env(primary: str, fb: Optional[str], language: Optional[str] = None) -> dict:
+    """Ambiente dos subprocessos do ralph.sh — uma só cópia dos nomes."""
+    env = os.environ.copy()
+    env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
+    env["PYTHON"] = sys.executable
+    env["AUTO_EDIT_LLM"] = primary
+    if language:
+        env["AUTO_EDIT_LANGUAGE"] = language
+    if fb:
+        env["AUTO_EDIT_LLM_FALLBACK"] = fb
+    else:
+        env.pop("AUTO_EDIT_LLM_FALLBACK", None)
+    return env
+
+
 def _resolve_plan(plan_id: Optional[str], no_prompt: bool, resume_from: Optional[str]) -> Optional[str]:
     """Convert raw --plan-id flag to canonical id, or interactively pick one."""
     if resume_from:
@@ -218,15 +234,7 @@ def _run_pipeline(
     if plan_id:
         console.print(f"[cyan]Plan slot:[/cyan] {plan_id}")
     primary, fb = _resolve_llm(cli, cli_fallback)
-    env = os.environ.copy()
-    env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
-    env["PYTHON"] = sys.executable
-    env["AUTO_EDIT_LANGUAGE"] = language
-    env["AUTO_EDIT_LLM"] = primary
-    if fb:
-        env["AUTO_EDIT_LLM_FALLBACK"] = fb
-    else:
-        env.pop("AUTO_EDIT_LLM_FALLBACK", None)
+    env = _ralph_env(primary, fb, language=language)
     if dry_run:
         env["AUTO_EDIT_DRY_RUN"] = "1"
     console.print(
@@ -408,6 +416,136 @@ def batch(
         console.print(f"\n[red]Failed videos:[/red] {', '.join(failed)}")
     else:
         console.print("\n[bold green]All videos processed successfully.[/bold green]")
+
+
+@app.command()
+def shorts(
+    video: Path = typer.Argument(..., help="O mesmo vídeo que você passou pro `auto-edit long`"),
+    pick: Optional[str] = typer.Option(None, "--pick", help="Quais candidatos cortar, ex: 1,3"),
+    all_clips: bool = typer.Option(False, "--all", help="Corta todos os candidatos"),
+    replan: bool = typer.Option(False, "--replan", help="Roda o clipper de novo por cima do plano atual"),
+    max_dur: float = typer.Option(sh.DEFAULT_MAX_DURATION, "--max-dur", help="Duração máxima de um clipe, em segundos"),
+    cli: Optional[str] = typer.Option(None, "--cli", help="CLI de agente: claude, cursor, agent"),
+    cli_fallback: Optional[str] = typer.Option(None, "--cli-fallback", help="CLI de fallback"),
+) -> None:
+    """Propõe e corta shorts a partir de um vídeo long já editado."""
+    if not RALPH_SCRIPT.exists():
+        console.print(f"[red]Erro:[/red] ralph.sh não encontrado em {RALPH_SCRIPT}")
+        console.print("[dim]Aponte AUTO_EDIT_REPO_ROOT pra raiz do projeto, ou confira a instalação.[/dim]")
+        raise typer.Exit(1)
+
+    long_ws = get_workspace(video)
+    try:
+        long_pipeline = sh.require_finished_long(long_ws)
+        sh.long_source_video(long_ws)
+    except sh.ShortsError as exc:
+        console.print(f"[red]Erro:[/red] {exc}")
+        raise typer.Exit(1) from None
+
+    plan_path = long_ws / sh.CLIPS_PLAN_NAME
+    cutting = bool(pick or all_clips)
+
+    # O clipper só roda quando foi pedido (`--replan`) ou quando ainda não há o
+    # que escolher. Com `--pick`/`--all` e nenhum plano, cortar aqui seria
+    # encodar candidatos que o usuário nunca viu; e re-rodar por cima de um
+    # plano existente numa invocação simples renumeraria os candidatos embaixo
+    # de quem já leu a tabela — o `--pick 2` viria a ser outro clipe.
+    if cutting and not plan_path.exists() and not replan:
+        console.print(
+            f"[red]Erro:[/red] Nenhum {sh.CLIPS_PLAN_NAME} em {long_ws}. "
+            f"Rode [bold]auto-edit shorts {video}[/bold] sem --pick/--all pra ver os candidatos."
+        )
+        raise typer.Exit(1)
+
+    reused_plan = plan_path.exists() and not replan
+    if replan or not (cutting or plan_path.exists()):
+        console.print("[cyan]Procurando candidatos a short...[/cyan]")
+        primary, fb = _resolve_llm(cli, cli_fallback)
+        env = _ralph_env(primary, fb)
+        env["AUTO_EDIT_CLIP_MAX_DUR"] = f"{max_dur:g}"
+        result = subprocess.run(
+            [
+                "bash", str(RALPH_SCRIPT), "--agent", str(long_ws.resolve()),
+                "clip", str(plan_path.resolve()),
+                str(RALPH_SCRIPT.parent / "agents" / "clipper.md"),
+            ],
+            cwd=RALPH_SCRIPT.parent,
+            env=env,
+        )
+        if result.returncode != 0:
+            console.print("[red]O clipper falhou.[/red] Veja a saída acima.")
+            raise typer.Exit(result.returncode)
+
+    try:
+        clips, rejected = sh.load_clips_plan(long_ws, max_duration=max_dur)
+    except sh.ShortsError as exc:
+        console.print(f"[red]Erro:[/red] {exc}")
+        raise typer.Exit(1) from None
+
+    for reason in rejected:
+        console.print("[yellow]Candidato descartado —[/yellow]", end=" ")
+        console.print(reason, markup=False)
+
+    console.print()
+    if reused_plan:
+        # Sem isso um plano velho parece recém-gerado.
+        console.print(
+            f"[dim]Candidatos do {sh.CLIPS_PLAN_NAME} já em disco. "
+            "Use [bold]--replan[/bold] pra gerar de novo.[/dim]"
+        )
+    # markup=False: gancho e notas são texto do modelo; um "[algo]" seria
+    # engolido como markup do Rich (ou explodiria com MarkupError).
+    console.print(sh.format_clips_table(clips), markup=False)
+    console.print()
+
+    if not clips:
+        notes = sh.plan_notes(long_ws)
+        if notes:
+            console.print("[yellow]O clipper explicou:[/yellow]")
+            console.print(notes, markup=False)
+            console.print()
+        raise typer.Exit(0)
+
+    if all_clips:
+        indices = list(range(len(clips)))
+    elif pick:
+        try:
+            indices = sh.parse_pick(pick, len(clips))
+        except sh.ShortsError as exc:
+            console.print(f"[red]Erro:[/red] {exc}")
+            raise typer.Exit(1) from None
+    else:
+        console.print(
+            f"Pra cortar: [bold]auto-edit shorts {video} --pick 1[/bold] "
+            "(ou --all pra todos)."
+        )
+        raise typer.Exit(0)
+
+    primary, fb = _resolve_llm(cli, cli_fallback)
+    env = _ralph_env(primary, fb, language=long_pipeline.get("language", "pt"))
+    for index in indices:
+        clip = clips[index]
+        number = index + 1
+        console.print(f"\n[bold green]Short {number}[/bold green] — ", end="")
+        console.print(clip.get("hook", ""), markup=False)
+
+        warning = sh.overwrite_warning(long_ws, long_pipeline, clip, number)
+        if warning:
+            console.print(f"[yellow]Atenção:[/yellow] {warning}")
+
+        ws = sh.seed_short_workspace(long_ws, long_pipeline, clip, number)
+        console.print(f"[cyan]Workspace:[/cyan] {ws}")
+
+        result = subprocess.run(
+            ["bash", str(RALPH_SCRIPT), str(ws.resolve())],
+            cwd=RALPH_SCRIPT.parent,
+            env=env,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Short {number} falhou.[/red]")
+            raise typer.Exit(result.returncode)
+
+    console.print("\n[bold green]Pronto![/bold green] Shorts em [bold]output/[/bold]")
 
 
 @app.command()
