@@ -447,7 +447,9 @@ def shorts(
 
     # O clipper só roda quando foi pedido (`--replan`) ou quando ainda não há o
     # que escolher. Com `--pick`/`--all` e nenhum plano, cortar aqui seria
-    # encodar candidatos que o usuário nunca viu.
+    # encodar candidatos que o usuário nunca viu; e re-rodar por cima de um
+    # plano existente numa invocação simples renumeraria os candidatos embaixo
+    # de quem já leu a tabela — o `--pick 2` viria a ser outro clipe.
     if cutting and not plan_path.exists() and not replan:
         console.print(
             f"[red]Erro:[/red] Nenhum {sh.CLIPS_PLAN_NAME} em {long_ws}. "
@@ -455,7 +457,8 @@ def shorts(
         )
         raise typer.Exit(1)
 
-    if replan or not cutting:
+    reused_plan = plan_path.exists() and not replan
+    if replan or not (cutting or plan_path.exists()):
         console.print("[cyan]Procurando candidatos a short...[/cyan]")
         primary, fb = _resolve_llm(cli, cli_fallback)
         env = _ralph_env(primary, fb)
@@ -484,6 +487,12 @@ def shorts(
         console.print(reason, markup=False)
 
     console.print()
+    if reused_plan:
+        # Sem isso um plano velho parece recém-gerado.
+        console.print(
+            f"[dim]Candidatos do {sh.CLIPS_PLAN_NAME} já em disco. "
+            "Use [bold]--replan[/bold] pra gerar de novo.[/dim]"
+        )
     # markup=False: gancho e notas são texto do modelo; um "[algo]" seria
     # engolido como markup do Rich (ou explodiria com MarkupError).
     console.print(sh.format_clips_table(clips), markup=False)

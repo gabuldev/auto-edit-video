@@ -490,6 +490,10 @@ def cli_env(tmp_path, monkeypatch):
 
     def fake_run(cmd, *args, **kwargs):
         calls.append(list(cmd))
+        # O clipper de verdade escreve o clips_plan.json; o dublê também, senão
+        # o passo seguinte não teria o que ler.
+        if _is_clipper(cmd) and rc["code"] == 0:
+            _write_plan(long_ws)
         return subprocess.CompletedProcess(cmd, rc["code"])
 
     monkeypatch.setattr(cli_mod.subprocess, "run", fake_run)
@@ -516,12 +520,30 @@ class TestShortsCommand:
         assert result.exit_code == 1
         assert cli_env["calls"] == []
 
-    def test_no_flags_prints_the_table_and_cuts_nothing(self, cli_env):
+    def test_no_flags_with_a_plan_reprints_it_without_calling_the_clipper(self, cli_env):
+        # Renumerar os candidatos embaixo de quem já leu a tabela faria o
+        # `--pick 2` seguinte apontar pra outro clipe. `--replan` é o caminho
+        # explícito pra regenerar.
         _write_plan(cli_env["ws"])
         result = runner.invoke(app, ["shorts", "v.mp4"])
         assert result.exit_code == 0
         assert "gancho um" in result.stdout
-        assert all(_is_clipper(c) for c in cli_env["calls"])
+        assert cli_env["calls"] == []
+        assert not (cli_env["ws"].parent / "DJI_0128_short1").exists()
+
+    def test_no_flags_says_the_table_came_from_the_plan_on_disk(self, cli_env):
+        _write_plan(cli_env["ws"])
+        result = runner.invoke(app, ["shorts", "v.mp4"])
+        assert "--replan" in result.stdout
+
+    def test_no_flags_without_a_plan_runs_the_clipper_once_and_prints_the_table(self, cli_env):
+        assert not (cli_env["ws"] / "clips_plan.json").exists()
+        result = runner.invoke(app, ["shorts", "v.mp4"])
+        assert result.exit_code == 0
+        assert len(cli_env["calls"]) == 1
+        assert _is_clipper(cli_env["calls"][0])
+        assert (cli_env["ws"] / "clips_plan.json").exists()
+        assert "gancho um" in result.stdout
         assert not (cli_env["ws"].parent / "DJI_0128_short1").exists()
 
     def test_pick_with_an_existing_plan_does_not_rerun_the_clipper(self, cli_env):
@@ -548,7 +570,7 @@ class TestShortsCommand:
         _write_plan(cli_env["ws"])
         result = runner.invoke(app, ["shorts", "v.mp4", "--replan"])
         assert result.exit_code == 0
-        assert any(_is_clipper(c) for c in cli_env["calls"])
+        assert [c for c in cli_env["calls"] if _is_clipper(c)]
 
     def test_a_failing_short_aborts_the_remaining_picks(self, cli_env):
         _write_plan(cli_env["ws"])
