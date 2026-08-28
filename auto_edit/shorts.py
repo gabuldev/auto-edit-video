@@ -77,3 +77,31 @@ def parse_pick(raw: str, count: int) -> list[int]:
         picked.add(number - 1)
 
     return sorted(picked)
+
+
+def _word_bounds(word: dict) -> tuple[float, float] | None:
+    try:
+        return float(word["start"]), float(word["end"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def snap_clip_to_words(
+    start: float, end: float, words: list[dict]
+) -> tuple[float, float]:
+    """Encaixa a janela do clipe em fronteiras de palavra.
+
+    O agente coloca limites alguns milissegundos dentro da palavra falada, o
+    que corta a sílaba na entrada ou na saída do short. Puxamos o início pra
+    frente até o começo de uma palavra e o fim pra trás até o fim de uma
+    palavra — nunca alargando a janela.
+    """
+    inside = [
+        bounds
+        for bounds in (_word_bounds(w) for w in words)
+        if bounds is not None and bounds[0] >= start and bounds[1] <= end
+    ]
+    if not inside:
+        return start, end
+
+    return inside[0][0], inside[-1][1]

@@ -5,6 +5,7 @@ from auto_edit.shorts import (
     DEFAULT_MAX_DURATION,
     ShortsError,
     parse_pick,
+    snap_clip_to_words,
     validate_clips,
 )
 
@@ -84,3 +85,35 @@ class TestParsePick:
     def test_empty_string_is_rejected(self):
         with pytest.raises(ShortsError):
             parse_pick("", count=3)
+
+
+WORDS = [
+    {"word": "Galera,", "start": 0.0, "end": 0.62},
+    {"word": "a", "start": 0.68, "end": 0.86},
+    {"word": "saga", "start": 0.86, "end": 1.26},
+    {"word": "continua.", "start": 2.44, "end": 3.10},
+    {"word": "Entao", "start": 4.00, "end": 4.40},
+]
+
+
+class TestSnapClipToWords:
+    def test_start_moves_forward_to_the_next_word_onset(self):
+        start, _ = snap_clip_to_words(0.70, 3.10, WORDS)
+        assert start == 0.86
+
+    def test_end_moves_back_to_the_previous_word_tail(self):
+        _, end = snap_clip_to_words(0.0, 2.90, WORDS)
+        assert end == 1.26
+
+    def test_boundaries_already_on_word_edges_are_untouched(self):
+        assert snap_clip_to_words(0.86, 3.10, WORDS) == (0.86, 3.10)
+
+    def test_window_with_no_words_is_left_alone(self):
+        assert snap_clip_to_words(10.0, 20.0, WORDS) == (10.0, 20.0)
+
+    def test_empty_word_list_is_left_alone(self):
+        assert snap_clip_to_words(1.0, 2.0, []) == (1.0, 2.0)
+
+    def test_words_with_bad_timestamps_are_ignored(self):
+        words = [{"word": "x", "start": None, "end": 1.0}, *WORDS]
+        assert snap_clip_to_words(0.70, 3.10, words)[0] == 0.86
