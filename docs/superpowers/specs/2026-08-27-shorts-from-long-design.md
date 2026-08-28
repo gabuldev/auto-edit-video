@@ -96,9 +96,15 @@ Escrito no workspace do long.
 - Auto-contido: o clipe precisa fazer sentido pra quem nunca viu o long. Nada
   de "como eu falei ali atrás".
 - Gancho nos primeiros ~3s.
-- Fronteiras em limite de palavra do `post_cut_transcription.json`. O plano
-  sintético passa por `auto_edit.snap`, o mesmo tratamento que o reviewer
-  recebe, pra não cortar no meio de uma palavra.
+- Fronteiras em limite de palavra do `post_cut_transcription.json`. O encaixe é
+  feito por `shorts.snap_clip_to_words`, e **não** por `auto_edit.snap`: o
+  `snap_plan` termina em `rebuild_kept(cuts, duration, ...)`, e
+  `rebuild_kept([], 378.75)` — que é o caso aqui, já que o plano sintético não
+  tem cortes — devolve o long inteiro, apagando em silêncio a janela do clipe.
+  O `snap_clip_to_words` encaixa só a janela: puxa o início pra frente até o
+  começo de uma palavra e o fim pra trás até o fim de uma palavra, considerando
+  apenas palavras **inteiramente contidas** na janela (uma palavra que cruza a
+  borda é ignorada; janela sem nenhuma palavra contida volta intacta).
 - Candidatos podem se sobrepor (você escolhe um dos dois), mas a sobreposição é
   sinalizada na tabela.
 

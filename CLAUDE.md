@@ -52,6 +52,12 @@ lê a transcrição pós-corte e propõe trechos auto-contidos; você escolhe co
 origem é o `edited_video.mp4` do long, e roda o pipeline `short` a partir do
 `execute` (sem extract/plan/review/overlay/evaluate).
 
+Um candidato é descartado (com o motivo, citando a posição dele no plano) se a
+janela estiver fora do vídeo, se `end <= start`, se passar de `--max-dur`
+(default 90s) ou se ficar **abaixo de 5s** (`shorts.MIN_DURATION`) — um trecho
+mais curto que isso não vira short. A tabela sai ordenada por `score`
+decrescente e marca os candidatos que se sobrepõem.
+
 ## Arquitetura
 
 | Diretório | Conteúdo |
