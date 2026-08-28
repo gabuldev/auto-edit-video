@@ -176,6 +176,36 @@ def test_evaluate_warns_loudly_when_only_raw_footage_exists(tmp_path):
     assert "never report a timestamp" in prompt
 
 
+# -- Clip stage (shorts-from-long) --------------------------------------------
+
+
+def test_clip_prompt_carries_the_post_cut_transcription(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "pipeline.json").write_text(json.dumps({
+        "video_path": "/v/DJI.MP4",
+        "video_name": "DJI",
+        "type": "long",
+        "context": "review do bmcu",
+        "current_stage": "done",
+        "stages": {},
+    }))
+    (ws / "post_cut_transcription.json").write_text(json.dumps({
+        "duration": 378.75,
+        "segments": [{"start": 0.0, "end": 2.8, "text": "a saga continua"}],
+        "words": [{"word": "saga", "start": 1.0, "end": 1.4}],
+    }))
+    prompt_file = tmp_path / "clipper.md"
+    prompt_file.write_text("# Clipper Agent\n")
+
+    prompt = runner.build_prompt("clip", ws, prompt_file)
+
+    assert "# Clipper Agent" in prompt
+    assert "review do bmcu" in prompt
+    assert "378.75" in prompt
+    assert "a saga continua" in prompt
+
+
 # -- Performance section (metadata stage) ------------------------------------
 
 

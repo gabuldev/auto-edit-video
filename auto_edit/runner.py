@@ -214,6 +214,16 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 _compact_json(_slim_for_review(post_cut_transcript)),
             ]
 
+    elif stage == "clip":
+        post_cut = _read_json(workspace / "post_cut_transcription.json")
+        sections += [
+            "\n## Video Information",
+            f"- Context: {context or '(no context provided)'}",
+            f"- Source duration: {post_cut.get('duration')}s (vídeo já editado)",
+            "\n## Post-Cut Transcription",
+            _compact_json(_slim_for_plan(post_cut)),
+        ]
+
     elif stage == "metadata":
         # Use post-cut transcription if available, else original
         transcript = (
