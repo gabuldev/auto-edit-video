@@ -44,33 +44,65 @@ def validate_clips(
     rejected: list[str] = []
 
     for i, raw in enumerate(clips, start=1):
+        # O rótulo cita a posição no PLANO, não a linha da tabela: a tabela só
+        # mostra os sobreviventes e ainda é reordenada por `score`, então um
+        # número solto aqui apontaria pro clipe errado.
+        label = f"candidato {i} do plano"
         try:
             start = float(raw.get("start"))
             end = float(raw.get("end"))
         except (TypeError, ValueError):
-            rejected.append(f"{i}: start/end não são números")
+            rejected.append(f"{label}: start/end não são números")
             continue
 
         if end <= start:
-            rejected.append(f"{i}: end ({end:.2f}s) não é maior que start ({start:.2f}s)")
+            rejected.append(
+                f"{label}: end ({end:.2f}s) não é maior que start ({start:.2f}s)"
+            )
             continue
         if start < 0 or end > source_duration:
             rejected.append(
-                f"{i}: janela {start:.2f}s-{end:.2f}s fora do vídeo (0-{source_duration:.2f}s)"
+                f"{label}: janela {start:.2f}s-{end:.2f}s fora do vídeo "
+                f"(0-{source_duration:.2f}s)"
             )
             continue
 
         duration = end - start
         if duration > max_duration:
-            rejected.append(f"{i}: {duration:.1f}s passa do máximo de {max_duration:.0f}s")
+            rejected.append(
+                f"{label}: {duration:.1f}s passa do máximo de {max_duration:.0f}s"
+            )
             continue
         if duration < MIN_DURATION:
-            rejected.append(f"{i}: {duration:.1f}s abaixo do mínimo de {MIN_DURATION:.0f}s")
+            rejected.append(
+                f"{label}: {duration:.1f}s abaixo do mínimo de {MIN_DURATION:.0f}s"
+            )
             continue
 
         valid.append({**raw, "start": start, "end": end})
 
     return valid, rejected
+
+
+def _score_key(clip: dict) -> float:
+    """Nota do clipe pra ordenação; ausente ou inválida vai pro fim."""
+    try:
+        value = clip.get("score")
+        if value is None:
+            return float("-inf")
+        return float(value)
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def sort_clips_by_score(clips: list[dict]) -> list[dict]:
+    """Ordena os candidatos por `score` decrescente, estável.
+
+    A ordenação acontece antes de qualquer numeração: o número da tabela, o
+    número que o usuário digita no `--pick` e o sufixo `_shortN` do workspace
+    precisam apontar sempre pro mesmo clipe.
+    """
+    return sorted(clips, key=_score_key, reverse=True)
 
 
 def parse_pick(raw: str, count: int) -> list[int]:
@@ -158,6 +190,55 @@ def long_source_video(long_ws: Path) -> Path:
     return path
 
 
+def _clip_window(long_ws: Path, clip: dict) -> tuple[dict, float, float]:
+    """Post-cut do long + a janela do clipe já encaixada em palavras."""
+    post_cut = json.loads(
+        (long_ws / POST_CUT_NAME).read_text(encoding="utf-8")
+    )
+    start, end = snap_clip_to_words(
+        float(clip["start"]), float(clip["end"]), post_cut.get("words") or []
+    )
+    return post_cut, start, end
+
+
+def short_workspace_path(long_ws: Path, long_pipeline: dict, index: int) -> Path:
+    return long_ws.parent / f"{long_pipeline['video_name']}_short{index}"
+
+
+def overwrite_warning(
+    long_ws: Path, long_pipeline: dict, clip: dict, index: int
+) -> str | None:
+    """Avisa quando o `_shortN` alvo já guarda OUTRO clipe.
+
+    O nome do workspace (e o `output/<nome>_final.mp4`) vem da posição na
+    tabela. Depois de um `--replan` a posição 1 pode ser um clipe totalmente
+    diferente, e semear por cima sobrescreve o short já entregue.
+    """
+    ws = short_workspace_path(long_ws, long_pipeline, index)
+    if not (ws / "pipeline.json").exists():
+        return None
+
+    plan_path = ws / "reviewed_plan.json"
+    if not plan_path.exists():
+        return None
+    try:
+        kept = json.loads(plan_path.read_text(encoding="utf-8")).get("kept_segments") or []
+        old_start = float(kept[0]["start"])
+        old_end = float(kept[0]["end"])
+    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    _post_cut, start, end = _clip_window(long_ws, clip)
+    if abs(old_start - start) < 0.01 and abs(old_end - end) < 0.01:
+        return None
+
+    return (
+        f"{ws.name} já existe com a janela {old_start:.1f}s-{old_end:.1f}s e vai ser "
+        f"sobrescrito pela janela {start:.1f}s-{end:.1f}s — o short antigo em "
+        "output/ se perde."
+    )
+
+
 def seed_short_workspace(
     long_ws: Path, long_pipeline: dict, clip: dict, index: int
 ) -> Path:
@@ -167,28 +248,30 @@ def seed_short_workspace(
     aquelas funções derivam o nome do stem do arquivo de vídeo, que aqui é
     sempre `edited_video`, e os shorts colidiriam entre si.
     """
-    post_cut = json.loads(
-        (long_ws / POST_CUT_NAME).read_text(encoding="utf-8")
-    )
-    start, end = snap_clip_to_words(
-        float(clip["start"]), float(clip["end"]), post_cut.get("words") or []
-    )
+    post_cut, start, end = _clip_window(long_ws, clip)
 
-    stem = long_pipeline["video_name"]
-    name = f"{stem}_short{index}"
-    ws = long_ws.parent / name
+    ws = short_workspace_path(long_ws, long_pipeline, index)
+    name = ws.name
     ws.mkdir(parents=True, exist_ok=True)
 
     stages = {s: {"status": "skip"} for s in SKIPPED_STAGES}
     stages.update({s: {"status": "pending"} for s in ACTIVE_STAGES})
 
-    hook = clip.get("hook", "")
-    context = long_pipeline.get("context", "")
+    hook = (clip.get("hook") or "").strip()
+    context = (long_pipeline.get("context") or "").strip()
+    # Montado por partes, não com `.strip(" —")` no resultado: um gancho que
+    # começa ou termina em travessão perderia caracteres reais.
+    if context and hook:
+        short_context = f"{context} — trecho: {hook}"
+    elif hook:
+        short_context = f"trecho: {hook}"
+    else:
+        short_context = context
     pipeline = {
         "video_path": str(long_source_video(long_ws).resolve()),
         "video_name": name,
         "type": "short",
-        "context": f"{context} — trecho: {hook}".strip(" —"),
+        "context": short_context,
         "whisper_model": long_pipeline.get("whisper_model", "small"),
         "language": long_pipeline.get("language", "pt"),
         "iteration": 1,
@@ -234,18 +317,60 @@ def load_clips_plan(
         )
 
     plan = json.loads(path.read_text(encoding="utf-8"))
-    duration = plan.get("source_duration")
-    if not duration:
-        post_cut = json.loads(
-            (long_ws / POST_CUT_NAME).read_text(encoding="utf-8")
-        )
+
+    # O `source_duration` do plano é o que o MODELO diz — um valor inflado
+    # tornaria a checagem de janela fora do vídeo inócua e o clipe ruim só
+    # morreria depois, num stage de FFmpeg. A autoridade é o post-cut do long.
+    duration = 0.0
+    post_cut_path = long_ws / POST_CUT_NAME
+    if post_cut_path.exists():
+        post_cut = json.loads(post_cut_path.read_text(encoding="utf-8"))
         duration = float(post_cut.get("duration") or 0.0)
 
-    return validate_clips(plan.get("clips") or [], float(duration), max_duration)
+    claimed = plan.get("source_duration")
+    try:
+        claimed = float(claimed) if claimed else 0.0
+    except (TypeError, ValueError):
+        claimed = 0.0
+
+    if duration and claimed:
+        duration = min(duration, claimed)
+    elif not duration:
+        duration = claimed
+
+    clips, rejected = validate_clips(
+        plan.get("clips") or [], float(duration), max_duration
+    )
+    return sort_clips_by_score(clips), rejected
+
+
+def plan_notes(long_ws: Path) -> str:
+    """O `notes` que o clipper escreveu, se houver."""
+    path = long_ws / CLIPS_PLAN_NAME
+    if not path.exists():
+        return ""
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ""
+    return str(plan.get("notes") or "").strip()
 
 
 def _mmss(seconds: float) -> str:
     return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
+
+
+def overlapping_indices(clips: list[dict]) -> set[int]:
+    """Índices (base 0) dos candidatos que se sobrepõem a algum outro."""
+    marked: set[int] = set()
+    for i, a in enumerate(clips):
+        for j, b in enumerate(clips):
+            if j <= i:
+                continue
+            if float(a["start"]) < float(b["end"]) and float(b["start"]) < float(a["end"]):
+                marked.add(i)
+                marked.add(j)
+    return marked
 
 
 def format_clips_table(clips: list[dict]) -> str:
@@ -253,12 +378,24 @@ def format_clips_table(clips: list[dict]) -> str:
     if not clips:
         return "Nenhum candidato a short neste vídeo."
 
+    overlaps = overlapping_indices(clips)
     lines = [f"{'#':<3} {'JANELA':<16} {'DUR':>6}  {'NOTA':>4}  GANCHO"]
-    for i, clip in enumerate(clips, start=1):
+    for i, clip in enumerate(clips):
         start, end = float(clip["start"]), float(clip["end"])
         window = f"{_mmss(start)}-{_mmss(end)}"
+        # `clip.get("score", "-")` devolveria None numa chave presente e nula,
+        # e format(None, ">4") explode.
+        score = clip.get("score")
+        score = "-" if score is None or score == "" else score
+        hook = clip.get("hook", "")
+        if i in overlaps:
+            hook = f"{hook}  [sobrepõe outro candidato]"
         lines.append(
-            f"{i:<3} {window:<16} {end - start:>5.0f}s  {clip.get('score', '-'):>4}  "
-            f"{clip.get('hook', '')}"
+            f"{i + 1:<3} {window:<16} {end - start:>5.0f}s  {score:>4}  {hook}"
+        )
+    if overlaps:
+        lines.append(
+            "\nCandidatos marcados com [sobrepõe outro candidato] dividem trecho "
+            "do vídeo — escolha um deles."
         )
     return "\n".join(lines)

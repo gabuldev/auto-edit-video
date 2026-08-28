@@ -156,6 +156,21 @@ def _resolve_llm(
     return primary, fb
 
 
+def _ralph_env(primary: str, fb: Optional[str], language: Optional[str] = None) -> dict:
+    """Ambiente dos subprocessos do ralph.sh — uma só cópia dos nomes."""
+    env = os.environ.copy()
+    env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
+    env["PYTHON"] = sys.executable
+    env["AUTO_EDIT_LLM"] = primary
+    if language:
+        env["AUTO_EDIT_LANGUAGE"] = language
+    if fb:
+        env["AUTO_EDIT_LLM_FALLBACK"] = fb
+    else:
+        env.pop("AUTO_EDIT_LLM_FALLBACK", None)
+    return env
+
+
 def _resolve_plan(plan_id: Optional[str], no_prompt: bool, resume_from: Optional[str]) -> Optional[str]:
     """Convert raw --plan-id flag to canonical id, or interactively pick one."""
     if resume_from:
@@ -219,15 +234,7 @@ def _run_pipeline(
     if plan_id:
         console.print(f"[cyan]Plan slot:[/cyan] {plan_id}")
     primary, fb = _resolve_llm(cli, cli_fallback)
-    env = os.environ.copy()
-    env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
-    env["PYTHON"] = sys.executable
-    env["AUTO_EDIT_LANGUAGE"] = language
-    env["AUTO_EDIT_LLM"] = primary
-    if fb:
-        env["AUTO_EDIT_LLM_FALLBACK"] = fb
-    else:
-        env.pop("AUTO_EDIT_LLM_FALLBACK", None)
+    env = _ralph_env(primary, fb, language=language)
     if dry_run:
         env["AUTO_EDIT_DRY_RUN"] = "1"
     console.print(
@@ -422,6 +429,11 @@ def shorts(
     cli_fallback: Optional[str] = typer.Option(None, "--cli-fallback", help="CLI de fallback"),
 ) -> None:
     """Propõe e corta shorts a partir de um vídeo long já editado."""
+    if not RALPH_SCRIPT.exists():
+        console.print(f"[red]Erro:[/red] ralph.sh não encontrado em {RALPH_SCRIPT}")
+        console.print("[dim]Aponte AUTO_EDIT_REPO_ROOT pra raiz do projeto, ou confira a instalação.[/dim]")
+        raise typer.Exit(1)
+
     long_ws = get_workspace(video)
     try:
         long_pipeline = sh.require_finished_long(long_ws)
@@ -431,17 +443,23 @@ def shorts(
         raise typer.Exit(1) from None
 
     plan_path = long_ws / sh.CLIPS_PLAN_NAME
-    if replan or not plan_path.exists():
+    cutting = bool(pick or all_clips)
+
+    # O clipper só roda quando foi pedido (`--replan`) ou quando ainda não há o
+    # que escolher. Com `--pick`/`--all` e nenhum plano, cortar aqui seria
+    # encodar candidatos que o usuário nunca viu.
+    if cutting and not plan_path.exists() and not replan:
+        console.print(
+            f"[red]Erro:[/red] Nenhum {sh.CLIPS_PLAN_NAME} em {long_ws}. "
+            f"Rode [bold]auto-edit shorts {video}[/bold] sem --pick/--all pra ver os candidatos."
+        )
+        raise typer.Exit(1)
+
+    if replan or not cutting:
         console.print("[cyan]Procurando candidatos a short...[/cyan]")
         primary, fb = _resolve_llm(cli, cli_fallback)
-        env = os.environ.copy()
-        env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
-        env["PYTHON"] = sys.executable
-        env["AUTO_EDIT_LLM"] = primary
-        if fb:
-            env["AUTO_EDIT_LLM_FALLBACK"] = fb
-        else:
-            env.pop("AUTO_EDIT_LLM_FALLBACK", None)
+        env = _ralph_env(primary, fb)
+        env["AUTO_EDIT_CLIP_MAX_DUR"] = f"{max_dur:g}"
         result = subprocess.run(
             [
                 "bash", str(RALPH_SCRIPT), "--agent", str(long_ws.resolve()),
@@ -462,13 +480,21 @@ def shorts(
         raise typer.Exit(1) from None
 
     for reason in rejected:
-        console.print(f"[yellow]Candidato descartado —[/yellow] {reason}")
+        console.print("[yellow]Candidato descartado —[/yellow]", end=" ")
+        console.print(reason, markup=False)
 
     console.print()
-    console.print(sh.format_clips_table(clips))
+    # markup=False: gancho e notas são texto do modelo; um "[algo]" seria
+    # engolido como markup do Rich (ou explodiria com MarkupError).
+    console.print(sh.format_clips_table(clips), markup=False)
     console.print()
 
     if not clips:
+        notes = sh.plan_notes(long_ws)
+        if notes:
+            console.print("[yellow]O clipper explicou:[/yellow]")
+            console.print(notes, markup=False)
+            console.print()
         raise typer.Exit(0)
 
     if all_clips:
@@ -487,22 +513,19 @@ def shorts(
         raise typer.Exit(0)
 
     primary, fb = _resolve_llm(cli, cli_fallback)
+    env = _ralph_env(primary, fb, language=long_pipeline.get("language", "pt"))
     for index in indices:
         clip = clips[index]
         number = index + 1
-        console.print(f"\n[bold green]Short {number}[/bold green] — {clip.get('hook', '')}")
+        console.print(f"\n[bold green]Short {number}[/bold green] — ", end="")
+        console.print(clip.get("hook", ""), markup=False)
+
+        warning = sh.overwrite_warning(long_ws, long_pipeline, clip, number)
+        if warning:
+            console.print(f"[yellow]Atenção:[/yellow] {warning}")
+
         ws = sh.seed_short_workspace(long_ws, long_pipeline, clip, number)
         console.print(f"[cyan]Workspace:[/cyan] {ws}")
-
-        env = os.environ.copy()
-        env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
-        env["PYTHON"] = sys.executable
-        env["AUTO_EDIT_LANGUAGE"] = long_pipeline.get("language", "pt")
-        env["AUTO_EDIT_LLM"] = primary
-        if fb:
-            env["AUTO_EDIT_LLM_FALLBACK"] = fb
-        else:
-            env.pop("AUTO_EDIT_LLM_FALLBACK", None)
 
         result = subprocess.run(
             ["bash", str(RALPH_SCRIPT), str(ws.resolve())],
