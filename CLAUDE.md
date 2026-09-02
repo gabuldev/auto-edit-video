@@ -91,6 +91,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
 | `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` |
+| `AUTO_EDIT_WORKSPACE` | `workspace` | Pasta raiz que guarda os workspaces por vídeo (usada pelo motor headless `auto-edit serve`) |
 
 ## Slash Commands Disponíveis
 
@@ -117,3 +118,23 @@ Para usar o auto-edit como extensão do Claude Code:
 ```
 
 Isso expõe tools como `edit_short`, `edit_long`, `pipeline_status`, `resume_pipeline` e `doctor` diretamente no Claude Code.
+
+## Motor headless / API (para frontends)
+
+`auto-edit serve` (requer o extra `[api]`: `pip install "auto-edit-video[api]"`)
+sobe uma API local **JSON + SSE** que qualquer frontend (desktop Flutter/Tauri
+ou web) usa pra dirigir o pipeline canônico — sem reimplementar nada. A lógica
+fica em `auto_edit/engine.py` (fachada pura sobre `ralph.sh` + `pipeline.py` +
+`workspace.py`); `auto_edit/api.py` é só a casca HTTP.
+
+```
+GET  /api/health
+GET  /api/library                 # lista workspaces + status derivado
+GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
+POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}
+POST /api/videos/<id>/resume      # {from_stage}
+GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/done/error)
+GET  /api/videos/<id>/events      # SSE do job atual daquele vídeo
+```
+
+O `web_app.py`/`gui.py` legados são independentes e continuam funcionando.

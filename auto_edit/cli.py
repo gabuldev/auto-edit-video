@@ -1218,6 +1218,27 @@ def mcp_server() -> None:
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (default: localhost only)."),
+    port: int = typer.Option(8760, "--port", "-p", help="Port for the local API server."),
+) -> None:
+    """Start the headless engine API (JSON + SSE) that a desktop/web frontend drives."""
+    try:
+        from auto_edit.api import create_app
+    except Exception as exc:  # pragma: no cover
+        console.print(f"[red]Could not load API:[/red] {exc}")
+        raise typer.Exit(1)
+    try:
+        app_ = create_app()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[cyan]auto-edit API[/cyan] → http://{host}:{port}  [dim](Ctrl+C to stop)[/dim]")
+    console.print(f"[dim]Library root:[/dim] {(Path.cwd() / 'workspace')}")
+    app_.run(host=host, port=port, threaded=True)
+
+
+@app.command()
 def update() -> None:
     """Update auto-edit-video to the latest version."""
     import shutil
