@@ -2,12 +2,14 @@
 
 import * as api from "./api.js";
 import { el, escapeHtml, setEngine } from "./shell.js";
+import { go } from "./router.js";
 
 const STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail"];
 
 const streams = new Map(); // video id -> EventSource
 const noStream = new Set(); // ids whose SSE 404'd (status says running, engine has no live job)
 let timer = null;
+let offline = false; // sample rows are on screen: they have no workspace to open
 
 // Shown only when the engine is unreachable, so you still see the design.
 const SAMPLE = [
@@ -108,14 +110,24 @@ function close(id) {
 export async function refresh() {
   const ok = await api.health();
   setEngine(ok);
+  offline = !ok;
   if (!ok) { render(SAMPLE); return; }
   try { render(await api.library()); }
-  catch { setEngine(false); render(SAMPLE); }
+  catch { setEngine(false); offline = true; render(SAMPLE); }
 }
+
+let wired = false;
 
 export default {
   id: "library",
   mount() {
+    if (!wired) {
+      el("rows").addEventListener("click", (e) => {
+        const row = e.target.closest(".row");
+        if (row && !offline) go(`/video/${encodeURIComponent(row.dataset.id)}`);
+      });
+      wired = true;
+    }
     refresh();
     timer = setInterval(refresh, 5000); // fallback poll: SSE only covers live jobs
   },

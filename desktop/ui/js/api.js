@@ -19,6 +19,15 @@ export async function health() {
 
 export const library = () => json("/api/library").then((b) => b.videos || []);
 
+export const video = (id) => json(`/api/videos/${encodeURIComponent(id)}`);
+
+export const resume = (id, from_stage) =>
+  json(`/api/videos/${encodeURIComponent(id)}/resume`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from_stage }),
+  });
+
 export const browse = (dir) =>
   json(`/api/browse${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`);
 
@@ -29,4 +38,5 @@ export const startEdit = (payload) =>
     body: JSON.stringify(payload),
   });
 
-export const videoEvents = (id) => new EventSource(`${API}/api/videos/${id}/events`);
+export const videoEvents = (id) =>
+  new EventSource(`${API}/api/videos/${encodeURIComponent(id)}/events`);

@@ -4,8 +4,9 @@ Cliente **fino** (Tauri v2) da UI do auto-edit, consumindo a API headless do
 `auto-edit serve`. Toda a lógica de pipeline fica no Python — este app só mostra
 e dispara.
 
-**Telas:** Biblioteca (lista + progresso ao vivo por SSE) e Novo edit (escolhe o
-vídeo na pasta de entrada e inicia o pipeline).
+**Telas:** Biblioteca (lista + progresso ao vivo por SSE), Novo edit (escolhe o
+vídeo na pasta de entrada e inicia o pipeline) e Pipeline ao vivo (stages, log do
+`ralph.sh` em tempo real e retomar a partir de um stage).
 
 ## 1. Suba o motor (em um terminal)
 
@@ -62,11 +63,12 @@ desktop/
 │   ├── styles.css      # tema dark/teal Gabuldev
 │   └── js/
 │       ├── app.js      # registra as rotas e sobe o router
-│       ├── router.js   # rotas por hash (#/ , #/novo)
+│       ├── router.js   # rotas por hash (#/ , #/novo , #/video/:id)
 │       ├── api.js      # única camada que fala com a API
 │       ├── shell.js    # helpers + indicador do motor
 │       ├── library.js  # tela Biblioteca (SSE por linha)
-│       └── new-edit.js # tela Novo edit (file picker + form)
+│       ├── new-edit.js # tela Novo edit (file picker + form)
+│       └── pipeline.js # tela Pipeline ao vivo (stages + log SSE + resume)
 ├── src-tauri/          # shell Tauri v2 (Rust)
 │   ├── Cargo.toml  build.rs  tauri.conf.json
 │   ├── src/main.rs
@@ -77,5 +79,5 @@ desktop/
 
 ## Próximos passos
 
-- Telas: Pipeline ao vivo → Revisar cortes → Resultado.
+- Telas: Revisar cortes → Resultado.
 - Empacotar o `auto-edit serve` como *sidecar* do Tauri (hoje roda à parte).

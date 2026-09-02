@@ -4,7 +4,6 @@
 import * as api from "./api.js";
 import { el, escapeHtml, humanSize, setEngine } from "./shell.js";
 import { go } from "./router.js";
-import { refresh as refreshLibrary } from "./library.js";
 
 const state = { dir: null, selected: null, loaded: false, busy: false };
 
@@ -95,10 +94,10 @@ async function submit() {
   el("btn-start").disabled = true;
   el("btn-start").textContent = "Iniciando…";
   try {
-    await api.startEdit(readForm());
+    const { video_id } = await api.startEdit(readForm());
     reset();
-    go("/");
-    refreshLibrary();
+    // land on the live screen: the run has already started
+    go(video_id ? `/video/${encodeURIComponent(video_id)}` : "/");
   } catch (err) {
     setError(String(err.message || err));
   } finally {
