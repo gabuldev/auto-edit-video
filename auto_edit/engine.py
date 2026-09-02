@@ -211,6 +211,65 @@ def detail(video_id: str, active: bool = False, failed: bool = False) -> dict | 
     return data
 
 
+# ── Finished artifacts ────────────────────────────────────────────────────────
+
+# What `pipeline.finalize()` drops in <workspace root>/output/, by kind.
+ARTIFACT_SUFFIXES = {
+    "video": "_final.mp4",
+    "thumbnail": "_thumbnail.png",
+    "captions": ".srt",
+    "notes": ".txt",
+}
+ARTIFACT_MIME = {
+    "video": "video/mp4",
+    "thumbnail": "image/png",
+    "captions": "text/plain; charset=utf-8",
+    "notes": "text/plain; charset=utf-8",
+}
+
+
+def artifact_path(video_id: str, kind: str) -> Path | None:
+    """Absolute path of one finished artifact, or None when it isn't there.
+
+    Only the four known kinds resolve, and always inside the library's own
+    output folder — this is what the API serves to the player.
+    """
+    suffix = ARTIFACT_SUFFIXES.get(kind)
+    if suffix is None:
+        return None
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    name = pl.load(ws).get("video_name", video_id)
+    candidate = ws.parent / "output" / f"{name}{suffix}"
+    return candidate if candidate.is_file() else None
+
+
+def result(video_id: str) -> dict | None:
+    """Everything the "Resultado" screen shows: metadata + the files on disk."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    p = pl.load(ws)
+
+    files = {}
+    for kind in ARTIFACT_SUFFIXES:
+        path = artifact_path(video_id, kind)
+        if path is not None:
+            files[kind] = {"path": str(path), "size": path.stat().st_size}
+
+    metadata = _read_json(ws / "metadata.json")
+    return {
+        "id": video_id,
+        "video_name": p.get("video_name", video_id),
+        "type": p.get("type"),
+        "status": overall_status(p),
+        "metadata": metadata if isinstance(metadata, dict) else None,
+        "files": files,
+        "token_stats": p.get("token_stats"),
+    }
+
+
 # ── Cut plan (read + edit) ────────────────────────────────────────────────────
 
 PLAN_FILES = ("reviewed_plan.json", "cut_plan.json")

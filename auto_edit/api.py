@@ -14,6 +14,8 @@ Endpoints
     GET  /api/videos/<id>
     GET  /api/videos/<id>/plan       (cortes + o que é dito em cada um)
     PUT  /api/videos/<id>/plan       {kept_segments: [{start, end, summary?}]}
+    GET  /api/videos/<id>/result     (metadata + arquivos finais)
+    GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run,
                                     overlays_dir}
@@ -37,7 +39,7 @@ def _sse(events: Iterator[dict]) -> Iterator[str]:
 def create_app(jobs: engine.JobManager | None = None):
     """Build the Flask app. Raises RuntimeError if Flask isn't installed."""
     try:
-        from flask import Flask, Response, jsonify, request
+        from flask import Flask, Response, jsonify, request, send_file
     except ImportError as exc:  # pragma: no cover - exercised only without flask
         raise RuntimeError(
             "Flask is required for the API server. Install with: "
@@ -107,6 +109,26 @@ def create_app(jobs: engine.JobManager | None = None):
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify(data)
+
+    @app.get("/api/videos/<video_id>/result")
+    def video_result(video_id: str):
+        data = engine.result(video_id)
+        if data is None:
+            return jsonify({"error": "not_found", "id": video_id}), 404
+        return jsonify(data)
+
+    @app.get("/api/videos/<video_id>/file/<kind>")
+    def video_file(video_id: str, kind: str):
+        """Serve one finished artifact — the player and the thumbnail read from here."""
+        path = engine.artifact_path(video_id, kind)
+        if path is None:
+            return jsonify({"error": "not_found", "id": video_id, "kind": kind}), 404
+        return send_file(
+            path,
+            mimetype=engine.ARTIFACT_MIME.get(kind),
+            conditional=True,  # range requests: seeking in the player
+            download_name=path.name,
+        )
 
     @app.post("/api/edit")
     def start_edit():

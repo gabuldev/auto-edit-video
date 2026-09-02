@@ -21,6 +21,8 @@ export const library = () => json("/api/library").then((b) => b.videos || []);
 
 export const video = (id) => json(`/api/videos/${encodeURIComponent(id)}`);
 
+export const result = (id) => json(`/api/videos/${encodeURIComponent(id)}/result`);
+
 export const plan = (id) => json(`/api/videos/${encodeURIComponent(id)}/plan`);
 
 export const savePlan = (id, kept_segments) =>

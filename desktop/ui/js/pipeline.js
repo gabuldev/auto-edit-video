@@ -132,6 +132,7 @@ async function load(id) {
   renderHead(d);
   renderStages(d);
   renderResume(d);
+  el("btn-see-result").hidden = d.status !== "done" && !d.output;
 }
 
 async function doResume() {
@@ -158,6 +159,7 @@ function wire() {
   });
   el("btn-pipe-back").addEventListener("click", () => go("/"));
   el("btn-see-cuts").addEventListener("click", () => go(`/video/${encodeURIComponent(state.id)}/cortes`));
+  el("btn-see-result").addEventListener("click", () => go(`/video/${encodeURIComponent(state.id)}/resultado`));
 }
 
 export default {
