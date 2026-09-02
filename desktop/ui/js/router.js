@@ -1,11 +1,12 @@
-// Hash router. Each screen registers { mount, unmount } and owns its own polling
-// so a background screen never fights the one you're looking at.
+// Hash router with params ("/video/:id"). Each screen registers
+// { mount, unmount } and owns its own polling, so a background screen never
+// fights the one you're looking at.
 
-const routes = new Map();
+const routes = [];
 let current = null;
 
-export function route(path, screen) {
-  routes.set(path, screen);
+export function route(pattern, screen) {
+  routes.push({ parts: pattern.split("/").filter(Boolean), screen });
 }
 
 export function go(path) {
@@ -13,9 +14,23 @@ export function go(path) {
   else location.hash = `#${path}`;
 }
 
+function match(path) {
+  const parts = path.split("/").filter(Boolean);
+  for (const r of routes) {
+    if (r.parts.length !== parts.length) continue;
+    const params = {};
+    const ok = r.parts.every((p, i) => {
+      if (p.startsWith(":")) { params[p.slice(1)] = decodeURIComponent(parts[i]); return true; }
+      return p === parts[i];
+    });
+    if (ok) return { screen: r.screen, params };
+  }
+  return { screen: routes[0].screen, params: {} };
+}
+
 export function resolve() {
   const path = location.hash.replace(/^#/, "") || "/";
-  const screen = routes.get(path) || routes.get("/");
+  const { screen, params } = match(path);
   if (current && current !== screen) current.unmount?.();
   current = screen;
 
@@ -26,7 +41,7 @@ export function resolve() {
     n.classList.toggle("active", n.dataset.route === path);
   });
 
-  screen.mount?.();
+  screen.mount?.(params);
 }
 
 export function start() {

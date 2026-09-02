@@ -172,6 +172,56 @@
         </details>
       </div>
     </main>
+
+    <!-- Pipeline ao vivo -->
+    <main class="main" data-screen="pipeline" hidden>
+      <header class="topbar">
+        <button class="btn btn-icon" id="btn-pipe-back" title="Voltar">&larr;</button>
+        <div class="titles">
+          <div class="page-title" id="pipe-title">—</div>
+          <div class="page-sub row-inline" id="pipe-sub"></div>
+        </div>
+      </header>
+
+      <div class="content pipe">
+        <div id="pipe-error" class="banner err" hidden></div>
+
+        <div class="pipe-grid">
+          <section class="card">
+            <div class="card-head">
+              <div>
+                <h2>Stages</h2>
+                <p>a fonte da verdade é o <code class="mono">pipeline.json</code> do workspace.</p>
+              </div>
+            </div>
+            <div id="pipe-stages" class="stages"></div>
+
+            <div class="resume">
+              <label class="field">
+                <span>Retomar a partir de</span>
+                <select class="input mono" id="resume-stage"></select>
+              </label>
+              <button class="btn" id="btn-resume">Retomar</button>
+              <span class="resume-note" id="resume-note"></span>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <div>
+                <h2>Log ao vivo</h2>
+                <p>saída do <code class="mono">ralph.sh</code> em tempo real (SSE).</p>
+              </div>
+            </div>
+            <div class="log-wrap">
+              <pre class="log mono" id="pipe-log"></pre>
+              <div class="log-empty" id="log-empty">sem job ao vivo — o log aparece quando um run está em andamento.</div>
+            </div>
+            <div class="facts" id="pipe-facts"></div>
+          </section>
+        </div>
+      </div>
+    </main>
   </div>
   <script type="module" src="js/app.js"></script>
 </body>
