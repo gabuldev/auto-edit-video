@@ -134,6 +134,8 @@ GET  /api/browse?dir=             # pastas + vídeos de um diretório (file pick
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
 GET  /api/videos/<id>/plan        # cortes + o que é dito em cada trecho
 PUT  /api/videos/<id>/plan        # {kept_segments: [{start, end, summary?}]}
+GET  /api/videos/<id>/result      # metadata + arquivos finais
+GET  /api/videos/<id>/file/<kind> # video | thumbnail | captions | notes
 POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}
 POST /api/videos/<id>/resume      # {from_stage}
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/done/error)

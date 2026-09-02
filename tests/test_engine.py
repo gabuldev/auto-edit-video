@@ -274,6 +274,46 @@ class TestJobStatusSets:
         assert mgr.active_ids() == set()
 
 
+# ── finished artifacts ────────────────────────────────────────────────────────
+
+class TestResult:
+    def _done(self, tmp_path, monkeypatch, *, files=("_final.mp4",), metadata=None):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        ws = _mkws(tmp_path, "vid", video_name="minha-live", current_stage="done")
+        out = tmp_path / "output"
+        out.mkdir(exist_ok=True)
+        for suffix in files:
+            (out / f"minha-live{suffix}").write_bytes(b"data")
+        if metadata is not None:
+            (ws / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+        return ws
+
+    def test_lists_only_the_files_that_exist(self, tmp_path, monkeypatch):
+        self._done(tmp_path, monkeypatch, files=("_final.mp4", "_thumbnail.png"))
+        out = engine.result("vid")
+        assert set(out["files"]) == {"video", "thumbnail"}
+        assert out["files"]["video"]["size"] == 4
+        assert out["status"] == "done"
+
+    def test_carries_metadata(self, tmp_path, monkeypatch):
+        self._done(tmp_path, monkeypatch, metadata={"youtube_title": "Async em Python"})
+        assert engine.result("vid")["metadata"]["youtube_title"] == "Async em Python"
+
+    def test_none_for_unknown_workspace(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        assert engine.result("nope") is None
+
+    def test_artifact_path_uses_the_video_name(self, tmp_path, monkeypatch):
+        self._done(tmp_path, monkeypatch)
+        assert engine.artifact_path("vid", "video").name == "minha-live_final.mp4"
+
+    def test_artifact_path_none_when_missing_or_unknown_kind(self, tmp_path, monkeypatch):
+        self._done(tmp_path, monkeypatch)
+        assert engine.artifact_path("vid", "captions") is None
+        assert engine.artifact_path("vid", "../../etc/passwd") is None
+        assert engine.artifact_path("nope", "video") is None
+
+
 # ── cut plan (read + edit) ────────────────────────────────────────────────────
 
 class TestPlan:
@@ -454,6 +494,20 @@ class TestBrowseEndpoint:
         _mkws(tmp_path, "vid")
         r = self._client().put("/api/videos/vid/plan", json={"kept_segments": []})
         assert r.status_code == 400
+
+    def test_file_endpoint_streams_the_video(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "vid", video_name="clip")
+        (tmp_path / "output").mkdir()
+        (tmp_path / "output" / "clip_final.mp4").write_bytes(b"fake-mp4-bytes")
+        r = self._client().get("/api/videos/vid/file/video")
+        assert r.status_code == 200 and r.data == b"fake-mp4-bytes"
+        assert r.headers["Content-Type"].startswith("video/mp4")
+
+    def test_file_endpoint_404s_unknown_kind(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "vid")
+        assert self._client().get("/api/videos/vid/file/secrets").status_code == 404
 
     def test_browse_honors_dir_param(self, tmp_path):
         (tmp_path / "other.mkv").write_bytes(b"x")

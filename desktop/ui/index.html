@@ -182,6 +182,7 @@
           <div class="page-sub row-inline" id="pipe-sub"></div>
         </div>
         <a class="btn" id="btn-see-cuts">Revisar cortes</a>
+        <a class="btn btn-primary" id="btn-see-result" hidden>Resultado</a>
       </header>
 
       <div class="content pipe">
@@ -266,6 +267,57 @@
             <summary>O que o planner já cortou (<span id="removed-count">0</span>)</summary>
             <div id="cuts-removed" class="cuts"></div>
           </details>
+        </div>
+      </div>
+    </main>
+
+    <!-- Resultado -->
+    <main class="main" data-screen="result" hidden>
+      <header class="topbar">
+        <button class="btn btn-icon" id="btn-res-back" title="Voltar">&larr;</button>
+        <div class="titles">
+          <div class="page-title" id="res-title">—</div>
+          <div class="page-sub row-inline" id="res-sub"></div>
+        </div>
+      </header>
+
+      <div class="content">
+        <div id="res-error" class="banner err" hidden></div>
+
+        <div class="res-grid">
+          <section>
+            <div class="card" id="res-player" hidden>
+              <video id="res-video" class="player" controls preload="metadata"></video>
+            </div>
+
+            <div class="card" id="res-thumb-box" hidden>
+              <div class="card-head"><div><h2>Thumbnail</h2></div></div>
+              <img id="res-thumb" class="thumb-img" alt="thumbnail gerada" />
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2>Arquivos</h2>
+                  <p>o que o <code class="mono">finalize</code> deixou em <code class="mono">output/</code>.</p>
+                </div>
+              </div>
+              <div id="res-files" class="files"></div>
+              <div id="res-nofiles" class="empty small" hidden>Nada em output/ ainda — o vídeo aparece aqui quando o pipeline termina.</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <div>
+                <h2>Publicação</h2>
+                <p>gerado no stage <code class="mono">metadata</code> — copie e poste.</p>
+              </div>
+            </div>
+            <div id="res-meta" class="meta"></div>
+            <div id="res-thumbtext" class="meta-field" hidden></div>
+            <div id="res-nometa" class="empty small" hidden>Sem metadata ainda — ela sai no fim do pipeline.</div>
+          </section>
         </div>
       </div>
     </main>

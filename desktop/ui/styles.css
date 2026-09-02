@@ -197,3 +197,30 @@ textarea.input { resize: vertical; }
 .cut-reason { color: var(--dim); }
 .cut-type { font-size: 10.5px; color: var(--faint); background: var(--panel-2); padding: 2px 7px; border-radius: 5px; }
 .blocks { margin: 0; padding-left: 18px; color: var(--dim); font-size: 13px; line-height: 1.7; }
+
+/* ── Resultado ─────────────────────────────────────────────────────────────── */
+.res-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.player { width: 100%; border-radius: 8px; background: #000; display: block; max-height: 420px; }
+#res-player { padding: 10px; }
+.thumb-img { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--border); }
+.files { display: flex; flex-direction: column; gap: 8px; }
+.file { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.file:last-child { border-bottom: none; }
+.file-kind { font-weight: 600; }
+.file-size { font-size: 11px; color: var(--faint); }
+.file-open { font-size: 12px; }
+.empty.small { padding: 16px; font-size: 12.5px; text-align: left; }
+
+.meta { display: flex; flex-direction: column; gap: 16px; }
+.meta-field { display: flex; flex-direction: column; gap: 7px; }
+.meta-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #5b6472; font-weight: 600; }
+.meta-value { font-size: 13.5px; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); color: var(--dim); padding: 3px 8px; border-radius: 6px; }
+.copy { height: 24px; padding: 0 9px; font-size: 11px; border-radius: 6px; }
+#res-thumbtext { margin-top: 16px; }
+.thumb-text { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 15px; }
+.thumb-text b { letter-spacing: .5px; }
+.chip-text { background: var(--accent); color: #06231f; font-weight: 700; font-size: 12px; padding: 3px 9px; border-radius: 6px; }
+
+@media (max-width: 1080px) { .res-grid { grid-template-columns: 1fr; } }
