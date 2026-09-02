@@ -1,11 +1,11 @@
 # Auto-Edit Desktop (protótipo Tauri)
 
-Cliente **fino** (Tauri v2) da tela **Biblioteca**, consumindo a API headless
-do `auto-edit serve` (`/api/library` + SSE de progresso). Toda a lógica de
-pipeline fica no Python — este app só mostra e dispara.
+Cliente **fino** (Tauri v2) da UI do auto-edit, consumindo a API headless do
+`auto-edit serve`. Toda a lógica de pipeline fica no Python — este app só mostra
+e dispara.
 
-> Feito/empurrado de um ambiente na nuvem: **compile e rode na sua máquina**
-> (Mac ou Windows). Depende da API do PR #53 (`auto-edit serve`).
+**Telas:** Biblioteca (lista + progresso ao vivo por SSE) e Novo edit (escolhe o
+vídeo na pasta de entrada e inicia o pipeline).
 
 ## 1. Suba o motor (em um terminal)
 
@@ -23,6 +23,9 @@ cd desktop/ui
 python3 -m http.server 5173
 # abre http://localhost:5173
 ```
+
+> A UI usa módulos ES, então precisa ser servida por http (abrir o
+> `index.html` por `file://` não funciona).
 
 Com o motor no ar, mostra a biblioteca real e o progresso ao vivo. Sem o motor,
 mostra um banner "offline" + linhas de exemplo (dá pra ver o design mesmo assim).
@@ -45,7 +48,9 @@ npm run tauri dev                 # abre a janela do app
 ## Configuração
 
 - A URL da API é `http://127.0.0.1:8760` por padrão. Pra trocar, defina
-  `window.AUTO_EDIT_API` antes do `app.js` (ex.: um `<script>` no `index.html`).
+  `window.AUTO_EDIT_API` antes do `js/app.js` (ex.: um `<script>` no `index.html`).
+- O file picker do "Novo edit" começa na pasta de entrada (`AUTO_EDIT_INBOX`, ou
+  `upload/` do repo) e navega a partir dela.
 - A CSP em `src-tauri/tauri.conf.json` já libera `connect-src` pra `127.0.0.1:8760`.
 
 ## Estrutura
@@ -53,9 +58,15 @@ npm run tauri dev                 # abre a janela do app
 ```
 desktop/
 ├── ui/                 # frontend (roda no navegador OU dentro do Tauri)
-│   ├── index.html
+│   ├── index.html      # todas as telas; o router mostra uma por vez
 │   ├── styles.css      # tema dark/teal Gabuldev
-│   └── app.js          # fetch /api/library + EventSource (SSE)
+│   └── js/
+│       ├── app.js      # registra as rotas e sobe o router
+│       ├── router.js   # rotas por hash (#/ , #/novo)
+│       ├── api.js      # única camada que fala com a API
+│       ├── shell.js    # helpers + indicador do motor
+│       ├── library.js  # tela Biblioteca (SSE por linha)
+│       └── new-edit.js # tela Novo edit (file picker + form)
 ├── src-tauri/          # shell Tauri v2 (Rust)
 │   ├── Cargo.toml  build.rs  tauri.conf.json
 │   ├── src/main.rs
@@ -66,6 +77,5 @@ desktop/
 
 ## Próximos passos
 
-- Telas: Novo edit → Pipeline ao vivo → Revisar cortes → Resultado (mockups já
-  desenhados no canvas de design).
+- Telas: Pipeline ao vivo → Revisar cortes → Resultado.
 - Empacotar o `auto-edit serve` como *sidecar* do Tauri (hoje roda à parte).

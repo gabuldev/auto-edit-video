@@ -10,6 +10,7 @@ module never requires it — only `create_app()` / `serve()` do.
 Endpoints
     GET  /api/health
     GET  /api/library
+    GET  /api/browse?dir=            (folders + videos, for the picker)
     GET  /api/videos/<id>
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run,
@@ -60,12 +61,26 @@ def create_app(jobs: engine.JobManager | None = None):
 
     @app.get("/api/library")
     def library():
-        return jsonify({"videos": engine.list_library(active_ids=jobs.active_ids())})
+        return jsonify(
+            {
+                "videos": engine.list_library(
+                    active_ids=jobs.active_ids(), failed_ids=jobs.failed_ids()
+                )
+            }
+        )
+
+    @app.get("/api/browse")
+    def browse():
+        """Folders + video files of a directory (default: the inbox) for the picker."""
+        return jsonify(engine.browse(request.args.get("dir") or None))
 
     @app.get("/api/videos/<video_id>")
     def video_detail(video_id: str):
-        active = video_id in jobs.active_ids()
-        data = engine.detail(video_id, active=active)
+        data = engine.detail(
+            video_id,
+            active=video_id in jobs.active_ids(),
+            failed=video_id in jobs.failed_ids(),
+        )
         if data is None:
             return jsonify({"error": "not_found", "id": video_id}), 404
         job = jobs.job_for_video(video_id)

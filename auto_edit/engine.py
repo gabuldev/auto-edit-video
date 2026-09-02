@@ -23,7 +23,7 @@ from queue import Queue
 from typing import Callable, Iterator
 
 from auto_edit import pipeline as pl
-from auto_edit.workspace import init_workspace
+from auto_edit.workspace import init_workspace, workspace_root
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -40,23 +40,81 @@ def ralph_path() -> Path:
 
 
 def library_root() -> Path:
-    """Directory holding per-video workspaces (same layout the CLI writes)."""
-    return Path(os.environ.get("AUTO_EDIT_WORKSPACE", "workspace"))
+    """Directory holding per-video workspaces (same one the CLI writes to)."""
+    return workspace_root()
+
+
+def inbox_root() -> Path:
+    """Default folder the "new edit" picker browses (same one `plan ingest` uses)."""
+    env = os.environ.get("AUTO_EDIT_INBOX")
+    if env:
+        return Path(env).expanduser()
+    return repo_root() / "upload"
+
+
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mts", ".m2ts"}
+
+
+def browse(directory: str | None = None) -> dict:
+    """List sub-folders and video files of a directory — feeds the file picker.
+
+    Defaults to the inbox. Read-only and video-only: it never walks recursively
+    and never reports files the pipeline could not open anyway.
+    """
+    root = Path(directory).expanduser() if directory else inbox_root()
+    try:
+        root = root.resolve()
+    except OSError:
+        return {"dir": str(root), "parent": None, "exists": False, "dirs": [], "videos": []}
+
+    if not root.is_dir():
+        return {"dir": str(root), "parent": str(root.parent), "exists": False, "dirs": [], "videos": []}
+
+    dirs: list[dict] = []
+    videos: list[dict] = []
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        entries = []
+    for entry in entries:
+        try:
+            if entry.is_dir():
+                if not entry.name.startswith("."):
+                    dirs.append({"name": entry.name, "path": str(entry)})
+            elif entry.suffix.lower() in VIDEO_EXTS:
+                stat = entry.stat()
+                videos.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                    }
+                )
+        except OSError:
+            continue
+
+    dirs.sort(key=lambda d: d["name"].lower())
+    videos.sort(key=lambda v: v["modified"], reverse=True)
+    parent = str(root.parent) if root.parent != root else None
+    return {"dir": str(root), "parent": parent, "exists": True, "dirs": dirs, "videos": videos}
 
 
 # ── Status derivation ─────────────────────────────────────────────────────────
 
 
-def overall_status(pipeline: dict, active: bool = False) -> str:
+def overall_status(pipeline: dict, active: bool = False, failed: bool = False) -> str:
     """Collapse a pipeline.json into one status: running | done | failed | idle.
 
     `active` is True while the engine has a live job for this workspace — the
     pipeline.json alone can't tell "paused between runs" from "in progress".
+    `failed` is True when the last job for it died: a run that blows up before
+    ralph marks a stage would otherwise read as a calm "idle".
     """
     stages = pipeline.get("stages", {})
     if pipeline.get("current_stage") == "done":
         return "done"
-    if any(s.get("status") == "failed" for s in stages.values()):
+    if failed or any(s.get("status") == "failed" for s in stages.values()):
         return "failed"
     if active or any(s.get("status") == "running" for s in stages.values()):
         return "running"
@@ -81,7 +139,7 @@ def _read_json(path: Path) -> dict | list | None:
 # ── Read models ───────────────────────────────────────────────────────────────
 
 
-def summarize(ws: Path, active: bool = False) -> dict:
+def summarize(ws: Path, active: bool = False, failed: bool = False) -> dict:
     """One-line summary of a workspace for the library list."""
     p = pl.load(ws)
     tokens = (p.get("token_stats") or {}).get("total_estimated_tokens")
@@ -93,7 +151,7 @@ def summarize(ws: Path, active: bool = False) -> dict:
         "type": p.get("type"),
         "language": p.get("language"),
         "current_stage": p.get("current_stage"),
-        "status": overall_status(p, active=active),
+        "status": overall_status(p, active=active, failed=failed),
         "iteration": p.get("iteration"),
         "max_iterations": p.get("max_iterations"),
         "plan_id": p.get("plan_id"),
@@ -104,9 +162,13 @@ def summarize(ws: Path, active: bool = False) -> dict:
     }
 
 
-def list_library(active_ids: set[str] | None = None) -> list[dict]:
+def list_library(
+    active_ids: set[str] | None = None,
+    failed_ids: set[str] | None = None,
+) -> list[dict]:
     """Every workspace under the library root, newest first."""
     active_ids = active_ids or set()
+    failed_ids = failed_ids or set()
     root = library_root()
     if not root.is_dir():
         return []
@@ -114,20 +176,22 @@ def list_library(active_ids: set[str] | None = None) -> list[dict]:
     for pj in root.glob("*/pipeline.json"):
         ws = pj.parent
         try:
-            items.append(summarize(ws, active=ws.name in active_ids))
+            items.append(
+                summarize(ws, active=ws.name in active_ids, failed=ws.name in failed_ids)
+            )
         except (FileNotFoundError, ValueError):
             continue
     items.sort(key=lambda d: d.get("created_at") or "", reverse=True)
     return items
 
 
-def detail(video_id: str, active: bool = False) -> dict | None:
+def detail(video_id: str, active: bool = False, failed: bool = False) -> dict | None:
     """Full status for one workspace, plus plan/metadata summaries when present."""
     ws = library_root() / video_id
     if not (ws / "pipeline.json").exists():
         return None
     p = pl.load(ws)
-    data = summarize(ws, active=active)
+    data = summarize(ws, active=active, failed=failed)
     data["context"] = p.get("context")
     data["stage_detail"] = p.get("stages", {})
     data["token_stats"] = p.get("token_stats")
@@ -214,11 +278,19 @@ class JobManager:
         self._lock = threading.Lock()
 
     def active_ids(self) -> set[str]:
+        return self._ids_with_status("running")
+
+    def failed_ids(self) -> set[str]:
+        """Videos whose latest job died — the library shows them as failed even
+        when ralph never got far enough to mark a stage."""
+        return self._ids_with_status("failed")
+
+    def _ids_with_status(self, status: str) -> set[str]:
         with self._lock:
             return {
                 self._jobs[jid].video_id
                 for jid in self._by_video.values()
-                if self._jobs[jid].status == "running"
+                if self._jobs[jid].status == status
             }
 
     def get(self, job_id: str) -> Job | None:

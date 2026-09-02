@@ -18,8 +18,8 @@
         </div>
       </div>
       <nav class="nav">
-        <a class="nav-item active"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Biblioteca</a>
-        <a class="nav-item" id="nav-new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo edit</a>
+        <a class="nav-item" href="#/" data-route="/"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Biblioteca</a>
+        <a class="nav-item" href="#/novo" data-route="/novo"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo edit</a>
       </nav>
       <div class="sidebar-foot">
         <div class="engine-status" id="engine-status">
@@ -29,21 +29,21 @@
       </div>
     </aside>
 
-    <!-- Main -->
-    <main class="main">
+    <!-- Biblioteca -->
+    <main class="main" data-screen="library">
       <header class="topbar">
         <div class="titles">
           <div class="page-title">Biblioteca</div>
           <div class="page-sub" id="lib-sub">carregando…</div>
         </div>
-        <button class="btn btn-primary" id="btn-new">
+        <a class="btn btn-primary" href="#/novo">
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Novo edit
-        </button>
+        </a>
       </header>
 
-      <div id="offline" class="banner" hidden>
+      <div class="banner" data-offline-banner hidden>
         <b>Motor offline.</b> Rode <code class="mono">auto-edit serve</code> no terminal e clique em
-        <a id="retry">tentar de novo</a>. (mostrando exemplos abaixo)
+        <a data-retry>tentar de novo</a>. (mostrando exemplos abaixo)
       </div>
 
       <div class="content">
@@ -54,7 +54,125 @@
         <div id="empty" class="empty" hidden>Nenhum vídeo no workspace ainda.</div>
       </div>
     </main>
+
+    <!-- Novo edit -->
+    <main class="main" data-screen="new" hidden>
+      <header class="topbar">
+        <div class="titles">
+          <div class="page-title">Novo edit</div>
+          <div class="page-sub">escolha o vídeo, diga do que ele trata e o pipeline assume</div>
+        </div>
+        <button class="btn" id="btn-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="btn-start" disabled>Iniciar edição</button>
+      </header>
+
+      <div class="banner" data-offline-banner hidden>
+        <b>Motor offline.</b> Rode <code class="mono">auto-edit serve</code> pra listar arquivos e iniciar edições.
+      </div>
+
+      <div class="content form">
+        <div id="new-error" class="banner err" hidden></div>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="step mono">1</span>
+            <div>
+              <h2>Vídeo</h2>
+              <p>Arquivos da sua pasta de entrada (<code class="mono">AUTO_EDIT_INBOX</code>, ou <code class="mono">upload/</code>).</p>
+            </div>
+          </div>
+
+          <div class="picker">
+            <div class="pick-bar">
+              <button class="btn btn-sm" id="pick-up" type="button">↑ acima</button>
+              <span class="pick-path mono" id="pick-path">—</span>
+              <button class="btn btn-sm" id="pick-reload" type="button">recarregar</button>
+            </div>
+            <div class="pick-list" id="pick-list"></div>
+          </div>
+
+          <label class="field">
+            <span>ou cole um caminho</span>
+            <input class="input mono" id="manual-path" placeholder="C:\videos\live.mp4" />
+          </label>
+          <div class="selected mono muted" id="sel-path">nenhum vídeo escolhido</div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="step mono">2</span>
+            <div>
+              <h2>Tipo</h2>
+              <p>Define o formato do corte e quais stages rodam.</p>
+            </div>
+          </div>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="vtype" value="short" />
+              <span class="choice-body">
+                <span class="choice-title">Short <span class="badge short">short</span></span>
+                <span class="choice-desc">Vertical, com legendas estilo CapCut. Pula overlay.</span>
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="vtype" value="long" />
+              <span class="choice-body">
+                <span class="choice-title">Long <span class="badge long">long</span></span>
+                <span class="choice-desc">Horizontal, com overlays e curadoria editorial. Pula legendas.</span>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="step mono">3</span>
+            <div>
+              <h2>Contexto</h2>
+              <p>O que o planner precisa saber pra cortar bem — tema, tom, o que não pode sumir.</p>
+            </div>
+          </div>
+          <textarea class="input" id="f-context" rows="3" placeholder="review de produto tech, tom direto, manter as comparações de preço"></textarea>
+        </section>
+
+        <details class="card options">
+          <summary>Opções</summary>
+          <div class="grid">
+            <label class="field">
+              <span>Idioma</span>
+              <select class="input" id="f-language">
+                <option value="pt" selected>pt</option>
+                <option value="en">en</option>
+                <option value="es">es</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Modelo Whisper</span>
+              <select class="input" id="f-whisper">
+                <option value="tiny">tiny</option>
+                <option value="base">base</option>
+                <option value="small" selected>small</option>
+                <option value="medium">medium</option>
+                <option value="large">large</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Máx. iterações</span>
+              <input class="input" id="f-iterations" type="number" min="1" max="5" value="3" />
+            </label>
+            <label class="field" id="row-overlays" hidden>
+              <span>Pasta de overlays</span>
+              <input class="input mono" id="f-overlays" placeholder="(padrão do projeto)" />
+            </label>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="f-dry" />
+            <span>Dry-run — planeja e mostra os cortes sem renderizar</span>
+          </label>
+        </details>
+      </div>
+    </main>
   </div>
-  <script src="app.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

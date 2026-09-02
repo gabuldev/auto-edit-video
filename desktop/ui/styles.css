@@ -80,3 +80,54 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .chip.running { background: rgba(245,181,68,.12); color: var(--run); } .chip.running .d { background: var(--run); }
 .chip.failed { background: rgba(248,113,113,.12); color: var(--err); } .chip.failed .d { background: var(--err); }
 .chip.idle { background: rgba(154,164,178,.10); color: var(--dim); } .chip.idle .d { background: var(--dim); }
+
+/* ── Novo edit ─────────────────────────────────────────────────────────────── */
+.banner.err { background: rgba(248,113,113,.10); color: #f6bcbb; margin: 0 0 16px; }
+.content.form { max-width: 860px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+.card-head { display: flex; gap: 13px; align-items: flex-start; margin-bottom: 14px; }
+.card-head h2 { font-size: 15px; margin: 0 0 3px; }
+.card-head p { margin: 0; font-size: 12.5px; color: var(--faint); }
+.card-head code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+.step { width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px; background: #1b2531; color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+
+.input { width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; color: var(--text); font-family: inherit; font-size: 13.5px; padding: 10px 12px; }
+.input:focus { outline: none; border-color: var(--accent); }
+textarea.input { resize: vertical; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.field > span { font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #5b6472; font-weight: 600; }
+.check { display: flex; align-items: center; gap: 9px; margin-top: 14px; font-size: 13px; color: var(--dim); }
+.check input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+/* File picker */
+.picker { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pick-bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.pick-path { flex: 1; font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.pick-list { max-height: 230px; overflow: auto; }
+.pick-item { display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 9px 12px; background: none; border: none; border-bottom: 1px solid var(--border-soft); color: var(--text); font-family: inherit; font-size: 13px; cursor: pointer; }
+.pick-item:hover { background: #1a212b; }
+.pick-item.sel { background: rgba(46,230,198,.08); box-shadow: inset 2px 0 0 var(--accent); }
+.pick-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-meta { font-size: 11px; color: var(--faint); }
+.pick-ico { width: 15px; height: 12px; border-radius: 3px; }
+.pick-ico.folder { background: #38465a; }
+.pick-ico.film { background: linear-gradient(135deg, #2ee6c6, #1aa6d6); }
+.pick-empty { padding: 22px; text-align: center; color: var(--faint); font-size: 13px; }
+.selected { margin-top: 10px; font-size: 12px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selected.muted { color: var(--faint); }
+
+/* Type choice */
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.choice { display: flex; gap: 11px; align-items: flex-start; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--accent); background: rgba(46,230,198,.06); }
+.choice input { accent-color: var(--accent); margin-top: 2px; width: 15px; height: 15px; }
+.choice-body { display: flex; flex-direction: column; gap: 4px; }
+.choice-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.choice-desc { font-size: 12px; color: var(--faint); line-height: 1.45; }
+
+/* Options */
+.options summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--dim); }
+.options summary::marker { color: var(--faint); }
+.options .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }

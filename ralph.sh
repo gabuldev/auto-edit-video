@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+# Defined up here because the ffmpeg resolution below already logs.
+log() { echo "[ralph] $*"; }
+
 STANDALONE_STAGE=""
 STANDALONE_OUTPUT=""
 STANDALONE_PROMPT=""
@@ -93,8 +96,6 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-log() { echo "[ralph] $*"; }
 
 get_stage() {
     $PYTHON -c "import json; print(json.load(open('$PIPELINE'))['current_stage'])"

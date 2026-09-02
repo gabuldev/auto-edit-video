@@ -54,6 +54,11 @@ class TestOverallStatus:
         p = {"current_stage": "plan", "stages": {"plan": {"status": "running"}}}
         assert engine.overall_status(p) == "running"
 
+    def test_failed_job_beats_untouched_stages(self):
+        """A run that dies before ralph marks anything must not read as idle."""
+        p = {"current_stage": "extract", "stages": {"extract": {"status": "pending"}}}
+        assert engine.overall_status(p, failed=True) == "failed"
+
     def test_idle_otherwise(self):
         p = {"current_stage": "extract", "stages": {"extract": {"status": "pending"}}}
         assert engine.overall_status(p) == "idle"
@@ -74,6 +79,11 @@ class TestLibrary:
         _mkws(tmp_path, "vid")
         assert engine.list_library()[0]["status"] == "idle"
         assert engine.list_library(active_ids={"vid"})[0]["status"] == "running"
+
+    def test_failed_id_marks_failed(self, tmp_path, monkeypatch):
+        _mkws(tmp_path, "b")
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        assert engine.list_library(failed_ids={"b"})[0]["status"] == "failed"
 
     def test_missing_root_is_empty(self, tmp_path, monkeypatch):
         monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path / "nope"))
@@ -223,6 +233,101 @@ class TestRunWorkspace:
         rc = engine.run_workspace(ws, emit=evs.append, popen=lambda *a, **k: None)
         assert rc == 1
         assert len(evs) == 1 and evs[0]["type"] == "error"
+
+
+# ── workspace root (library and start_edit must agree) ────────────────────────
+
+class TestWorkspaceRoot:
+    def test_defaults_to_workspace_dir(self, monkeypatch):
+        monkeypatch.delenv("AUTO_EDIT_WORKSPACE", raising=False)
+        assert engine.library_root() == Path("workspace")
+
+    def test_started_edits_land_where_the_library_looks(self, tmp_path, monkeypatch):
+        """Regression: start_edit used a hardcoded ./workspace, so an edit
+        started through the API never showed up in the library."""
+        from auto_edit import workspace as ws_mod
+
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path / "elsewhere"))
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"x")
+        ws = ws_mod.init_workspace(video, "short", "ctx")
+        assert ws.parent == engine.library_root()
+        assert engine.summarize(ws)["id"] == "clip"
+
+
+class TestJobStatusSets:
+    def test_failed_ids_tracks_the_latest_job(self):
+        mgr = engine.JobManager()
+        done = threading.Event()
+
+        def boom(emit):
+            emit({"type": "error", "message": "kaput"})
+            done.set()
+            return 1
+
+        mgr._spawn("vid", "edit", boom)
+        assert done.wait(2)
+        time.sleep(0.05)
+        assert mgr.failed_ids() == {"vid"}
+        assert mgr.active_ids() == set()
+
+
+# ── browse (file picker source) ───────────────────────────────────────────────
+
+class TestBrowse:
+    def _tree(self, root: Path) -> Path:
+        (root / "sub").mkdir()
+        (root / ".hidden").mkdir()
+        (root / "a.mp4").write_bytes(b"x" * 10)
+        (root / "b.MOV").write_bytes(b"y" * 20)
+        (root / "notes.txt").write_text("nope")
+        return root
+
+    def test_lists_videos_and_dirs(self, tmp_path):
+        out = engine.browse(str(self._tree(tmp_path)))
+        assert out["exists"] is True
+        assert [d["name"] for d in out["dirs"]] == ["sub"]  # hidden folder skipped
+        assert {v["name"] for v in out["videos"]} == {"a.mp4", "b.MOV"}  # .txt skipped
+        assert all(v["size"] > 0 and v["path"] for v in out["videos"])
+
+    def test_newest_video_first(self, tmp_path):
+        import os
+        self._tree(tmp_path)
+        os.utime(tmp_path / "a.mp4", (1_600_000_000, 1_600_000_000))
+        os.utime(tmp_path / "b.MOV", (1_700_000_000, 1_700_000_000))
+        out = engine.browse(str(tmp_path))
+        assert [v["name"] for v in out["videos"]] == ["b.MOV", "a.mp4"]
+
+    def test_missing_dir_reports_not_exists(self, tmp_path):
+        out = engine.browse(str(tmp_path / "nope"))
+        assert out["exists"] is False and out["videos"] == [] and out["parent"]
+
+    def test_defaults_to_inbox(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_INBOX", str(self._tree(tmp_path)))
+        out = engine.browse()
+        assert Path(out["dir"]) == tmp_path.resolve()
+        assert len(out["videos"]) == 2
+
+
+# ── HTTP surface (skipped where Flask isn't installed, e.g. CI) ───────────────
+
+class TestBrowseEndpoint:
+    def _client(self):
+        import pytest
+        pytest.importorskip("flask")
+        return api.create_app().test_client()
+
+    def test_browse_defaults_to_inbox(self, tmp_path, monkeypatch):
+        (tmp_path / "clip.mp4").write_bytes(b"x")
+        monkeypatch.setenv("AUTO_EDIT_INBOX", str(tmp_path))
+        body = self._client().get("/api/browse").get_json()
+        assert body["exists"] is True
+        assert [v["name"] for v in body["videos"]] == ["clip.mp4"]
+
+    def test_browse_honors_dir_param(self, tmp_path):
+        (tmp_path / "other.mkv").write_bytes(b"x")
+        body = self._client().get(f"/api/browse?dir={tmp_path}").get_json()
+        assert [v["name"] for v in body["videos"]] == ["other.mkv"]
 
 
 # ── api._sse (pure) ───────────────────────────────────────────────────────────

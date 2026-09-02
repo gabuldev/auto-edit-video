@@ -91,7 +91,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
 | `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` |
-| `AUTO_EDIT_WORKSPACE` | `workspace` | Pasta raiz que guarda os workspaces por vídeo (usada pelo motor headless `auto-edit serve`) |
+| `AUTO_EDIT_WORKSPACE` | `workspace` | Pasta raiz que guarda os workspaces por vídeo (CLI, MCP e motor headless) |
 
 ## Slash Commands Disponíveis
 
@@ -130,6 +130,7 @@ fica em `auto_edit/engine.py` (fachada pura sobre `ralph.sh` + `pipeline.py` +
 ```
 GET  /api/health
 GET  /api/library                 # lista workspaces + status derivado
+GET  /api/browse?dir=             # pastas + vídeos de um diretório (file picker)
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
 POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}
 POST /api/videos/<id>/resume      # {from_stage}
