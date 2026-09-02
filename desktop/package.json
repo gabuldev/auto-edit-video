@@ -1,0 +1,15 @@
+{
+  "name": "auto-edit-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auto-Edit desktop — Tauri prototype (thin client over `auto-edit serve`).",
+  "scripts": {
+    "tauri": "tauri",
+    "icon": "tauri icon app-icon.png",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

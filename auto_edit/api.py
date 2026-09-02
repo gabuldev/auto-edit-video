@@ -44,6 +44,16 @@ def create_app(jobs: engine.JobManager | None = None):
     jobs = jobs or engine.jobs
     app = Flask("auto_edit.api")
 
+    # Permissive CORS: this is a localhost-only dev API consumed by a separate
+    # origin (the Tauri webview / a browser preview). Flask auto-handles the
+    # OPTIONS preflight; we just stamp the headers on every response.
+    @app.after_request
+    def _cors(resp):
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        return resp
+
     @app.get("/api/health")
     def health():
         return jsonify({"ok": True, "repo_root": str(engine.repo_root())})
