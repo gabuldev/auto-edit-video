@@ -132,6 +132,8 @@ GET  /api/health
 GET  /api/library                 # lista workspaces + status derivado
 GET  /api/browse?dir=             # pastas + vídeos de um diretório (file picker)
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
+GET  /api/videos/<id>/plan        # cortes + o que é dito em cada trecho
+PUT  /api/videos/<id>/plan        # {kept_segments: [{start, end, summary?}]}
 POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}
 POST /api/videos/<id>/resume      # {from_stage}
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/done/error)

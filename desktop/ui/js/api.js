@@ -21,6 +21,15 @@ export const library = () => json("/api/library").then((b) => b.videos || []);
 
 export const video = (id) => json(`/api/videos/${encodeURIComponent(id)}`);
 
+export const plan = (id) => json(`/api/videos/${encodeURIComponent(id)}/plan`);
+
+export const savePlan = (id, kept_segments) =>
+  json(`/api/videos/${encodeURIComponent(id)}/plan`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kept_segments }),
+  });
+
 export const resume = (id, from_stage) =>
   json(`/api/videos/${encodeURIComponent(id)}/resume`, {
     method: "POST",

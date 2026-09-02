@@ -12,6 +12,8 @@ Endpoints
     GET  /api/library
     GET  /api/browse?dir=            (folders + videos, for the picker)
     GET  /api/videos/<id>
+    GET  /api/videos/<id>/plan       (cortes + o que é dito em cada um)
+    PUT  /api/videos/<id>/plan       {kept_segments: [{start, end, summary?}]}
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run,
                                     overlays_dir}
@@ -52,7 +54,7 @@ def create_app(jobs: engine.JobManager | None = None):
     def _cors(resp):
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
         return resp
 
     @app.get("/api/health")
@@ -86,6 +88,24 @@ def create_app(jobs: engine.JobManager | None = None):
         job = jobs.job_for_video(video_id)
         if job is not None:
             data["job_id"] = job.id
+        return jsonify(data)
+
+    @app.get("/api/videos/<video_id>/plan")
+    def video_plan(video_id: str):
+        data = engine.read_plan(video_id)
+        if data is None:
+            return jsonify({"error": "no_plan", "id": video_id}), 404
+        return jsonify(data)
+
+    @app.put("/api/videos/<video_id>/plan")
+    def save_video_plan(video_id: str):
+        body = request.get_json(silent=True) or {}
+        try:
+            data = engine.write_plan(video_id, body.get("kept_segments"))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify(data)
 
     @app.post("/api/edit")

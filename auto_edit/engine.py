@@ -12,6 +12,7 @@ Nothing here imports a web framework; `api.py` layers HTTP/SSE on top.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -129,7 +130,6 @@ def _output_file(ws: Path, pipeline: dict) -> Path | None:
 
 
 def _read_json(path: Path) -> dict | list | None:
-    import json
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -209,6 +209,142 @@ def detail(video_id: str, active: bool = False, failed: bool = False) -> dict | 
         data["metadata"] = metadata
 
     return data
+
+
+# ── Cut plan (read + edit) ────────────────────────────────────────────────────
+
+PLAN_FILES = ("reviewed_plan.json", "cut_plan.json")
+AGENT_PLAN_BACKUP = "reviewed_plan.agent.json"
+
+
+def _plan_path(ws: Path) -> Path | None:
+    """The plan the executor would use, falling back to the planner's draft."""
+    for name in PLAN_FILES:
+        if (ws / name).exists():
+            return ws / name
+    return None
+
+
+def _transcript_text(segments: list[dict], start: float, end: float, limit: int = 400) -> str:
+    """Whatever was said inside a window — that's what makes a cut reviewable."""
+    said = [
+        (s.get("text") or "").strip()
+        for s in segments
+        if s.get("end", 0) > start and s.get("start", 0) < end
+    ]
+    text = " ".join(t for t in said if t)
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def read_plan(video_id: str) -> dict | None:
+    """The cut plan of a workspace, enriched with what is said in each segment.
+
+    Returns None when the workspace doesn't exist or hasn't planned yet — the
+    plan only shows up after the `plan`/`review` stages.
+    """
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    path = _plan_path(ws)
+    if path is None:
+        return None
+    plan = _read_json(path)
+    if not isinstance(plan, dict):
+        return None
+
+    transcription = _read_json(ws / "transcription.json")
+    segments = []
+    duration = None
+    if isinstance(transcription, dict):
+        segments = transcription.get("segments") or []
+        duration = transcription.get("duration")
+
+    kept = []
+    for i, seg in enumerate(plan.get("kept_segments") or []):
+        try:
+            start, end = float(seg["start"]), float(seg["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        kept.append(
+            {
+                "index": i,
+                "start": start,
+                "end": end,
+                "duration": round(end - start, 3),
+                "summary": seg.get("summary") or seg.get("reason"),
+                "text": _transcript_text(segments, start, end),
+            }
+        )
+
+    cuts = []
+    for cut in plan.get("cuts") or []:
+        try:
+            start, end = float(cut["start"]), float(cut["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        cuts.append(
+            {
+                "start": start,
+                "end": end,
+                "duration": round(end - start, 3),
+                "reason": cut.get("reason"),
+                "type": cut.get("type"),
+            }
+        )
+
+    return {
+        "id": video_id,
+        "source": path.name,
+        "editable": path.name == "reviewed_plan.json",
+        "duration": duration,
+        "kept_total": round(sum(k["duration"] for k in kept), 3),
+        "kept_segments": kept,
+        "cuts": cuts,
+        "dropped_blocks": plan.get("dropped_blocks"),
+    }
+
+
+def write_plan(video_id: str, kept_segments: list[dict]) -> dict:
+    """Replace the kept segments of a workspace's plan.
+
+    Everything else in the plan (cuts, dropped_blocks, …) is preserved, and the
+    agent's own version is kept once as `reviewed_plan.agent.json` so an edit
+    made by hand never destroys what the planner proposed.
+    """
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    if not isinstance(kept_segments, list) or not kept_segments:
+        raise ValueError("kept_segments must be a non-empty list")
+
+    cleaned: list[dict] = []
+    for i, seg in enumerate(kept_segments):
+        try:
+            start, end = float(seg["start"]), float(seg["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"kept_segments[{i}] needs numeric start and end") from exc
+        if start < 0:
+            raise ValueError(f"kept_segments[{i}] start is negative")
+        if end <= start:
+            raise ValueError(f"kept_segments[{i}] end must be greater than start")
+        entry = {"start": round(start, 3), "end": round(end, 3)}
+        if seg.get("summary"):
+            entry["summary"] = seg["summary"]
+        cleaned.append(entry)
+    cleaned.sort(key=lambda s: s["start"])
+
+    path = _plan_path(ws)
+    base = _read_json(path) if path else None
+    plan = dict(base) if isinstance(base, dict) else {}
+
+    target = ws / "reviewed_plan.json"
+    backup = ws / AGENT_PLAN_BACKUP
+    if target.exists() and not backup.exists():
+        backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+
+    plan["kept_segments"] = cleaned
+    target.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+    return read_plan(video_id) or {}
 
 
 # ── Live job registry ─────────────────────────────────────────────────────────

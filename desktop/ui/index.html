@@ -181,6 +181,7 @@
           <div class="page-title" id="pipe-title">—</div>
           <div class="page-sub row-inline" id="pipe-sub"></div>
         </div>
+        <a class="btn" id="btn-see-cuts">Revisar cortes</a>
       </header>
 
       <div class="content pipe">
@@ -219,6 +220,52 @@
             </div>
             <div class="facts" id="pipe-facts"></div>
           </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Revisar cortes -->
+    <main class="main" data-screen="cuts" hidden>
+      <header class="topbar">
+        <button class="btn btn-icon" id="btn-cuts-back" title="Voltar">&larr;</button>
+        <div class="titles">
+          <div class="page-title" id="cuts-title">—</div>
+          <div class="page-sub row-inline" id="cuts-sub"></div>
+        </div>
+        <button class="btn" id="btn-save">Salvar plano</button>
+        <button class="btn btn-primary" id="btn-save-cut">Salvar e recortar</button>
+      </header>
+
+      <div class="content">
+        <div id="cuts-error" class="banner err" hidden></div>
+
+        <div id="cuts-none" class="empty" hidden>
+          Este vídeo ainda não tem plano de cortes — ele aparece depois dos stages
+          <code class="mono">plan</code> e <code class="mono">review</code>.
+        </div>
+
+        <div id="cuts-body" hidden>
+          <div id="blocks-box" class="card" hidden>
+            <div class="card-head">
+              <div>
+                <h2>Blocos descartados</h2>
+                <p>curadoria editorial do planner de vídeos long.</p>
+              </div>
+            </div>
+            <ul class="blocks" id="cuts-blocks"></ul>
+          </div>
+
+          <div class="seg-head-row">
+            <span>Trechos mantidos</span>
+            <span class="dim">desmarque o que não deve entrar no corte final</span>
+          </div>
+          <div id="cuts-list" class="segs"></div>
+          <div id="cuts-empty" class="empty" hidden>O plano não tem trechos mantidos.</div>
+
+          <details id="removed-box" class="card removed" hidden>
+            <summary>O que o planner já cortou (<span id="removed-count">0</span>)</summary>
+            <div id="cuts-removed" class="cuts"></div>
+          </details>
         </div>
       </div>
     </main>

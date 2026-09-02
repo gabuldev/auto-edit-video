@@ -157,6 +157,7 @@ function wire() {
     state.pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
   });
   el("btn-pipe-back").addEventListener("click", () => go("/"));
+  el("btn-see-cuts").addEventListener("click", () => go(`/video/${encodeURIComponent(state.id)}/cortes`));
 }
 
 export default {
