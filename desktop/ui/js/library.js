@@ -1,11 +1,13 @@
-// Auto-Edit desktop — Biblioteca (thin client over the headless API).
-// Works both inside Tauri and opened directly in a browser (against `auto-edit serve`).
+// Biblioteca — the list of workspaces, with live per-row progress over SSE.
 
-const API = (window.AUTO_EDIT_API || "http://127.0.0.1:8760").replace(/\/$/, "");
+import * as api from "./api.js";
+import { el, escapeHtml, setEngine } from "./shell.js";
+
 const STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail"];
 
-const el = (id) => document.getElementById(id);
 const streams = new Map(); // video id -> EventSource
+const noStream = new Set(); // ids whose SSE 404'd (status says running, engine has no live job)
+let timer = null;
 
 // Shown only when the engine is unreachable, so you still see the design.
 const SAMPLE = [
@@ -21,37 +23,16 @@ function stageMap(cur) {
   return m;
 }
 
-async function health() {
-  try {
-    const r = await fetch(`${API}/api/health`, { cache: "no-store" });
-    return r.ok;
-  } catch { return false; }
-}
-
-async function fetchLibrary() {
-  const r = await fetch(`${API}/api/library`, { cache: "no-store" });
-  if (!r.ok) throw new Error("library " + r.status);
-  return (await r.json()).videos || [];
-}
-
-function setEngine(ok) {
-  const box = el("engine-status");
-  box.className = "engine-status " + (ok ? "ok" : "off");
-  el("engine-label").textContent = ok ? "engine ok" : "offline";
-  el("offline").hidden = ok;
-}
-
 function typeBadge(t) { return `<span class="badge ${t === "short" ? "short" : "long"}">${t || "?"}</span>`; }
 
 function dots(v) {
-  const cur = v.current_stage;
   const stages = v.stages || {};
   return STAGES.map((s) => {
     const st = stages[s];
     let cls = "";
     if (st === "complete") cls = "done";
-    else if (s === cur && v.status === "running") cls = "cur";
-    else if (s === cur && v.status === "failed") cls = "cur err";
+    else if (s === v.current_stage && v.status === "running") cls = "cur";
+    else if (s === v.current_stage && v.status === "failed") cls = "cur err";
     return `<span class="${cls}"></span>`;
   }).join("");
 }
@@ -93,9 +74,9 @@ function render(videos) {
 
 // Live progress for a running video via SSE.
 function subscribe(v) {
-  if (streams.has(v.id)) return;
+  if (streams.has(v.id) || noStream.has(v.id)) return;
   let es;
-  try { es = new EventSource(`${API}/api/videos/${v.id}/events`); }
+  try { es = api.videoEvents(v.id); }
   catch { return; }
   streams.set(v.id, es);
   es.onmessage = (m) => {
@@ -110,28 +91,38 @@ function subscribe(v) {
     } else if (ev.type === "log") {
       row.querySelector("[data-meta]").textContent = ev.line.slice(0, 60);
     } else if (ev.type === "done" || ev.type === "error") {
-      es.close(); streams.delete(v.id);
+      close(v.id);
       refresh();
     }
   };
-  es.onerror = () => { es.close(); streams.delete(v.id); };
+  // A workspace can read as "running" with no live job (the engine was restarted
+  // mid-edit). Remember that, or every poll reopens a stream that 404s.
+  es.onerror = () => { close(v.id); noStream.add(v.id); };
 }
 
-async function refresh() {
-  const ok = await health();
+function close(id) {
+  streams.get(id)?.close();
+  streams.delete(id);
+}
+
+export async function refresh() {
+  const ok = await api.health();
   setEngine(ok);
   if (!ok) { render(SAMPLE); return; }
-  try { render(await fetchLibrary()); }
+  try { render(await api.library()); }
   catch { setEngine(false); render(SAMPLE); }
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
-
-el("btn-new").addEventListener("click", () => alert("Tela 'Novo edit' — próximo passo do protótipo."));
-el("nav-new").addEventListener("click", () => alert("Tela 'Novo edit' — próximo passo do protótipo."));
-el("retry").addEventListener("click", (e) => { e.preventDefault(); refresh(); });
-
-refresh();
-setInterval(refresh, 5000); // fallback poll (CI success / new pushes aren't pushed via SSE)
+export default {
+  id: "library",
+  mount() {
+    refresh();
+    timer = setInterval(refresh, 5000); // fallback poll: SSE only covers live jobs
+  },
+  unmount() {
+    clearInterval(timer);
+    timer = null;
+    [...streams.keys()].forEach(close);
+    noStream.clear();
+  },
+};

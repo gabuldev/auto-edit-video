@@ -3,9 +3,19 @@ Workspace management — one directory per video under workspace/.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from auto_edit import pipeline as pl
+
+
+def workspace_root() -> Path:
+    """Root folder holding one directory per video.
+
+    Single source of truth for every consumer (CLI, MCP server, headless
+    engine) — override it with AUTO_EDIT_WORKSPACE.
+    """
+    return Path(os.environ.get("AUTO_EDIT_WORKSPACE", "workspace"))
 
 
 def get_workspace(video_path: Path, plan_id: str | None = None) -> Path:
@@ -14,7 +24,7 @@ def get_workspace(video_path: Path, plan_id: str | None = None) -> Path:
     With a plan_id like "2026-W19/S2", workspace is namespaced as
     workspace/<period>_<item>_<stem>/ so it's easy to spot visually.
     """
-    root = Path("workspace")
+    root = workspace_root()
     if plan_id:
         slug = plan_id.replace("/", "_")
         return root / f"{slug}_{video_path.stem}"
