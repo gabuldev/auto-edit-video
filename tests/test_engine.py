@@ -8,6 +8,8 @@ import json
 import sys
 import threading
 import time
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -272,6 +274,103 @@ class TestJobStatusSets:
         assert mgr.active_ids() == set()
 
 
+# ── cut plan (read + edit) ────────────────────────────────────────────────────
+
+class TestPlan:
+    def _ws(self, tmp_path, monkeypatch, plan=None, transcription=True):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        ws = _mkws(tmp_path, "vid")
+        if plan is not None:
+            (ws / "reviewed_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        if transcription:
+            (ws / "transcription.json").write_text(
+                json.dumps(
+                    {
+                        "duration": 120.0,
+                        "segments": [
+                            {"start": 0.0, "end": 5.0, "text": "abertura do vídeo"},
+                            {"start": 5.0, "end": 9.0, "text": "explicando o produto"},
+                            {"start": 30.0, "end": 34.0, "text": "trecho descartado"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return ws
+
+    def test_none_before_planning(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch)
+        assert engine.read_plan("vid") is None
+
+    def test_none_for_unknown_workspace(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        assert engine.read_plan("nope") is None
+
+    def test_reads_segments_with_what_is_said(self, tmp_path, monkeypatch):
+        self._ws(
+            tmp_path,
+            monkeypatch,
+            plan={
+                "kept_segments": [{"start": 0.0, "end": 9.0, "summary": "intro"}],
+                "cuts": [{"start": 30.0, "end": 34.0, "reason": "tangente", "type": "content"}],
+                "dropped_blocks": ["bloco sobre preço"],
+            },
+        )
+        out = engine.read_plan("vid")
+        assert out["duration"] == 120.0
+        assert out["kept_total"] == 9.0
+        seg = out["kept_segments"][0]
+        assert seg["duration"] == 9.0 and seg["summary"] == "intro"
+        assert seg["text"] == "abertura do vídeo explicando o produto"
+        assert out["cuts"][0]["duration"] == 4.0
+        assert out["dropped_blocks"] == ["bloco sobre preço"]
+
+    def test_falls_back_to_the_planner_draft(self, tmp_path, monkeypatch):
+        ws = self._ws(tmp_path, monkeypatch)
+        (ws / "cut_plan.json").write_text(json.dumps({"kept_segments": [{"start": 1, "end": 2}]}))
+        out = engine.read_plan("vid")
+        assert out["source"] == "cut_plan.json" and out["editable"] is False
+
+    def test_skips_malformed_segments(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, plan={"kept_segments": [{"start": 1}, {"start": 2, "end": 4}]})
+        assert len(engine.read_plan("vid")["kept_segments"]) == 1
+
+    def test_write_replaces_kept_and_keeps_the_rest(self, tmp_path, monkeypatch):
+        self._ws(
+            tmp_path,
+            monkeypatch,
+            plan={"kept_segments": [{"start": 0, "end": 9}], "cuts": [{"start": 30, "end": 34}]},
+        )
+        out = engine.write_plan("vid", [{"start": 5, "end": 9, "summary": "só o miolo"}])
+        assert [(s["start"], s["end"]) for s in out["kept_segments"]] == [(5.0, 9.0)]
+        saved = json.loads((tmp_path / "vid" / "reviewed_plan.json").read_text(encoding="utf-8"))
+        assert saved["cuts"] == [{"start": 30, "end": 34}]  # untouched
+
+    def test_write_backs_up_the_agent_plan_once(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, plan={"kept_segments": [{"start": 0, "end": 9}]})
+        engine.write_plan("vid", [{"start": 1, "end": 2}])
+        backup = tmp_path / "vid" / engine.AGENT_PLAN_BACKUP
+        assert json.loads(backup.read_text(encoding="utf-8"))["kept_segments"][0]["end"] == 9
+        engine.write_plan("vid", [{"start": 3, "end": 4}])
+        assert json.loads(backup.read_text(encoding="utf-8"))["kept_segments"][0]["end"] == 9
+
+    def test_write_sorts_by_start(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, plan={"kept_segments": []})
+        out = engine.write_plan("vid", [{"start": 9, "end": 12}, {"start": 1, "end": 3}])
+        assert [s["start"] for s in out["kept_segments"]] == [1.0, 9.0]
+
+    def test_write_rejects_garbage(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, plan={"kept_segments": []})
+        for bad in ([], None, [{"start": 5, "end": 5}], [{"start": -1, "end": 2}], [{"start": "a", "end": 2}]):
+            with pytest.raises(ValueError):
+                engine.write_plan("vid", bad)
+
+    def test_write_needs_a_workspace(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        with pytest.raises(FileNotFoundError):
+            engine.write_plan("nope", [{"start": 1, "end": 2}])
+
+
 # ── browse (file picker source) ───────────────────────────────────────────────
 
 class TestBrowse:
@@ -323,6 +422,38 @@ class TestBrowseEndpoint:
         body = self._client().get("/api/browse").get_json()
         assert body["exists"] is True
         assert [v["name"] for v in body["videos"]] == ["clip.mp4"]
+
+    def test_plan_404_before_planning(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "vid")
+        assert self._client().get("/api/videos/vid/plan").status_code == 404
+
+    def test_put_plan_round_trip(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        ws = _mkws(tmp_path, "vid")
+        (ws / "reviewed_plan.json").write_text(json.dumps({"kept_segments": [{"start": 0, "end": 9}]}))
+        client = self._client()
+        r = client.put("/api/videos/vid/plan", json={"kept_segments": [{"start": 2, "end": 5}]})
+        assert r.status_code == 200
+        assert r.get_json()["kept_segments"][0]["start"] == 2.0
+        assert client.get("/api/videos/vid/plan").get_json()["kept_total"] == 3.0
+
+    def test_cors_allows_the_put(self, tmp_path, monkeypatch):
+        """The browser preflights PUT: if the header lists only GET/POST the
+        save silently fails with "Failed to fetch"."""
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "vid")
+        r = self._client().options(
+            "/api/videos/vid/plan",
+            headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT"},
+        )
+        assert "PUT" in r.headers["Access-Control-Allow-Methods"]
+
+    def test_put_plan_rejects_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "vid")
+        r = self._client().put("/api/videos/vid/plan", json={"kept_segments": []})
+        assert r.status_code == 400
 
     def test_browse_honors_dir_param(self, tmp_path):
         (tmp_path / "other.mkv").write_bytes(b"x")
