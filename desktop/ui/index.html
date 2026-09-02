@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Auto-Edit</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">G</div>
+        <div class="brand-text">
+          <span class="brand-name">gabuldev</span>
+          <span class="brand-tag mono">auto-edit</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item active"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Biblioteca</a>
+        <a class="nav-item" id="nav-new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo edit</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="engine-status" id="engine-status">
+          <span class="dot" id="engine-dot"></span>
+          <span id="engine-label" class="mono">verificando…</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <div class="titles">
+          <div class="page-title">Biblioteca</div>
+          <div class="page-sub" id="lib-sub">carregando…</div>
+        </div>
+        <button class="btn btn-primary" id="btn-new">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Novo edit
+        </button>
+      </header>
+
+      <div id="offline" class="banner" hidden>
+        <b>Motor offline.</b> Rode <code class="mono">auto-edit serve</code> no terminal e clique em
+        <a id="retry">tentar de novo</a>. (mostrando exemplos abaixo)
+      </div>
+
+      <div class="content">
+        <div class="table-head">
+          <div>Vídeo</div><div>Tipo</div><div>Pipeline</div><div>Status</div>
+        </div>
+        <div id="rows" class="rows"></div>
+        <div id="empty" class="empty" hidden>Nenhum vídeo no workspace ainda.</div>
+      </div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
