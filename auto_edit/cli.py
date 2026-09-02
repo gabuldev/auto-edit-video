@@ -339,11 +339,19 @@ def long(
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
     plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'L1' or '2026-W19/L1'). Use 'none' to skip prompt."),
     no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
+    overlays_dir: Optional[Path] = typer.Option(
+        None,
+        "--overlays-dir",
+        help="Folder holding the overlay .mp4s (sets AUTO_EDIT_ASSETS_OVERLAYS).",
+    ),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
         console.print(f"[red]Invalid model.[/red] Choose from: {', '.join(VALID_MODELS)}")
         raise typer.Exit(1)
+    if overlays_dir is not None:
+        os.environ["AUTO_EDIT_ASSETS_OVERLAYS"] = str(overlays_dir.expanduser().resolve())
+        console.print(f"[cyan]Overlays dir:[/cyan] {os.environ['AUTO_EDIT_ASSETS_OVERLAYS']}")
     pid = _resolve_plan(plan_id, no_plan_prompt, resume_from)
     _run_pipeline(
         video,
@@ -790,6 +798,11 @@ def _print_curation_summary(ws: Path) -> None:
 @app.command("apply-overlays")
 def apply_overlays(
     video: Path = typer.Argument(..., help="Original video file (same stem as workspace/<name>/)"),
+    overlays_dir: Optional[Path] = typer.Option(
+        None,
+        "--overlays-dir",
+        help="Folder holding the overlay .mp4s (sets AUTO_EDIT_ASSETS_OVERLAYS for this run).",
+    ),
 ) -> None:
     """Run only tools/overlayer.py: uses existing overlay_plan.json + edited_video.mp4 (no LLM)."""
     ws = get_workspace(video)
@@ -822,6 +835,9 @@ def apply_overlays(
 
     env = os.environ.copy()
     env["AUTO_EDIT_REPO_ROOT"] = str(RALPH_SCRIPT.parent.resolve())
+    if overlays_dir is not None:
+        env["AUTO_EDIT_ASSETS_OVERLAYS"] = str(overlays_dir.expanduser().resolve())
+        console.print(f"[cyan]Overlays dir:[/cyan] {env['AUTO_EDIT_ASSETS_OVERLAYS']}")
 
     console.print(f"[cyan]Workspace:[/cyan] {ws.resolve()}")
     console.print("[dim]Applying overlays only (FFmpeg + assets)…[/dim]\n")
@@ -976,6 +992,19 @@ def doctor() -> None:
     for d in ("agents", "tools"):
         p = REPO_ROOT / d
         checks.append((f"{d}/", str(p), "[green]OK[/green]" if p.is_dir() else "[red]MISSING[/red]"))
+
+    # Overlay assets (long-form overlays fail if these .mp4s aren't found)
+    from auto_edit.overlay_assets import overlay_search_dirs
+    ov_dirs = overlay_search_dirs()
+    ov_hit = next((d for d in ov_dirs if d.is_dir() and any(d.glob("*.mp4"))), None)
+    if ov_hit is not None:
+        checks.append(("overlays", str(ov_hit), f"[green]OK[/green] ({len(list(ov_hit.glob('*.mp4')))} .mp4)"))
+    else:
+        checks.append((
+            "overlays",
+            " ; ".join(str(d) for d in ov_dirs),
+            "[yellow]WARN[/yellow] no .mp4 found (set AUTO_EDIT_ASSETS_OVERLAYS)",
+        ))
 
     # LLM CLI
     for cli_name in ("claude", "cursor"):
