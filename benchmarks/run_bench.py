@@ -34,6 +34,12 @@ from benchmarks.gemini_plan import DEFAULT_MODEL, plan_with_gemini  # noqa: E402
 PYTHON = sys.executable
 ARMS = ("nosso", "gemini")
 
+# The steps we launch directly (executor, snap) skip ralph.sh, so they would not
+# inherit its UTF-8 defaults — and they read plans full of accented Portuguese
+# with read_text(), which is cp1252 on Windows.
+os.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
 
 def run(cmd: list[str], env: dict | None = None) -> float:
     """Run a step, streaming its output. Returns wall time in seconds."""
@@ -64,12 +70,17 @@ def arm_ours(video: Path, context: str, slug: str, language: str) -> tuple[Path,
         print(f"[bench] reaproveitando {ws} (já tem plano)")
         return ws, 0.0
 
-    make_workspace(ws, video, context, language)
+    if (ws / "pipeline.json").exists():
+        # Resume where it stopped instead of transcribing 12 minutes again:
+        # ralph reads current_stage from the workspace.
+        print(f"[bench] retomando {ws} de onde parou")
+    else:
+        make_workspace(ws, video, context, language)
     env = os.environ.copy()
     env["AUTO_EDIT_DRY_RUN"] = "1"
     env["AUTO_EDIT_LANGUAGE"] = language
     env["PYTHON"] = PYTHON
-    return ws, run(["bash", str(REPO_ROOT / "ralph.sh"), str(ws)], env=env)
+    return ws, run(["bash", str(REPO_ROOT / "ralph.sh"), str(ws.resolve())], env=env)
 
 
 def arm_gemini(
@@ -89,9 +100,17 @@ def arm_gemini(
 
 
 def snap_and_measure(ws: Path, words: list[dict]) -> dict:
-    """Apply the shared boundary repair, reporting how much each plan needed it."""
+    """Apply the shared boundary repair, reporting how much each plan needed it.
+
+    `snap` itself writes reviewed_plan.pre_snap.json, and that is the only
+    trustworthy "before": copying reviewed_plan.json would silently measure an
+    already-snapped plan whenever the arm resumed from a previous run.
+    """
+    pre_snap = ws / "reviewed_plan.pre_snap.json"
     raw = ws / "reviewed_plan.raw.json"
-    if not raw.exists():
+    if pre_snap.exists():
+        raw = pre_snap
+    elif not raw.exists():
         shutil.copy2(ws / "reviewed_plan.json", raw)
 
     def clipped(path: Path) -> int:
@@ -235,7 +254,12 @@ def main() -> None:
     extra = {
         "snap": snap_stats,
         "cost": {
-            "nosso": {"seconds": round(ours_seconds, 1), "tokens": our_tokens(ws_ours)},
+            # 0s means the arm was reused from a previous run, not that it was
+            # instant — saying "0.0s" next to Gemini's real 386s would be a lie.
+            "nosso": {
+                "seconds": round(ours_seconds, 1) if ours_seconds else "reaproveitado",
+                "tokens": our_tokens(ws_ours),
+            },
             "gemini": {
                 "seconds": gemini_report.get("seconds"),
                 "tokens": gemini_report.get("total_tokens"),

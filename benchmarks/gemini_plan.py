@@ -17,6 +17,7 @@ Requires GEMINI_API_KEY (or GOOGLE_API_KEY) and `pip install google-genai`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -63,8 +64,47 @@ def build_prompt(brief_path: Path, context: str, duration: float) -> str:
     return ADAPTER_HEADER + brief + context_block + ADAPTER_FOOTER.format(duration=duration)
 
 
+UPLOAD_CACHE = Path(__file__).resolve().parent / ".upload-cache"
+# 503/429 from the model are routine ("high demand"), and losing a 434 MB upload
+# to one is not acceptable — so the handle is cached and the call is retried.
+RETRY_STATUSES = ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
+RETRY_ATTEMPTS = 5
+RETRY_BASE_WAIT = 20.0
+
+
+def _cache_path(video: Path) -> Path:
+    stat = video.stat()
+    key = hashlib.sha1(f"{video.resolve()}|{stat.st_size}|{int(stat.st_mtime)}".encode()).hexdigest()[:16]
+    return UPLOAD_CACHE / f"{key}.json"
+
+
+def _cached_handle(client, video: Path):
+    """Reuse a still-live upload of this exact file (Files API keeps it 48h)."""
+    path = _cache_path(video)
+    if not path.exists():
+        return None
+    try:
+        name = json.loads(path.read_text(encoding="utf-8"))["name"]
+        handle = client.files.get(name=name)
+    except Exception:
+        return None
+    if getattr(handle.state, "name", str(handle.state)) != "ACTIVE":
+        return None
+    print(f"[gemini] reaproveitando upload {handle.name}")
+    return handle
+
+
+def remember_upload(video: Path, name: str) -> None:
+    UPLOAD_CACHE.mkdir(parents=True, exist_ok=True)
+    _cache_path(video).write_text(json.dumps({"name": name, "video": str(video)}), encoding="utf-8")
+
+
 def upload(client, video: Path, poll: float = 5.0, timeout: float = 900.0):
     """Upload to the Files API and wait until the video is ACTIVE."""
+    cached = _cached_handle(client, video)
+    if cached is not None:
+        return cached
+
     print(f"[gemini] uploading {video.name} ({video.stat().st_size / 1e6:.1f} MB)…")
     handle = client.files.upload(file=str(video))
     deadline = time.time() + timeout
@@ -77,7 +117,27 @@ def upload(client, video: Path, poll: float = 5.0, timeout: float = 900.0):
     if state != "ACTIVE":
         raise RuntimeError(f"upload finished in state {state}")
     print(f"[gemini] file ready: {handle.name}")
+    remember_upload(video, handle.name)
     return handle
+
+
+def _is_transient(exc: Exception) -> bool:
+    text = str(exc)
+    return any(status in text for status in RETRY_STATUSES)
+
+
+def generate_with_retry(client, model: str, contents, config):
+    """Call the model, riding out the transient overload errors."""
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            return client.models.generate_content(model=model, contents=contents, config=config)
+        except Exception as exc:
+            if not _is_transient(exc) or attempt == RETRY_ATTEMPTS:
+                raise
+            wait = RETRY_BASE_WAIT * (2 ** (attempt - 1))
+            print(f"[gemini] {type(exc).__name__} transitório (tentativa {attempt}/{RETRY_ATTEMPTS}) — esperando {wait:.0f}s")
+            time.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 def extract_json(text: str) -> dict:
@@ -173,10 +233,11 @@ def plan_with_gemini(
     print(f"[gemini] planning with {model}…")
     started = time.time()
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=[handle, prompt],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        response = generate_with_retry(
+            client,
+            model,
+            [handle, prompt],
+            types.GenerateContentConfig(response_mime_type="application/json"),
         )
     except Exception as exc:
         if "NOT_FOUND" in str(exc) or "not found" in str(exc).lower():

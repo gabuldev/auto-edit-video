@@ -58,3 +58,7 @@ workspace/
 output/
 
 .claude/worktrees/
+
+# Cache de handles do Files API (benchmark)
+benchmarks/.upload-cache/
+benchmarks/reports/
