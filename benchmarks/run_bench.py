@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from auto_edit import pipeline as pl  # noqa: E402
 from auto_edit.workspace import workspace_root  # noqa: E402
-from benchmarks import metrics  # noqa: E402
+from benchmarks import metrics, proxy  # noqa: E402
 from benchmarks.gemini_plan import DEFAULT_MODEL, plan_with_gemini  # noqa: E402
 
 PYTHON = sys.executable
@@ -125,6 +125,7 @@ def write_report(
     lines = [
         f"# Benchmark de planner — {video.name}",
         "",
+        f"- **Fonte:** {extra.get('source', video.name)}",
         f"- **Contexto:** {context or '—'}",
         "- **Nosso:** `agents/planner_long.md` lendo `transcription.json` (Whisper)",
         f"- **Gemini:** `{model}` assistindo o arquivo, mesmo brief",
@@ -175,12 +176,29 @@ def main() -> None:
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--slug", default=None, help="nome da pasta do relatório (default: nome do vídeo)")
     ap.add_argument("--skip-render", action="store_true", help="compara só os planos, sem FFmpeg")
+    ap.add_argument("--proxy", type=Path, default=None, help="proxy pronto pra usar nos dois braços")
+    ap.add_argument("--no-proxy", action="store_true", help="usa o master mesmo acima do teto da Files API")
     args = ap.parse_args()
 
-    video = args.video.expanduser().resolve()
-    if not video.is_file():
-        raise SystemExit(f"vídeo não encontrado: {video}")
-    slug = args.slug or video.stem.replace(" ", "_")[:40]
+    master = args.video.expanduser().resolve()
+    if not master.is_file():
+        raise SystemExit(f"vídeo não encontrado: {master}")
+
+    # Both arms must see the same file. Above the Files API cap the Gemini arm
+    # cannot see the master at all, so the whole benchmark moves to the proxy.
+    video, source_note = master, proxy.describe(master)
+    if args.proxy:
+        video = args.proxy.expanduser().resolve()
+    elif not args.no_proxy and proxy.needs_proxy(master):
+        print(f"[bench] master tem {master.stat().st_size / 1e9:.2f} GB — acima do teto de 2 GiB da Files API")
+        video = proxy.build_proxy(master)
+    if video != master:
+        source_note = (
+            f"proxy `{video.name}` ({proxy.describe(video)}) — "
+            f"master `{master.name}` ({proxy.describe(master)}) não sobe na Files API"
+        )
+
+    slug = args.slug or master.stem.replace(" ", "_")[:40]
 
     print(f"\n=== Braço A — nosso planner ({video.name}) ===")
     ws_ours, ours_seconds = arm_ours(video, args.context, slug, args.language)
@@ -225,6 +243,7 @@ def main() -> None:
         },
         "rationale": {name: rationale(ws) for name, ws in workspaces.items()},
         "outputs": outputs,
+        "source": source_note,
     }
     path = write_report(video, args.context, args.model, report, extra, out_dir)
 
