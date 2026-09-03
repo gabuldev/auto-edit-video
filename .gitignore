@@ -59,6 +59,6 @@ output/
 
 .claude/worktrees/
 
-# Cache de handles do Files API (benchmark)
+# Cache de handles do Files API (benchmark). O relatório e os planos ficam
+# versionados — são o achado; só os vídeos (que moram em workspace/) não entram.
 benchmarks/.upload-cache/
-benchmarks/reports/

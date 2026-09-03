@@ -1,0 +1,76 @@
+{
+  "report": {
+    "duration": 706.88,
+    "arms": {
+      "nosso": {
+        "final_duration": 528.49,
+        "removed": 178.39,
+        "removed_pct": 25.2,
+        "cuts": 24,
+        "kept_segments": 24,
+        "median_cut": 4.9,
+        "longest_cut": 39.3,
+        "dropped_blocks": 3,
+        "words_kept": 1488,
+        "words_total": 1628,
+        "words_clipped": 0,
+        "silence_left": 91.6,
+        "silence_threshold_db": -36.8
+      },
+      "gemini": {
+        "final_duration": 637.48,
+        "removed": 69.4,
+        "removed_pct": 9.8,
+        "cuts": 4,
+        "kept_segments": 3,
+        "median_cut": 5.5,
+        "longest_cut": 58.88,
+        "dropped_blocks": 1,
+        "words_kept": 1431,
+        "words_total": 1628,
+        "words_clipped": 0,
+        "silence_left": 187.3,
+        "silence_threshold_db": -36.8
+      }
+    },
+    "agreement": {
+      "pair": [
+        "nosso",
+        "gemini"
+      ],
+      "kept_overlap": 467.57,
+      "iou": 0.669,
+      "only_in_nosso": 60.92,
+      "only_in_gemini": 169.91
+    }
+  },
+  "snap": {
+    "nosso": {
+      "before": 0,
+      "after": 0
+    },
+    "gemini": {
+      "before": 1,
+      "after": 0
+    }
+  },
+  "cost": {
+    "nosso": {
+      "seconds": 0.0,
+      "tokens": null
+    },
+    "gemini": {
+      "seconds": 385.96,
+      "tokens": 67587
+    }
+  },
+  "rationale": {
+    "nosso": "11min47 de bruto -> ~8min39 finais. O conteudo unico e denso e justifica um long: apresentacao do produto, capacidade/compartimentos, faixa de temperatura (-22C a 0C), as quatro voltagens (12V/24V/110/220), preco, app com modo eco/maximo e nivel de bateria, protecao contra descarregar o veiculo e a dica de pre-gelar. Nao ha bloco tematico grande de conteudo repetido, entao os ~3min07 cortados vem de tempo morto e repeticao: 40s parado ligando a geladeira na tomada, 24s sem fala no meio da demonstracao do compartimento (que o plano anterior deixou passar), 19s repetindo 'ela ta ligada aqui' e mexendo na camera, 19s de digressao sobre queijo da Canasta e os silencios longos espalhados.",
+    "gemini": "11.7min bruto reduzido para ~9.5min úteis: corte de 1.5min de tempo morto com sala vazia enquanto o apresentador busca a tomada, além de silêncios e transições de câmera."
+  },
+  "outputs": {
+    "nosso": "workspace\\bench_geladeira-allwild_ours\\edited_video.mp4",
+    "gemini": "workspace\\bench_geladeira-allwild_gemini\\edited_video.mp4"
+  },
+  "source": "proxy `DJI_0152_proxy1080.mp4` (1920x1080 h264 yuv420p, 4.9 Mbps, 0.43 GB) — master `DJI_20260902101001_0152_D.MP4` (3840x2160 hevc yuv420p10le, 62.8 Mbps, 5.55 GB) não sobe na Files API"
+}

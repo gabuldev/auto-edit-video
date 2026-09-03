@@ -1,0 +1,321 @@
+{
+  "target_rationale": "11min47 de bruto -> ~8min39 finais. O conteudo unico e denso e justifica um long: apresentacao do produto, capacidade/compartimentos, faixa de temperatura (-22C a 0C), as quatro voltagens (12V/24V/110/220), preco, app com modo eco/maximo e nivel de bateria, protecao contra descarregar o veiculo e a dica de pre-gelar. Nao ha bloco tematico grande de conteudo repetido, entao os ~3min07 cortados vem de tempo morto e repeticao: 40s parado ligando a geladeira na tomada, 24s sem fala no meio da demonstracao do compartimento (que o plano anterior deixou passar), 19s repetindo 'ela ta ligada aqui' e mexendo na camera, 19s de digressao sobre queijo da Canasta e os silencios longos espalhados.",
+  "dropped_blocks": [
+    {
+      "start": 457.9,
+      "end": 497.5,
+      "topic": "tempo morto ligando a geladeira na tomada",
+      "reason": "dead weight - 40s sem fala e com energia no piso de ruido (~-45dB), ele saindo de quadro pra ligar o cabo; nenhum payload pro espectador",
+      "duration": 39.6
+    },
+    {
+      "start": 499.5,
+      "end": 517.4,
+      "topic": "repeticao de 'ela ta ligada aqui' e reposicionamento da camera",
+      "reason": "repeticao de fala - a mesma frase quatro vezes intercalada com 'deixa eu trazer aqui a camera'; o beat util e retomado em 'Aqui ela ta ligada, a temperatura'",
+      "duration": 17.9
+    },
+    {
+      "start": 346.7,
+      "end": 366.1,
+      "topic": "digressao sobre o queijo da Serra da Canasta",
+      "reason": "tangente + repeticao - o plug da loja e o dominio sobrevivem inteiros em 315-346.7 ('a gente tem os melhores queijos da regiao... reunido em um unico site'), entao a unica informacao perdida sao 16s sobre um queijo que derrete, que nao tocam a geladeira; emenda limpa de fim de frase pra 'E ai por isso que a gente ta levando essa geladeirinha'",
+      "duration": 19.4
+    }
+  ],
+  "cuts": [
+    {
+      "start": 8.4,
+      "end": 14.05,
+      "reason": "silencio - 5,6s sem fala, energia entre -40dB e -53dB",
+      "type": "silence"
+    },
+    {
+      "start": 20.9,
+      "end": 23.34,
+      "reason": "repeticao - 'geladeira portatil' dito de novo em fala embolada logo depois da mesma frase",
+      "type": "content"
+    },
+    {
+      "start": 57.95,
+      "end": 64.15,
+      "reason": "silencio - 6,2s de ar morto antes da apresentacao pessoal",
+      "type": "silence"
+    },
+    {
+      "start": 89.2,
+      "end": 90.68,
+      "reason": "repeticao - 'estou focado 100%' dito duas vezes seguidas; a emenda liga 'focado 100% em empreender' direto em 'na Gabur Dev'",
+      "type": "content"
+    },
+    {
+      "start": 107.4,
+      "end": 110.15,
+      "reason": "tempo morto - ele para pra arrumar o microfone no meio da frase",
+      "type": "content"
+    },
+    {
+      "start": 159.8,
+      "end": 161.48,
+      "reason": "repeticao - janela deslocada ~0,9s pra frente pra cair sobre a segunda ocorrencia; a emenda vira 'a gente tava montando pra viagem, ate mesmo pra voces terem nocao...' em vez de deixar 'a gente tava' orfao",
+      "type": "content"
+    },
+    {
+      "start": 179.5,
+      "end": 181.45,
+      "reason": "falha de fala - final embolado sobre o valor e pausa arrastada",
+      "type": "content"
+    },
+    {
+      "start": 183.6,
+      "end": 186.34,
+      "reason": "falso inicio - frase reiniciada duas vezes antes de chegar nas alcinhas",
+      "type": "content"
+    },
+    {
+      "start": 203.6,
+      "end": 206.1,
+      "reason": "repeticao - reafirma o que acabou de dizer sobre lago/rio e engasga no final; a frase fecha limpa em 'faca sentido'",
+      "type": "content"
+    },
+    {
+      "start": 256.40000000000003,
+      "end": 275.5,
+      "reason": "silencio - 23,6s sem uma palavra entre o fim da fala sobre os -22 graus (251,5) e a retomada em 'E aqui basicamente voce liga ela' (276,0); maior buraco do video, passou batido no plano anterior",
+      "type": "silence"
+    },
+    {
+      "start": 346.7,
+      "end": 366.1,
+      "reason": "bloco descartado - dominio da loja repetido e digressao sobre queijo, fora do tema da geladeira",
+      "type": "block"
+    },
+    {
+      "start": 374.95,
+      "end": 380.55,
+      "reason": "repeticao - 'por isso que a gente tem essa geladeirinha' e o teste nas proximas viagens ja foram ditos no trecho anterior",
+      "type": "content"
+    },
+    {
+      "start": 391.35,
+      "end": 396.4,
+      "reason": "silencio - 5s de ar morto, energia em -50dB",
+      "type": "silence"
+    },
+    {
+      "start": 408.5,
+      "end": 422.3,
+      "reason": "silencio - 14s no piso de ruido enquanto ele pega o cabo",
+      "type": "silence"
+    },
+    {
+      "start": 442.5,
+      "end": 444.2,
+      "reason": "silencio - pausa de 1,7s em -50dB",
+      "type": "silence"
+    },
+    {
+      "start": 454.20000000000005,
+      "end": 454.90000000000003,
+      "reason": "silencio - 1,6s sem fala entre 'na moto vai ser meio complicado' e 'Mas... ai eu so ligar na tomada aqui'",
+      "type": "silence"
+    },
+    {
+      "start": 457.9,
+      "end": 497.2,
+      "reason": "bloco descartado - 40s parado ligando a geladeira na tomada, sem fala",
+      "type": "block"
+    },
+    {
+      "start": 499.5,
+      "end": 517.4,
+      "reason": "bloco descartado - 'ela ta ligada aqui' repetido quatro vezes e ajuste de camera",
+      "type": "block"
+    },
+    {
+      "start": 524.45,
+      "end": 535.52,
+      "reason": "tempo morto - 'olha o ligar aqui' embolado seguido de 11s quase todos em silencio",
+      "type": "content"
+    },
+    {
+      "start": 537.4,
+      "end": 537.8,
+      "reason": "silencio - 2,5s em -42dB no meio da frase do barulhinho",
+      "type": "silence"
+    },
+    {
+      "start": 574.0,
+      "end": 583.2,
+      "reason": "silencio - 9,2s constantes em -47dB enquanto ele mexe no aplicativo",
+      "type": "silence"
+    },
+    {
+      "start": 586.1,
+      "end": 587.4,
+      "reason": "silencio - 1,5s em -45dB",
+      "type": "silence"
+    },
+    {
+      "start": 628.5,
+      "end": 633.4,
+      "reason": "silencio - 4,9s em -47dB",
+      "type": "silence"
+    },
+    {
+      "start": 705.3,
+      "end": 706.88,
+      "reason": "silencio - cauda final sem fala",
+      "type": "silence"
+    }
+  ],
+  "kept_segments": [
+    {
+      "start": 0.0,
+      "end": 8.4,
+      "summary": "hook: 'fiz uma aquisicao muito maluca' e a caixa pesada nas maos"
+    },
+    {
+      "start": 14.05,
+      "end": 20.9,
+      "summary": "revela que e uma geladeira portatil e brinca com a fama de maluco"
+    },
+    {
+      "start": 23.34,
+      "end": 57.95,
+      "summary": "vinheta e o disclaimer de que nao e patrocinado - comprou com o proprio dinheiro - mais pra quem serve esse tipo de produto em viagem"
+    },
+    {
+      "start": 64.15,
+      "end": 89.2,
+      "summary": "apresentacao pessoal: Gabur, dono da Gabur Dev, engenheiro de software com 9 anos, disponivel pra tirar ideia do papel"
+    },
+    {
+      "start": 90.68,
+      "end": 107.4,
+      "summary": "fecha a apresentacao e abre o assunto: e curioso e esta planejando uma nova viagem"
+    },
+    {
+      "start": 110.15,
+      "end": 159.8,
+      "summary": "por que uma geladeira e nao caixa termica (gelo acaba e nem sempre da pra repor na rota), a chegada da ALL WILD de 35 litros e a montagem pra viagem"
+    },
+    {
+      "start": 161.48,
+      "end": 179.5,
+      "summary": "numeros de compra: 35 litros em promocao no Mercado Livre por R$1.400 - admite que e caro, na faixa de uma geladeira residencial"
+    },
+    {
+      "start": 181.45,
+      "end": 183.6,
+      "summary": "comeca a mostrar as facilidades do produto"
+    },
+    {
+      "start": 186.34,
+      "end": 203.6,
+      "summary": "alcinhas pra transporte e onde nao vale levar (praia, areia e sal) versus lago ou rio"
+    },
+    {
+      "start": 206.1,
+      "end": 256.40000000000003,
+      "summary": "demonstracao: objetivo e ficar dentro do veiculo, capacidade real com latas e agua, e o segundo compartimento que congela a -22C ou refrigera em 0/1C sem congelar a agua"
+    },
+    {
+      "start": 275.5,
+      "end": 346.7,
+      "summary": "as duas tomadas e as quatro voltagens 12V/24V/110/220, uso por caminhoneiros que rodam em 24V, o perfil de quem viaja bastante e o gancho da loja da Serra da Canasta"
+    },
+    {
+      "start": 366.1,
+      "end": 374.95,
+      "summary": "por que esta levando a geladeira: churrasco no meio do nada na regiao da Canasta"
+    },
+    {
+      "start": 380.55,
+      "end": 391.35,
+      "summary": "anuncia o ponto principal: a geladeira tem aplicativo"
+    },
+    {
+      "start": 396.4,
+      "end": 408.5,
+      "summary": "vai ligar na tomada pra mostrar o app - 'nada demais, mas e legal acompanhar o que esta acontecendo'"
+    },
+    {
+      "start": 422.3,
+      "end": 442.5,
+      "summary": "mostra a tomada removivel e que da pra trocar o plugue pra viajar pra outro pais"
+    },
+    {
+      "start": 444.2,
+      "end": 454.20000000000005,
+      "summary": "pondera o uso de carro versus moto"
+    },
+    {
+      "start": 454.90000000000003,
+      "end": 457.9,
+      "summary": "parte pra ligar o aparelho na tomada"
+    },
+    {
+      "start": 497.2,
+      "end": 499.5,
+      "summary": "avisa que ja ligou a geladeira"
+    },
+    {
+      "start": 517.4,
+      "end": 524.45,
+      "summary": "mostra o painel com a temperatura setada"
+    },
+    {
+      "start": 535.52,
+      "end": 537.4,
+      "summary": "o barulhinho indicando que o compressor entrou em funcionamento"
+    },
+    {
+      "start": 537.8,
+      "end": 574.0,
+      "summary": "abre o aplicativo (nome em chines), conecta ao celular e encontra o bloqueio de crianca que precisa ser liberado no botao do aparelho"
+    },
+    {
+      "start": 583.2,
+      "end": 586.1,
+      "summary": "desbloqueia a trava de crianca"
+    },
+    {
+      "start": 587.4,
+      "end": 628.5,
+      "summary": "ajusta a temperatura pelo celular pra zero graus, mostra modo economico e maximo, o nivel de bateria e a protecao que evita descarregar o veiculo"
+    },
+    {
+      "start": 633.4,
+      "end": 705.3,
+      "summary": "a dica de pre-gelar um dia antes pra no carro so manter a temperatura, o proximo video com o setup completo e a Starlink, pedido de comentarios e feedback e o encerramento sobre as viagens automotivas"
+    }
+  ],
+  "changes": [
+    {
+      "action": "added",
+      "start": 252.0,
+      "end": 275.6,
+      "reason": "buraco de 24,5s sem nenhuma palavra (251,5 -> 276,0) dentro do bloco de demonstracao, o maior tempo morto do video e o unico grande que o plano nao tocou; cortado com folga de ~0,4s de cada lado"
+    },
+    {
+      "action": "removed",
+      "start": 158.72,
+      "end": 160.3,
+      "reason": "a janela caia sobre a primeira ocorrencia e deixava a emenda quebrada: 'a gente tava' + 'ela montar da pra viagem'"
+    },
+    {
+      "action": "added",
+      "start": 159.6,
+      "end": 161.7,
+      "reason": "mesma repeticao, janela deslocada pra cima da segunda ocorrencia: 'a gente tava montando pra viagem, ate mesmo pra voces terem nocao de como funciona o tamanho das coisas'"
+    },
+    {
+      "action": "added",
+      "start": 454.2,
+      "end": 455.8,
+      "reason": "pausa de 1,9s entre 'na moto vai ser meio complicado' e o 'Mas...' seguinte, logo antes do bloco descartado - segurava o ritmo sem funcao retorica"
+    }
+  ],
+  "approved": true
+}

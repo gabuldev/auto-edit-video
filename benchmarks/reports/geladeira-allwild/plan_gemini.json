@@ -1,0 +1,55 @@
+{
+  "target_rationale": "11.7min bruto reduzido para ~9.5min úteis: corte de 1.5min de tempo morto com sala vazia enquanto o apresentador busca a tomada, além de silêncios e transições de câmera.",
+  "dropped_blocks": [
+    {
+      "start": 648.0,
+      "end": 816.5,
+      "topic": "apresentador ausente buscando cabo de energia",
+      "reason": "dead weight — quase 1.5 minuto de cena vazia com ruídos de fundo e nenhum conteúdo para o espectador",
+      "duration": 168.5
+    }
+  ],
+  "cuts": [
+    {
+      "start": 0.0,
+      "end": 0.56,
+      "reason": "silence — início antes da primeira fala",
+      "type": "silence"
+    },
+    {
+      "start": 58.5,
+      "end": 64.0,
+      "reason": "content — apresentador levantando e ajustando câmera em silêncio",
+      "type": "content"
+    },
+    {
+      "start": 632.0,
+      "end": 636.46,
+      "reason": "content — pausa e movimentação de câmera",
+      "type": "content"
+    },
+    {
+      "start": 648.0,
+      "end": 706.88,
+      "reason": "dropped block — apresentador ausente buscando cabo e ligando na tomada",
+      "type": "block"
+    }
+  ],
+  "kept_segments": [
+    {
+      "start": 0.56,
+      "end": 58.5,
+      "summary": "apresentação inicial e revelação da geladeira portátil ALL WILD"
+    },
+    {
+      "start": 64.0,
+      "end": 632.0,
+      "summary": "visão geral da geladeira, capacidade de 35L, zonas de temperatura, conexões elétricas e utilidade em viagens"
+    },
+    {
+      "start": 636.46,
+      "end": 648.0,
+      "summary": "transição anunciando a demonstração do aplicativo no celular"
+    }
+  ]
+}
