@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import struct
 import subprocess
 import sys
@@ -296,11 +297,16 @@ REGRAS — leia com atenção:
 
     try:
         print("[extract] Sending transcription to Claude for correction...")
+        # Prompt on stdin, not argv: it carries the whole transcript, which is
+        # past the 32KB command-line limit on Windows. The timeout has to clear
+        # the CLI's own cold start (~30s) plus the correction itself, or the
+        # step always "times out" and the raw Whisper text silently survives.
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["claude", "-p"],
+            input=prompt,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=int(os.environ.get("AUTO_EDIT_CORRECTION_TIMEOUT", "240")),
         )
         if result.returncode != 0:
             print("[extract] Claude correction skipped (non-zero exit)", file=sys.stderr)
