@@ -18,6 +18,13 @@ set -euo pipefail
 # Defined up here because the ffmpeg resolution below already logs.
 log() { echo "[ralph] $*"; }
 
+# Every stage moves Portuguese text and JSON through Python's stdio and through
+# read_text()/write_text(). On Windows those default to cp1252, which cannot
+# even represent the arrows and accents the prompts and transcripts are full of
+# — a UnicodeEncodeError mid-pipeline. UTF-8 everywhere, for every child.
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 STANDALONE_STAGE=""
 STANDALONE_OUTPUT=""
 STANDALONE_PROMPT=""
@@ -98,7 +105,7 @@ fi
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 get_stage() {
-    $PYTHON -c "import json; print(json.load(open('$PIPELINE'))['current_stage'])"
+    $PYTHON -c 'import json, sys; print(json.load(open(sys.argv[1]))["current_stage"])' "$PIPELINE"
 }
 
 advance_stage() {
@@ -108,12 +115,13 @@ advance_stage() {
 
 fail_stage() {
     local stage="$1"
-    $PYTHON -c "
-import json
-p = json.load(open('$PIPELINE'))
-p.setdefault('stages', {}).setdefault('$stage', {})['status'] = 'failed'
-json.dump(p, open('$PIPELINE', 'w'), indent=2, ensure_ascii=False)
-"
+    $PYTHON -c '
+import json, sys
+path, stage = sys.argv[1], sys.argv[2]
+p = json.load(open(path))
+p.setdefault("stages", {}).setdefault(stage, {})["status"] = "failed"
+json.dump(p, open(path, "w"), indent=2, ensure_ascii=False)
+' "$PIPELINE" "$stage"
     log "ERROR: Stage '$stage' failed."
     exit 1
 }
@@ -152,12 +160,13 @@ run_agent() {
     log "Running agent: $stage"
 
     # Mark as running in pipeline.json
-    $PYTHON -c "
-import json
-p = json.load(open('$PIPELINE'))
-p['stages']['$stage']['status'] = 'running'
-json.dump(p, open('$PIPELINE', 'w'), indent=2, ensure_ascii=False)
-"
+    $PYTHON -c '
+import json, sys
+path, stage = sys.argv[1], sys.argv[2]
+p = json.load(open(path))
+p["stages"][stage]["status"] = "running"
+json.dump(p, open(path, "w"), indent=2, ensure_ascii=False)
+' "$PIPELINE" "$stage"
 
     local tmp_prompt="$WORKSPACE/.prompt_${stage}.txt"
     local tmp_output="$WORKSPACE/.output_${stage}.txt"
@@ -209,10 +218,14 @@ _run_llm_print_backend() {
     case "$backend" in
         claude)
             if [ -n "${AUTO_EDIT_CLAUDE_MODEL:-}" ]; then
-                timeout "$LLM_TIMEOUT" claude --model "$AUTO_EDIT_CLAUDE_MODEL" \
-                    -p "$(cat "$prompt_file")" >"$output_file" 2>&1
+                # Prompt goes in on stdin, never as an argv element: it carries the
+                # whole transcription plus the energy map, which blows past the
+                # command-line limit (32KB on Windows) and would need shell
+                # quoting to survive anyway.
+                timeout "$LLM_TIMEOUT" claude --model "$AUTO_EDIT_CLAUDE_MODEL" -p \
+                    >"$output_file" 2>&1 <"$prompt_file"
             else
-                timeout "$LLM_TIMEOUT" claude -p "$(cat "$prompt_file")" >"$output_file" 2>&1
+                timeout "$LLM_TIMEOUT" claude -p >"$output_file" 2>&1 <"$prompt_file"
             fi
             exit_code=$?
             if [ "$exit_code" -eq 124 ]; then
@@ -331,9 +344,9 @@ while true; do
                 log "Review the cut plan at: $WORKSPACE/reviewed_plan.json"
                 # Show summary
                 "$PYTHON" -c "
-import json
+import json, sys
 from pathlib import Path
-ws = Path('$WORKSPACE')
+ws = Path(sys.argv[1])
 plan = json.loads((ws / 'reviewed_plan.json').read_text())
 cuts = plan.get('cuts', [])
 kept = plan.get('kept_segments', [])
@@ -354,7 +367,7 @@ if rationale:
 final = sum(float(s[\"end\"]) - float(s[\"start\"]) for s in kept)
 if final:
     print(f'[dry-run] Final duration: {final/60:.1f}min (from kept segments)')
-"
+" "$WORKSPACE"
                 break
             fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
