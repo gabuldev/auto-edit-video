@@ -104,6 +104,16 @@ def silence_left(kept: list[Interval], energy: list[float], resolution: float, t
     return round(quiet, 2)
 
 
+def cut_coverage(a: list[Interval], b: list[Interval]) -> int:
+    """How many of `a`'s cuts overlap at least one of `b`'s.
+
+    Duration-based agreement (IoU) hides the shape of the disagreement: one arm
+    can look "half right" either by making the same cuts smaller or by making
+    completely different ones. Counting cuts separates those.
+    """
+    return sum(1 for cut in a if any(other[1] > cut[0] and other[0] < cut[1] for other in b))
+
+
 def describe(plan: dict, transcription: dict, energy: list[float], resolution: float) -> dict:
     duration = float(transcription.get("duration") or 0.0)
     words = transcription.get("words") or []
@@ -144,6 +154,7 @@ def compare(transcription_path: Path, plans: dict[str, Path]) -> dict:
     names = list(loaded)
     if len(names) == 2:
         a, b = (intervals(loaded[n]) for n in names)
+        cuts_a, cuts_b = (intervals(loaded[n], "cuts") for n in names)
         shared = overlap(a, b)
         union = total(a) + total(b) - shared
         report["agreement"] = {
@@ -152,6 +163,10 @@ def compare(transcription_path: Path, plans: dict[str, Path]) -> dict:
             "iou": round(shared / union, 3) if union else 0.0,
             "only_in_" + names[0]: round(total(a) - shared, 2),
             "only_in_" + names[1]: round(total(b) - shared, 2),
+            "cuts_matched": {
+                names[0]: [cut_coverage(cuts_a, cuts_b), len(cuts_a)],
+                names[1]: [cut_coverage(cuts_b, cuts_a), len(cuts_b)],
+            },
         }
     return report
 
@@ -191,6 +206,11 @@ def render(report: dict) -> str:
             f"{agree['only_in_' + names[0]]}s só em {names[0]}, "
             f"{agree['only_in_' + names[1]]}s só em {names[1]}.",
         ]
+        matched = agree.get("cuts_matched") or {}
+        if matched:
+            lines += ["", "**Corte a corte** (quantos cortes de um encostam em algum corte do outro):", ""]
+            for name, (hit, total_cuts) in matched.items():
+                lines.append(f"- {name}: {hit} de {total_cuts}")
     return "\n".join(lines)
 
 

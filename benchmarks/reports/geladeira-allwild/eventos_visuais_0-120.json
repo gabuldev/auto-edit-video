@@ -1,0 +1,55 @@
+{
+  "video": "C:\\Users\\gbrls\\Videos\\proxy\\DJI_0152_proxy1080.mp4",
+  "model": "gemini-3.7-flash",
+  "window": 60.0,
+  "fps": 2.0,
+  "horizon": 120.0,
+  "seconds": 69.7,
+  "total_tokens": 20991,
+  "eventos": [
+    {
+      "start": 7.5,
+      "end": 12.5,
+      "tipo": "tempo_morto",
+      "descricao": "Apresentador se vira e se reposiciona para continuar a gravação.",
+      "confianca": 0.95,
+      "window": [
+        0.0,
+        60.0
+      ]
+    },
+    {
+      "start": 58.0,
+      "end": 60.0,
+      "tipo": "fora_de_quadro",
+      "descricao": "Apresentador levanta e sai do enquadramento.",
+      "confianca": 0.98,
+      "window": [
+        0.0,
+        60.0
+      ]
+    },
+    {
+      "start": 60.0,
+      "end": 64.0,
+      "tipo": "fora_de_quadro",
+      "descricao": "Cena vazia antes da entrada do apresentador no enquadramento.",
+      "confianca": 0.95,
+      "window": [
+        60.0,
+        120.0
+      ]
+    },
+    {
+      "start": 104.5,
+      "end": 109.0,
+      "tipo": "mexendo_no_equipamento",
+      "descricao": "Apresentador ajusta o microfone de lapela na gola da camiseta.",
+      "confianca": 0.95,
+      "window": [
+        60.0,
+        120.0
+      ]
+    }
+  ]
+}
