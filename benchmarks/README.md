@@ -31,11 +31,13 @@ travada, apresentador saindo do quadro — coisas que não aparecem na transcri�
 
 ### Rodando
 
+A chave vem do Doppler (projeto `auto-edit-video`, workplace gabuldev), então
+não precisa de `.env`. Sem Doppler, basta ter `GEMINI_API_KEY` no ambiente.
+
 ```bash
-export GEMINI_API_KEY=...            # aistudio.google.com/apikey
 pip install google-genai
 
-python benchmarks/run_bench.py \
+doppler run -- python benchmarks/run_bench.py \
   --video ~/videos/live.mp4 \
   --context "live sobre carreira dev; manter as perguntas do chat" \
   --model gemini-3.7-flash
@@ -43,6 +45,15 @@ python benchmarks/run_bench.py \
 
 `--skip-render` compara só os planos (sem FFmpeg). `--slug` nomeia a pasta do
 relatório.
+
+### Modelos
+
+O anúncio cobre **`gemini-3.7-flash`**, `gemini-3.6-flash` e
+`gemini-3.5-flash-lite` — é onde o comportamento agêntico existe. O default é o
+3.7. A API também expõe um `gemini-3.8-flash` que o post não menciona; se ele
+herdou o mesmo comportamento, é uma terceira rodada interessante, mas não é o
+que está sendo anunciado. O script lista os ids que a sua chave alcança quando
+o `--model` não existe.
 
 ### O que sai
 
