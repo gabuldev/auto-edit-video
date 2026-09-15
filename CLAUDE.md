@@ -89,6 +89,9 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
 | `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
+| `AUTO_EDIT_ASSETS_OVERLAYS` | — | Pasta com os MP4s de overlay (`ctas.mp4`, `lowerthid_gabul.mp4`). Tem prioridade sobre `assets/overlays/`. Também via `--overlays-dir` no `long`/`apply-overlays` |
+| `AUTO_EDIT_OVERLAYS_OPTIONAL` | — | `1` faz o stage `overlay` só avisar (em vez de falhar) quando um overlay planejado não é encontrado |
+| `AUTO_EDIT_SEGMENT_THRESHOLD` | `12` | Acima de N segmentos, o `execute` corta um-a-um + concat (evita OOM do FFmpeg em vídeo longo/4K) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
 | `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` |
 | `AUTO_EDIT_WORKSPACE` | `workspace` | Pasta raiz que guarda os workspaces por vídeo (CLI, MCP e motor headless) |
