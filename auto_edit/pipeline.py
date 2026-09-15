@@ -67,12 +67,14 @@ def load(workspace: Path) -> dict:
     path = workspace / "pipeline.json"
     if not path.exists():
         raise FileNotFoundError(f"No pipeline.json found in {workspace}")
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def save(workspace: Path, pipeline: dict) -> None:
+    # encoding is explicit: on Windows the default is cp1252, which mangles the
+    # Portuguese context / metadata (accents, em-dashes) written here.
     (workspace / "pipeline.json").write_text(
-        json.dumps(pipeline, indent=2, ensure_ascii=False)
+        json.dumps(pipeline, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
 
@@ -108,7 +110,7 @@ def loop_back(workspace: Path) -> dict:
 
     assessment_path = workspace / "assessment.json"
     if assessment_path.exists():
-        assessment = json.loads(assessment_path.read_text())
+        assessment = json.loads(assessment_path.read_text(encoding="utf-8"))
         pipeline["evaluator_feedback"] = assessment.get("feedback_for_planner", "")
 
     pipeline["iteration"] += 1
@@ -192,7 +194,7 @@ def finalize(workspace: Path) -> Path:
     metadata_path = workspace / "metadata.json"
     txt_dst = output_dir / f"{video_name}.txt"
     if metadata_path.exists():
-        metadata = json.loads(metadata_path.read_text())
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         _write_metadata_txt(txt_dst, metadata, pipeline["type"])
 
     # Aggregate and display token usage stats
@@ -345,7 +347,7 @@ if __name__ == "__main__":
         if not assessment_path.exists():
             print("ERROR: assessment.json not found", file=sys.stderr)
             sys.exit(1)
-        assessment = json.loads(assessment_path.read_text())
+        assessment = json.loads(assessment_path.read_text(encoding="utf-8"))
         approved = assessment.get("approved", False)
         iteration = pipeline["iteration"]
         max_iter = pipeline["max_iterations"]
