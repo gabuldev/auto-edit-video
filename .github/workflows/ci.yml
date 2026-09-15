@@ -8,10 +8,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13"]
+        # One Windows job: the pipeline shells out to bash/ffmpeg and stitches
+        # data through other languages, where path/quoting/encoding bugs hide
+        # (see PR #60). Linux alone never catches them.
+        include:
+          - os: windows-latest
+            python-version: "3.13"
 
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +29,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install FFmpeg
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
 
       - name: Install dependencies
         run: |
@@ -33,6 +46,8 @@ jobs:
         run: python -m pytest tests/ -v
 
       - name: Check ralph.sh syntax
+        if: runner.os != 'Windows'
+        shell: bash
         run: bash -n ralph.sh
 
   lint:

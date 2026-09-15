@@ -453,7 +453,7 @@ class TestSeedContext:
         ws = seed_short_workspace(
             long_ws, LONG_PIPELINE, {"start": 10.0, "end": 40.0, "hook": hook}, 1
         )
-        context = json.loads((ws / "pipeline.json").read_text())["context"]
+        context = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))["context"]
         assert context.endswith(hook)
 
     def test_no_long_context_still_yields_the_hook(self, tmp_path):

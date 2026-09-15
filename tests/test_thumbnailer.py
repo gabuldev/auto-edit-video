@@ -193,8 +193,8 @@ class TestCoverConcatCmd:
     def test_flags_before_output(self):
         # ffmpeg output options must precede the output path
         cmd = _cover_concat_cmd(Path("/tmp/list.txt"), Path("/tmp/out.mp4"))
-        assert cmd.index("-movflags") < cmd.index("/tmp/out.mp4")
-        assert cmd[-1] == "/tmp/out.mp4"
+        assert cmd.index("-movflags") < cmd.index(str(Path("/tmp/out.mp4")))
+        assert cmd[-1] == str(Path("/tmp/out.mp4"))
 
 
 # ── _score_mouth_closed ──────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ class TestCoverClipCmd:
         cmd = _cover_clip_cmd(
             Path("/tmp/t.png"), 3840, 2160, "30000/1001", Path("/tmp/c.mp4"), 90000
         )
-        assert cmd[-1] == "/tmp/c.mp4"
+        assert cmd[-1] == str(Path("/tmp/c.mp4"))
 
     def test_unknown_timescale_omits_the_flag(self):
         cmd = _cover_clip_cmd(
@@ -363,7 +363,7 @@ class TestCoverMuxCmd:
         assert cmd[cmd.index("-map") + 1] == "0:v:0"
         assert "1:a:0" in cmd
         # the untrimmed source is the second input
-        assert cmd.index("/tmp/src.mp4") > cmd.index("/tmp/v.mp4")
+        assert cmd.index(str(Path("/tmp/src.mp4"))) > cmd.index(str(Path("/tmp/v.mp4")))
 
     def test_silent_video_maps_no_audio(self):
         cmd = _cover_mux_cmd(
@@ -377,7 +377,7 @@ class TestCoverMuxCmd:
         )
         assert cmd[cmd.index("-movflags") + 1] == "+faststart"
         assert cmd[cmd.index("-brand") + 1] == "mp42"
-        assert cmd[-1] == "/tmp/out.mp4"
+        assert cmd[-1] == str(Path("/tmp/out.mp4"))
 
     def test_tags_the_file_as_covered(self):
         cmd = _cover_mux_cmd(
