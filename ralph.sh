@@ -156,6 +156,10 @@ run_agent() {
     local stage="$1"
     local output_file="$2"
     local prompt_file="$3"
+    # "no-advance": deixa o stage aberto porque o caller ainda roda um tool
+    # depois do agente. Sem isso o current_stage já pulou pro próximo e um
+    # erro no tool é reportado no stage errado.
+    local advance_mode="${4:-advance}"
 
     log "Running agent: $stage"
 
@@ -178,7 +182,7 @@ json.dump(p, open(path, "w"), indent=2, ensure_ascii=False)
     _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file"
 
     rm -f "$tmp_prompt" "$tmp_output"
-    advance_stage "$stage"
+    [ "$advance_mode" = "no-advance" ] || advance_stage "$stage"
 }
 
 # Roda um agente avulso, fora da máquina de estados do pipeline.
@@ -377,8 +381,9 @@ if final:
             ;;
 
         overlay)
-            run_agent "overlay" "$WORKSPACE/overlay_plan.json" "$AGENTS_DIR/overlayer.md"
-            $PYTHON "$TOOLS_DIR/overlayer.py" "$WORKSPACE" || { log "ERROR: overlay tool failed"; exit 1; }
+            run_agent "overlay" "$WORKSPACE/overlay_plan.json" "$AGENTS_DIR/overlayer.md" no-advance
+            $PYTHON "$TOOLS_DIR/overlayer.py" "$WORKSPACE" || fail_stage "overlay"
+            advance_stage "overlay"
             ;;
 
         caption)

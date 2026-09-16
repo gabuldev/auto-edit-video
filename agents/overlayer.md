@@ -17,7 +17,7 @@ You will receive:
 - Use **original** video timestamps (before cuts); the tool remaps to the edited timeline.
 - **`original_start` must fall inside a segment that survives the cut plan** (inside a `kept_segments` range). If that moment is removed by cuts, the overlay will not appear — prefer a trigger a few seconds earlier/later that is clearly still in a kept block.
 - Choose a `start` on a natural pause or sentence boundary — never mid-word.
-- Overlay MP4s must exist under **`assets/overlays/`** with the exact filenames below (`ctas.mp4`, `lowerthid_gabul.mp4`). Without them, the stage fails on purpose.
+- Overlay MP4s must exist under **`assets/overlays/`** with the exact filenames below (`ctas.mp4`, `lowerthid_gabul.mp4`). If a file is missing, the stage warns and renders without that overlay.
 - If a trigger is not clearly present in the transcription, do NOT invent one.
 - For `lowerthid_gabul.mp4`: place it 1-2 seconds after the speaker's name is first said.
 - For `ctas.mp4`: place it at the exact moment the CTA phrase begins.

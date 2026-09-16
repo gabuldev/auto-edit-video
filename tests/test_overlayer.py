@@ -7,8 +7,8 @@ Two concerns:
    for a 29.97 edit) and the encoder emitted every frame as if it belonged there
    — video played at 2x while audio stayed put.
 2. Overlay resolution and the missing-asset gate: which planned overlays are
-   found / missing / removed-by-cut, and whether a missing .mp4 fails the stage
-   (default) or is skipped (AUTO_EDIT_OVERLAYS_OPTIONAL=1).
+   found / missing / removed-by-cut, and whether a missing .mp4 is skipped with
+   a warning (default) or fails the stage (AUTO_EDIT_OVERLAYS_STRICT=1).
 """
 import sys
 from pathlib import Path
@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools import overlayer
 from tools.overlayer import (
     _resolve_overlays,
-    _require_assets_present,
+    _check_assets_present,
     _missing_assets_message,
 )
 from auto_edit.overlay_assets import overlay_search_dirs
@@ -129,25 +129,29 @@ class TestResolveOverlays:
         assert len(found) == 1 and not missing and not removed
 
 
-class TestRequireAssetsPresent:
-    def test_no_missing_is_noop(self):
-        _require_assets_present([], [Path("/nowhere")])  # must not raise
+class TestCheckAssetsPresent:
+    def test_no_missing_is_noop(self, capsys):
+        _check_assets_present([], [Path("/nowhere")])
+        assert capsys.readouterr().out == ""
 
-    def test_missing_raises_by_default(self, monkeypatch):
-        monkeypatch.delenv("AUTO_EDIT_OVERLAYS_OPTIONAL", raising=False)
+    def test_missing_only_warns_by_default(self, monkeypatch, capsys):
+        """Overlays live outside the repo, so a fresh install has none — the
+        edit must still ship instead of dying at the overlay stage."""
+        monkeypatch.delenv("AUTO_EDIT_OVERLAYS_STRICT", raising=False)
+        _check_assets_present(["ctas.mp4"], [Path("/opt/overlays")])  # must not raise
+        out = capsys.readouterr().out
+        assert "WARNING" in out
+        assert "ctas.mp4" in out
+
+    def test_strict_env_turns_it_into_a_failure(self, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_OVERLAYS_STRICT", "1")
         with pytest.raises(FileNotFoundError, match="not found"):
-            _require_assets_present(["ctas.mp4"], [Path("/opt/overlays")])
-
-    def test_optional_env_downgrades_to_warning(self, monkeypatch, capsys):
-        monkeypatch.setenv("AUTO_EDIT_OVERLAYS_OPTIONAL", "1")
-        _require_assets_present(["ctas.mp4"], [Path("/opt/overlays")])  # must not raise
-        assert "WARNING" in capsys.readouterr().out
+            _check_assets_present(["ctas.mp4"], [Path("/opt/overlays")])
 
     def test_message_points_at_the_env_var(self):
         msg = _missing_assets_message(["ctas.mp4"], [Path("/opt/overlays")])
         assert "ctas.mp4" in msg
         assert "AUTO_EDIT_ASSETS_OVERLAYS" in msg
-        assert "AUTO_EDIT_OVERLAYS_OPTIONAL" in msg
 
 
 class TestOverlaySearchDirs:

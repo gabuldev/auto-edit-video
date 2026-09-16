@@ -35,15 +35,17 @@ def _find_overlay_file(name: str, dirs: list[Path]) -> Path | None:
     return None
 
 
-def _overlays_optional() -> bool:
-    """Whether a missing overlay asset is a warning rather than a hard error.
+def _overlays_strict() -> bool:
+    """Whether a missing overlay asset should fail the stage instead of warning.
 
-    Default: a planned overlay whose .mp4 can't be found fails the stage — the
-    whole point of the overlay is that it appears, and silently shipping the
-    video without it is how the problem went unnoticed. Set
-    AUTO_EDIT_OVERLAYS_OPTIONAL=1 to skip missing overlays and render anyway.
+    Default: no. Overlay .mp4s are per-person assets that live outside the repo
+    (``assets/`` is not versioned), so a fresh install legitimately has none.
+    A planned overlay whose file can't be found is skipped with a warning and
+    the edit still ships — losing an overlay is not worth throwing away the
+    whole render. Set AUTO_EDIT_OVERLAYS_STRICT=1 to fail instead, e.g. in CI
+    where a missing asset means the setup is wrong.
     """
-    return os.environ.get("AUTO_EDIT_OVERLAYS_OPTIONAL", "").lower() in ("1", "true", "yes")
+    return os.environ.get("AUTO_EDIT_OVERLAYS_STRICT", "").lower() in ("1", "true", "yes")
 
 
 def _missing_assets_message(missing: list[str], search_dirs: list[Path]) -> str:
@@ -56,9 +58,7 @@ def _missing_assets_message(missing: list[str], search_dirs: list[Path]) -> str:
         f"{dirs}\n"
         "  Fix: put the .mp4 file(s) in one of those folders, or point\n"
         "  AUTO_EDIT_ASSETS_OVERLAYS at the folder that has them, e.g.\n"
-        "    export AUTO_EDIT_ASSETS_OVERLAYS=/path/to/your/overlays\n"
-        "  To render the video WITHOUT these overlays instead of failing,\n"
-        "  set AUTO_EDIT_OVERLAYS_OPTIONAL=1."
+        "    export AUTO_EDIT_ASSETS_OVERLAYS=/path/to/your/overlays"
     )
 
 
@@ -90,15 +90,15 @@ def _resolve_overlays(
     return found, missing, removed
 
 
-def _require_assets_present(missing: list[str], search_dirs: list[Path]) -> None:
-    """Raise on any missing overlay asset, unless overlays are opted-out."""
+def _check_assets_present(missing: list[str], search_dirs: list[Path]) -> None:
+    """Warn about missing overlay assets — or raise, under AUTO_EDIT_OVERLAYS_STRICT."""
     if not missing:
         return
     msg = _missing_assets_message(missing, search_dirs)
-    if _overlays_optional():
-        print(f"[overlayer] WARNING (AUTO_EDIT_OVERLAYS_OPTIONAL): {msg}")
-        return
-    raise FileNotFoundError(msg)
+    if _overlays_strict():
+        raise FileNotFoundError(msg)
+    print(f"[overlayer] WARNING: {msg}")
+    print("[overlayer] Rendering without them. Set AUTO_EDIT_OVERLAYS_STRICT=1 to fail instead.")
 
 
 _CODEC_PREFERENCE = [
@@ -142,10 +142,10 @@ def overlay(workspace: Path) -> None:
 
     found, missing, removed = _resolve_overlays(overlays, search_dirs, kept)
 
-    # A missing asset is a setup error, not a content miss: fail loudly instead
-    # of silently shipping a video without the overlay the planner asked for.
-    # (Opt out with AUTO_EDIT_OVERLAYS_OPTIONAL=1.)
-    _require_assets_present(missing, search_dirs)
+    # A missing asset is a setup problem, but not a fatal one: the overlays live
+    # outside the repo and a fresh install has none. Warn and render without it.
+    # (AUTO_EDIT_OVERLAYS_STRICT=1 turns this back into a hard failure.)
+    _check_assets_present(missing, search_dirs)
 
     for name in removed:
         print(
