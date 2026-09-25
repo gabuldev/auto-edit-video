@@ -21,7 +21,9 @@ class TestConfigPaths:
         d = cfg.tokens_dir()
         assert d == tmp_path / "tokens"
         assert d.is_dir()
-        assert (d.stat().st_mode & 0o777) == 0o700
+        # POSIX permission bits: chmod(0o700) is a no-op on Windows.
+        if sys.platform != "win32":
+            assert (d.stat().st_mode & 0o777) == 0o700
 
 
 def _mkconn(tmp_path):

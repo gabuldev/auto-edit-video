@@ -164,4 +164,6 @@ class TestOverlaySearchDirs:
         monkeypatch.delenv("AUTO_EDIT_ASSETS_OVERLAYS", raising=False)
         repo = Path("/some/repo")
         dirs = overlay_search_dirs(repo)
-        assert dirs == [repo / "assets" / "overlays", repo / "overlays"]
+        # overlay_search_dirs resolves the root (adds the drive on Windows).
+        root = repo.resolve()
+        assert dirs == [root / "assets" / "overlays", root / "overlays"]
