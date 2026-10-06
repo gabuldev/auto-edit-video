@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -26,6 +27,7 @@ from typing import Callable, Iterator
 
 from auto_edit import pipeline as pl
 from auto_edit import shorts as sh
+from auto_edit.publish import youtube as yt
 from auto_edit.workspace import init_workspace, workspace_root
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -290,6 +292,24 @@ def open_artifact(
     return path
 
 
+# Links the frontend may ask the OS to open — only the platforms we publish to.
+_OPENABLE_URL = re.compile(r"^https://(www\.|studio\.)?youtube\.com/|^https://youtu\.be/")
+
+
+def open_url(url: str, *, run: Callable[..., object] = subprocess.Popen) -> bool:
+    """Open a platform link in the default browser (the webview won't)."""
+    if not isinstance(url, str) or not _OPENABLE_URL.match(url):
+        return False
+    if sys.platform == "darwin":
+        cmd = ["open", url]
+    elif sys.platform == "win32":
+        cmd = ["cmd", "/c", "start", "", url]
+    else:
+        cmd = ["xdg-open", url]
+    run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
 def result(video_id: str) -> dict | None:
     """Everything the "Resultado" screen shows: metadata + the files on disk."""
     ws = library_root() / video_id
@@ -528,6 +548,123 @@ def shorts_state(video_id: str, max_duration: float = sh.DEFAULT_MAX_DURATION) -
         has_plan=True, clips=items, rejected=rejected, notes=sh.plan_notes(ws)
     )
     return state
+
+
+# ── Publicação (YouTube) ──────────────────────────────────────────────────────
+
+# The OAuth consent runs in a background thread: it blocks until the user
+# authorizes in the browser, and the frontend polls `youtube_account()`.
+_yt_connect = {"status": "idle", "error": None}
+_yt_lock = threading.Lock()
+
+
+def youtube_account() -> dict:
+    with _yt_lock:
+        connecting = _yt_connect["status"] == "connecting"
+        error = _yt_connect["error"]
+    return {
+        "connected": yt.is_connected(),
+        "channel": yt.channel_title(),
+        "connecting": connecting,
+        "error": error,
+        "has_client_secret": yt.client_config() is not None,
+    }
+
+
+def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
+    """Start the OAuth consent (opens the browser). Returns the account state."""
+    with _yt_lock:
+        already = _yt_connect["status"] == "connecting"
+        if not already:
+            _yt_connect.update(status="connecting", error=None)
+    if already:  # outside the lock: youtube_account() takes it too
+        return youtube_account()
+
+    def _run() -> None:
+        error = None
+        try:
+            connect()
+        except Exception as exc:  # surfaced to the UI as-is
+            error = str(exc)
+        with _yt_lock:
+            _yt_connect.update(status="idle", error=error)
+
+    threading.Thread(target=_run, name="youtube-connect", daemon=True).start()
+    return youtube_account()
+
+
+def disconnect_youtube() -> dict:
+    yt.disconnect()
+    return youtube_account()
+
+
+def publish_state(video_id: str) -> dict | None:
+    """What the "Publicar" card shows: defaults from metadata + past publishes."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    p = pl.load(ws)
+    video = artifact_path(video_id, "video")
+    reason = None
+    if p.get("current_stage") != "done":
+        reason = "o vídeo ainda não terminou de editar"
+    elif video is None:
+        reason = "o vídeo final não está em output/"
+    metadata = _read_json(ws / "metadata.json")
+    is_short = p.get("type") == "short"
+    return {
+        "id": video_id,
+        "type": p.get("type"),
+        "eligible": reason is None,
+        "reason": reason,
+        "defaults": {
+            **yt.defaults(p, metadata if isinstance(metadata, dict) else None),
+            "privacy": "private",
+        },
+        # A API não aceita thumbnail personalizada em Shorts.
+        "thumbnail": not is_short and artifact_path(video_id, "thumbnail") is not None,
+        "limits": {"title": yt.TITLE_MAX, "description": yt.DESCRIPTION_MAX},
+        "published": yt.read_record(ws).get("youtube", []),
+        "account": youtube_account(),
+    }
+
+
+def run_publish_youtube(
+    ws: Path,
+    body: dict,
+    *,
+    video: Path,
+    thumbnail: Path | None,
+    emit: Emit,
+    upload: Callable[..., dict] = yt.upload,
+) -> dict:
+    """Upload with progress events, then record it in the workspace."""
+    size_mb = video.stat().st_size / (1024 * 1024)
+    emit({"type": "log", "line": f"enviando {video.name} ({size_mb:.0f} MB) pro YouTube…"})
+    last = {"pct": -1}
+
+    def progress(frac: float) -> None:
+        pct = int(frac * 100)
+        if pct != last["pct"]:
+            last["pct"] = pct
+            emit({"type": "progress", "pct": pct})
+
+    if thumbnail is not None:
+        thumbnail = yt.prepare_thumbnail(thumbnail, ws)
+    res = upload(video, body, thumbnail=thumbnail, on_progress=progress)
+    for warning in res.get("warnings", []):
+        emit({"type": "log", "line": f"aviso: {warning}"})
+    entry = {
+        "video_id": res["video_id"],
+        "url": res["url"],
+        "title": body["snippet"]["title"],
+        "privacy": body["status"]["privacyStatus"],
+        "publish_at": body["status"].get("publishAt"),
+        "warnings": res.get("warnings", []),
+    }
+    yt.add_record(ws, "youtube", entry)
+    emit({"type": "done", "status": "done", "url": res["url"], "video_id": res["video_id"]})
+    return entry
 
 
 # ── Live job registry ─────────────────────────────────────────────────────────
@@ -793,6 +930,44 @@ class JobManager:
 
         threading.Thread(target=_run_queue, name=f"shorts-{video_id}", daemon=True).start()
         return [w.name for w in seeded]
+
+
+    def publish_youtube(self, video_id: str, fields: dict, *, force: bool = False) -> Job:
+        """Upload a finished video to YouTube as a job (progress over SSE).
+
+        Raises FileNotFoundError for an unknown workspace and PublishError for
+        anything the user has to fix (not done, not connected, bad fields,
+        already published without `force`, busy).
+        """
+        ws = library_root() / video_id
+        if not (ws / "pipeline.json").exists():
+            raise FileNotFoundError(f"no workspace for: {video_id}")
+        state = publish_state(video_id)
+        if not state["eligible"]:
+            raise yt.PublishError(state["reason"])
+        if not yt.is_connected():
+            raise yt.PublishError("YouTube não conectado. Conecte a conta antes de publicar.")
+        if state["published"] and not force:
+            raise yt.PublishError("este vídeo já foi enviado pro YouTube")
+        if self._busy(video_id):
+            raise yt.PublishError(f"{video_id} já tem um job rodando")
+
+        p = pl.load(ws)
+        body = yt.build_body(
+            title=fields.get("title", ""),
+            description=fields.get("description", ""),
+            tags=fields.get("tags") or [],
+            privacy=fields.get("privacy") or "private",
+            publish_at=fields.get("publish_at") or None,
+            language=p.get("language"),
+        )
+        video = artifact_path(video_id, "video")
+        thumbnail = artifact_path(video_id, "thumbnail") if state["thumbnail"] else None
+        return self._spawn(
+            video_id,
+            "publish",
+            lambda emit: run_publish_youtube(ws, body, video=video, thumbnail=thumbnail, emit=emit),
+        )
 
 
 # ── Pipeline runner (streams ralph.sh) ────────────────────────────────────────

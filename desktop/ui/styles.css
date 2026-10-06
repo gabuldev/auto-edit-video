@@ -229,6 +229,20 @@ textarea.input { resize: vertical; }
 
 @media (max-width: 1080px) { .res-grid { grid-template-columns: 1fr; } }
 
+/* ── Publicar ────────────────────────────────────────────────────────────── */
+.pub-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pub-count { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 400; margin-left: 6px; }
+.pub-count.over { color: var(--err); }
+.pub-note { font-size: 12.5px; color: var(--faint); line-height: 1.55; margin: 12px 0; }
+.pub-actions { display: flex; gap: 10px; }
+.pub-progress { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 12px; color: var(--dim); }
+.pub-bar { flex: 1; height: 8px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+.pub-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.pub-history { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.pub-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); font-size: 13px; }
+.pub-item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pub-item .warn { flex-basis: 100%; font-size: 12px; color: var(--run); }
+
 /* ── Shorts ────────────────────────────────────────────────────────────────── */
 .content.shorts { max-width: 1240px; }
 .sh-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 2px 14px; font-size: 13px; color: var(--dim); }

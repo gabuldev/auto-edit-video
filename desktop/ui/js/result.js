@@ -4,6 +4,7 @@
 import * as api from "./api.js";
 import { el, escapeHtml, humanSize, setEngine } from "./shell.js";
 import { go } from "./router.js";
+import { mountPublish, unmountPublish } from "./publish.js";
 
 const state = { id: null, data: null };
 
@@ -148,8 +149,10 @@ export default {
     el("res-video").removeAttribute("src");
     el("btn-res-shorts").hidden = true;
     load(id);
+    mountPublish(id);
   },
   unmount() {
+    unmountPublish();
     el("res-video").pause?.();
   },
 };

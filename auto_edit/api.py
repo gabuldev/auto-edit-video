@@ -24,6 +24,13 @@ Endpoints
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
     POST /api/videos/<id>/shorts       {max_dur}  roda o clipper (job, SSE)
     POST /api/videos/<id>/shorts/cut   {pick: [1, 3], max_dur}  corta em fila
+    GET  /api/publish/youtube                 (conta conectada?)
+    POST /api/publish/youtube/connect         abre o OAuth no navegador
+    POST /api/publish/youtube/disconnect
+    GET  /api/videos/<id>/publish             (defaults do metadata + histórico)
+    POST /api/videos/<id>/publish/youtube     {title, description, tags, privacy,
+                                               publish_at, force}  upload (job, SSE)
+    POST /api/open-url                        {url}  só links do YouTube
     GET  /api/jobs/<job_id>/events        (SSE)
     GET  /api/videos/<id>/events          (SSE, that video's current job)
 """
@@ -34,6 +41,7 @@ from typing import Iterator
 
 from auto_edit import engine
 from auto_edit import shorts as sh
+from auto_edit.publish import youtube as yt
 
 
 def _sse(events: Iterator[dict]) -> Iterator[str]:
@@ -225,6 +233,65 @@ def create_app(jobs: engine.JobManager | None = None):
         except (sh.ShortsError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"shorts": ids}), 202
+
+    @app.get("/api/publish/youtube")
+    def youtube_account():
+        return jsonify(engine.youtube_account())
+
+    @app.post("/api/publish/youtube/connect")
+    def youtube_connect():
+        return jsonify(engine.connect_youtube()), 202
+
+    @app.post("/api/publish/youtube/disconnect")
+    def youtube_disconnect():
+        return jsonify(engine.disconnect_youtube())
+
+    @app.get("/api/videos/<video_id>/publish")
+    def publish_state(video_id: str):
+        data = engine.publish_state(video_id)
+        if data is None:
+            return jsonify({"error": "not_found", "id": video_id}), 404
+        job = jobs.job_for_video(video_id)
+        if job is not None and job.kind == "publish":
+            data["job"] = {"id": job.id, "status": job.status}
+        return jsonify(data)
+
+    @app.post("/api/videos/<video_id>/publish/youtube")
+    def publish_youtube(video_id: str):
+        body = request.get_json(silent=True) or {}
+        force = bool(body.get("force"))
+        state = engine.publish_state(video_id)
+        if state is None:
+            return jsonify({"error": "not_found", "id": video_id}), 404
+        if state["published"] and not force:
+            return jsonify({"error": "este vídeo já foi enviado pro YouTube", "published": state["published"]}), 409
+        tags = body.get("tags") or []
+        if isinstance(tags, str):
+            tags = [t for t in tags.split(",")]
+        try:
+            job = jobs.publish_youtube(
+                video_id,
+                {
+                    "title": body.get("title", ""),
+                    "description": body.get("description", ""),
+                    "tags": tags,
+                    "privacy": body.get("privacy", "private"),
+                    "publish_at": body.get("publish_at"),
+                },
+                force=force,
+            )
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except yt.PublishError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"job_id": job.id, "video_id": job.video_id}), 202
+
+    @app.post("/api/open-url")
+    def open_url():
+        body = request.get_json(silent=True) or {}
+        if not engine.open_url(body.get("url")):
+            return jsonify({"error": "só links do YouTube"}), 400
+        return jsonify({"opened": body["url"]})
 
     @app.get("/api/jobs/<job_id>/events")
     def job_events(job_id: str):

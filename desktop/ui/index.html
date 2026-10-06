@@ -314,7 +314,64 @@
             </div>
           </section>
 
-          <section class="card">
+          <section>
+          <div class="card" id="pub-card" hidden>
+            <div class="card-head">
+              <div>
+                <h2>Publicar no YouTube</h2>
+                <p id="pub-account">—</p>
+              </div>
+            </div>
+            <div id="pub-error" class="banner err" hidden></div>
+
+            <div id="pub-connect" hidden>
+              <p class="pub-note" id="pub-connect-note"></p>
+              <button class="btn btn-primary" id="btn-yt-connect">Conectar YouTube</button>
+            </div>
+
+            <div id="pub-history" class="pub-history" hidden></div>
+            <button class="btn btn-sm" id="btn-pub-again" hidden>Enviar de novo</button>
+
+            <div id="pub-form" hidden>
+              <label class="field">
+                <span>Título <em class="pub-count mono" id="pub-title-count"></em></span>
+                <input class="input" id="pub-title" maxlength="100" />
+              </label>
+              <label class="field">
+                <span>Descrição</span>
+                <textarea class="input" id="pub-desc" rows="6"></textarea>
+              </label>
+              <label class="field">
+                <span>Tags (separadas por vírgula)</span>
+                <input class="input" id="pub-tags" />
+              </label>
+              <div class="pub-row">
+                <label class="field">
+                  <span>Visibilidade</span>
+                  <select class="input" id="pub-privacy">
+                    <option value="private">Privado</option>
+                    <option value="unlisted">Não listado</option>
+                    <option value="public">Público</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Agendar (opcional)</span>
+                  <input class="input mono" type="datetime-local" id="pub-when" />
+                </label>
+              </div>
+              <p class="pub-note" id="pub-note"></p>
+              <div class="pub-actions">
+                <button class="btn btn-primary" id="btn-publish">Enviar pro YouTube</button>
+              </div>
+            </div>
+
+            <div id="pub-progress" class="pub-progress" hidden>
+              <div class="pub-bar"><span id="pub-bar"></span></div>
+              <span class="mono" id="pub-pct">0%</span>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-head">
               <div>
                 <h2>Publicação</h2>
@@ -324,6 +381,7 @@
             <div id="res-meta" class="meta"></div>
             <div id="res-thumbtext" class="meta-field" hidden></div>
             <div id="res-nometa" class="empty small" hidden>Sem metadata ainda — ela sai no fim do pipeline.</div>
+          </div>
           </section>
         </div>
       </div>

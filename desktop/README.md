@@ -9,7 +9,9 @@ vídeo na pasta de entrada, com busca, e inicia o pipeline), Pipeline ao vivo
 (stages, log do `ralph.sh` em tempo real e retomar a partir de um stage),
 Revisar cortes (os trechos mantidos com o que é dito em cada um; desmarcar e
 salvar reescreve o `reviewed_plan.json`), Resultado (o vídeo pronto tocando, a
-thumbnail e o texto de publicação pronto pra copiar) e Shorts (a partir de um
+thumbnail, o texto de publicação pronto pra copiar e **Publicar no YouTube**:
+conecta o canal, edita título/descrição/tags, escolhe a visibilidade ou agenda,
+e envia com barra de progresso) e Shorts (a partir de um
 long pronto: o `clipper` propõe trechos, você assiste cada um no player, marca e
 corta — cada marcado vira um `<nome>_shortN` que roda em fila).
 

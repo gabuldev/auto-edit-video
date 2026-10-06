@@ -73,5 +73,25 @@ export const openFile = (id, kind, reveal = false) =>
     body: JSON.stringify({ reveal }),
   });
 
+export const youtubeAccount = () => json("/api/publish/youtube");
+
+export const connectYoutube = () => json("/api/publish/youtube/connect", { method: "POST" });
+
+export const publishState = (id) => json(`/api/videos/${encodeURIComponent(id)}/publish`);
+
+export const publishYoutube = (id, payload) =>
+  json(`/api/videos/${encodeURIComponent(id)}/publish/youtube`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+export const openUrl = (url) =>
+  json("/api/open-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+
 export const videoEvents = (id) =>
   new EventSource(`${API}/api/videos/${encodeURIComponent(id)}/events`);
