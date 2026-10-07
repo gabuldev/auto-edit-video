@@ -69,6 +69,7 @@ function readForm() {
     whisper_model: el("f-whisper").value,
     max_iterations: Number(el("f-iterations").value) || 3,
     dry_run: el("f-dry").checked,
+    cold_open: el("f-coldopen").checked,
     overlays_dir: type === "long" ? el("f-overlays").value.trim() || null : null,
   };
 }

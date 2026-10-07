@@ -200,6 +200,7 @@ def _run_pipeline(
     dry_run: bool = False,
     language: str = "pt",
     plan_id: Optional[str] = None,
+    cold_open: bool = False,
 ) -> None:
     if not video.exists():
         console.print(f"[red]Error:[/red] File not found: {video}")
@@ -226,8 +227,12 @@ def _run_pipeline(
             plan_id=plan_id,
         )
 
+    if cold_open:
+        pl.set_cold_open(ws)
     console.print(f"[cyan]Type:[/cyan] {video_type}")
     console.print(f"[cyan]Context:[/cyan] {context or '(none)'}")
+    if pl.load(ws).get("cold_open"):
+        console.print("[cyan]Cold open:[/cyan] sim (o melhor momento abre o vídeo)")
     console.print(f"[cyan]Whisper model:[/cyan] {whisper_model}")
     console.print(f"[cyan]Language:[/cyan] {language}")
     console.print(f"[cyan]Workspace:[/cyan] {ws}")
@@ -291,6 +296,7 @@ def short(
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
     plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'S2' or '2026-W19/S2'). Use 'none' to skip prompt."),
     no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
+    cold_open: bool = typer.Option(False, "--cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
 ) -> None:
     """Edit a short-form video (adds captions, generates Reels/Shorts metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -315,6 +321,7 @@ def short(
         dry_run=dry_run,
         language=language,
         plan_id=pid,
+        cold_open=cold_open,
     )
 
 
@@ -344,6 +351,7 @@ def long(
         "--overlays-dir",
         help="Folder holding the overlay .mp4s (sets AUTO_EDIT_ASSETS_OVERLAYS).",
     ),
+    cold_open: bool = typer.Option(False, "--cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -365,6 +373,7 @@ def long(
         dry_run=dry_run,
         language=language,
         plan_id=pid,
+        cold_open=cold_open,
     )
 
 

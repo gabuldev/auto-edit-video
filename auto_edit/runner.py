@@ -241,6 +241,17 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             _compact_json(_slim_for_plan(post_cut)),
         ]
 
+    elif stage == "coldopen":
+        transcription = _read_json(workspace / "transcription.json")
+        plan = _read_json_optional(workspace / "reviewed_plan.json") or {}
+        sections += [
+            "\n## Video Information",
+            f"- Type: {video_type}",
+            f"- Context: {context or '(no context provided)'}",
+            "\n## What the edit kept ([start–end] on the source timeline)",
+            _kept_lines(transcription, plan),
+        ]
+
     elif stage == "metadata":
         # Use post-cut transcription if available, else original
         transcript = (
@@ -365,6 +376,28 @@ def _slim_for_overlay(t: dict) -> dict:
             for w in t.get("words", [])
         ],
     }
+
+
+def _kept_lines(t: dict, plan: dict) -> str:
+    """`[start–end] text` for each transcript line inside a kept segment,
+    clipped to it — the material a cold open can be picked from."""
+    kept = []
+    for seg in plan.get("kept_segments") or []:
+        try:
+            kept.append((float(seg["start"]), float(seg["end"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    lines = []
+    for seg in t.get("segments", []):
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        for ks, ke in kept:
+            lo, hi = max(float(seg["start"]), ks), min(float(seg["end"]), ke)
+            if hi - lo > 0.3:
+                lines.append(f"[{lo:.1f}–{hi:.1f}] {text}")
+                break
+    return "\n".join(lines)
 
 
 def _slim_for_metadata(t: dict) -> str:

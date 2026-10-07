@@ -11,6 +11,9 @@ auto-edit short video.mp4 --context "review de produto tech"
 # Editar long (horizontal, sem legendas, com overlays)
 auto-edit long video.mp4 --context "tutorial de Python"
 
+# Cold open: abre com o melhor momento do vídeo (teaser) antes da abertura normal
+auto-edit long video.mp4 -c "..." --cold-open
+
 # Batch (vários vídeos)
 auto-edit batch upload/ --type short --context "vlogs de viagem"
 
@@ -43,6 +46,19 @@ Whisper   Claude  Claude   FFmpeg   FFmpeg    FFmpeg    Claude     Claude
 O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
 
 Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iterações).
+
+### Ordem de reprodução (cold open / reordenação)
+
+O plano diz **o que fica** (`kept_segments`, sempre cronológico). O campo
+opcional `sequence` diz **em que ordem tocar**: janelas no tempo do original,
+recortadas pelo que foi mantido (nunca traz de volta um corte). Blocos cobrem
+tudo que ficou sem se sobrepor; teasers (`role: "teaser"`, 2–15s, até 20s no
+total) tocam a mais e o trecho toca de novo no lugar. Sequência inválida é
+ignorada e o vídeo sai cronológico. Lógica em `auto_edit/sequence.py`.
+
+Com `--cold-open` (ou o checkbox no app), o agente `agents/cold_open.md` roda
+no `execute`, antes do executor, e escolhe o teaser. Se ele pular, falhar ou o
+teaser não passar nas regras, o vídeo sai sem cold open — nunca falha o stage.
 
 ### Shorts derivados
 

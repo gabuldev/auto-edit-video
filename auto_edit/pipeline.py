@@ -78,6 +78,13 @@ def save(workspace: Path, pipeline: dict) -> None:
     )
 
 
+def set_cold_open(workspace: Path, enabled: bool = True) -> None:
+    """Ask the execute stage for a cold open (kept across `resume`)."""
+    p = load(workspace)
+    p["cold_open"] = bool(enabled)
+    save(workspace, p)
+
+
 def set_stage_status(workspace: Path, stage: str, status: str, error: str | None = None) -> dict:
     """Mark a stage as running/complete/failed and update current_stage."""
     pipeline = load(workspace)

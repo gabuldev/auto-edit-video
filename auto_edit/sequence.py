@@ -124,3 +124,103 @@ def apply(intervals: list[Interval], sequence) -> tuple[list[Interval], list[str
 def describe(playback: list[Interval]) -> str:
     """One line per played interval, for the executor log."""
     return "\n".join(f"  [{i + 1}] {s:.2f}s → {e:.2f}s  ({e - s:.2f}s)" for i, (s, e) in enumerate(playback))
+
+
+# ── Cold open (agent → plan) ──────────────────────────────────────────────────
+
+COLD_OPEN_FILE = "cold_open.json"
+# A teaser from the opening seconds is not a cold open: it already plays first.
+MIN_KEPT_BEFORE_TEASER = 15.0
+
+
+def _read(path):
+    import json
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def kept_intervals(plan: dict) -> list[Interval]:
+    out = []
+    for seg in plan.get("kept_segments") or []:
+        try:
+            s, e = float(seg["start"]), float(seg["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if e > s:
+            out.append((s, e))
+    return sorted(out)
+
+
+def wants_cold_open(workspace) -> bool:
+    """Cold open was asked for (pipeline.json or AUTO_EDIT_COLD_OPEN) and the
+    plan has no sequence yet — a hand-made one is never overwritten."""
+    import os
+    from pathlib import Path
+
+    ws = Path(workspace)
+    pipeline = _read(ws / "pipeline.json") or {}
+    asked = bool(pipeline.get("cold_open")) or os.environ.get("AUTO_EDIT_COLD_OPEN", "").lower() in ("1", "true", "yes")
+    plan = _read(ws / "reviewed_plan.json") or {}
+    return asked and not plan.get("sequence")
+
+
+def merge_cold_open(workspace) -> list[str]:
+    """Turn the agent's teaser into the plan's `sequence`. Returns log notes.
+
+    Writes nothing when the agent skipped, or when the teaser would not
+    survive `apply` (inside a cut, too short/long) or sits in the opening.
+    """
+    import json
+    from pathlib import Path
+
+    ws = Path(workspace)
+    answer = _read(ws / COLD_OPEN_FILE) or {}
+    teaser = answer.get("teaser") if isinstance(answer, dict) else None
+    if not teaser:
+        return [f"agente não escolheu cold open: {answer.get('reason') or 'sem motivo'}"]
+
+    plan_path = ws / "reviewed_plan.json"
+    plan = _read(plan_path) or {}
+    kept = kept_intervals(plan)
+    if not kept:
+        return ["plano sem trechos mantidos — cold open ignorado"]
+    try:
+        start, end = float(teaser["start"]), float(teaser["end"])
+    except (KeyError, TypeError, ValueError):
+        return ["teaser sem start/end válidos — cold open ignorado"]
+
+    before = _total(_clip(kept, 0.0, start))
+    if before < MIN_KEPT_BEFORE_TEASER:
+        return [f"teaser em {start:.1f}s está na abertura ({before:.1f}s depois do início) — cold open ignorado"]
+
+    candidate = [
+        {"start": round(start, 3), "end": round(end, 3), "role": "teaser"},
+        # Everything else, in order. The slack covers the executor's end padding;
+        # what plays is still clipped to what was kept.
+        {"start": 0.0, "end": round(kept[-1][1] + 60.0, 3)},
+    ]
+    played, notes = apply(kept, candidate)
+    if notes or played == kept:
+        return notes or ["teaser não muda nada — cold open ignorado"]
+
+    plan["sequence"] = candidate
+    plan["cold_open"] = {"start": start, "end": end, "reason": teaser.get("reason")}
+    plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+    return [f"cold open {start:.1f}–{end:.1f}s ({_total(_clip(kept, start, end)):.1f}s): {teaser.get('reason') or ''}"]
+
+
+if __name__ == "__main__":
+    import sys
+
+    cmd, ws_arg = (sys.argv[1], sys.argv[2]) if len(sys.argv) > 2 else ("", "")
+    if cmd == "wants-cold-open":
+        sys.exit(0 if wants_cold_open(ws_arg) else 1)
+    if cmd == "cold-open":
+        for note in merge_cold_open(ws_arg):
+            print(f"[cold-open] {note}")
+        sys.exit(0)
+    print("usage: python -m auto_edit.sequence wants-cold-open|cold-open <workspace>", file=sys.stderr)
+    sys.exit(2)

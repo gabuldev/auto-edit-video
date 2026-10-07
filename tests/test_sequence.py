@@ -4,6 +4,7 @@ reordered timeline (a teaser plays the same words twice)."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -152,3 +153,77 @@ def test_executor_writes_the_playback_order(tmp_path, monkeypatch):
     assert cut["iv"] == expected
     applied = json.loads((ws / "applied_intervals.json").read_text())["intervals"]
     assert [(i["start"], i["end"]) for i in applied] == expected
+
+
+# ── cold open: agent answer → plan ────────────────────────────────────────────
+
+def _cold_ws(tmp_path, answer=None, cold_open=True, sequence_in_plan=None):
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True)
+    (ws / "pipeline.json").write_text(json.dumps({"type": "long", "cold_open": cold_open, "stages": {}}))
+    plan = {"kept_segments": [{"start": s, "end": e} for s, e in KEPT], "cuts": []}
+    if sequence_in_plan:
+        plan["sequence"] = sequence_in_plan
+    (ws / "reviewed_plan.json").write_text(json.dumps(plan))
+    if answer is not None:
+        (ws / sequence.COLD_OPEN_FILE).write_text(json.dumps(answer))
+    return ws
+
+
+class TestColdOpen:
+    def test_wants_only_when_asked_and_no_sequence(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("AUTO_EDIT_COLD_OPEN", raising=False)
+        assert sequence.wants_cold_open(_cold_ws(tmp_path / "a"))
+        assert not sequence.wants_cold_open(_cold_ws(tmp_path / "b", cold_open=False))
+        assert not sequence.wants_cold_open(_cold_ws(tmp_path / "c", sequence_in_plan=[{"start": 0, "end": 60}]))
+        monkeypatch.setenv("AUTO_EDIT_COLD_OPEN", "1")
+        assert sequence.wants_cold_open(_cold_ws(tmp_path / "d", cold_open=False))
+
+    def test_merge_writes_teaser_then_everything(self, tmp_path):
+        ws = _cold_ws(tmp_path, {"teaser": {"start": 52, "end": 58, "reason": "o resultado"}})
+        notes = sequence.merge_cold_open(ws)
+        plan = json.loads((ws / "reviewed_plan.json").read_text())
+        assert plan["sequence"][0] == {"start": 52.0, "end": 58.0, "role": "teaser"}
+        assert plan["cold_open"]["reason"] == "o resultado"
+        played, problems = sequence.apply(KEPT, plan["sequence"])
+        assert problems == [] and played == [(52.0, 58.0)] + KEPT
+        assert "52.0" in notes[0]
+
+    @pytest.mark.parametrize("answer, expected", [
+        ({"teaser": None, "reason": "já abre no gancho"}, "já abre no gancho"),
+        ({"teaser": {"start": 2, "end": 8}}, "abertura"),          # only 2s of kept before it
+        ({"teaser": {"start": 12, "end": 18}}, "ignorado"),        # inside the 10-20 cut
+        ({"teaser": {"start": "x", "end": 8}}, "start/end"),
+    ])
+    def test_merge_skips_without_touching_the_plan(self, tmp_path, answer, expected):
+        ws = _cold_ws(tmp_path, answer)
+        before = (ws / "reviewed_plan.json").read_text()
+        notes = sequence.merge_cold_open(ws)
+        assert expected in " ".join(notes)
+        assert (ws / "reviewed_plan.json").read_text() == before
+
+
+def test_cold_open_prompt_lists_kept_lines_on_the_source_timeline(tmp_path):
+    from auto_edit import runner
+
+    ws = _cold_ws(tmp_path)
+    (ws / "pipeline.json").write_text(json.dumps({"type": "long", "context": "c", "stages": {}}))
+    (ws / "transcription.json").write_text(json.dumps({"duration": 60, "segments": [
+        {"start": 1.0, "end": 3.0, "text": "abertura"},
+        {"start": 12.0, "end": 15.0, "text": "cortado"},
+        {"start": 25.0, "end": 28.0, "text": "gancho forte"},
+    ]}))
+    prompt = runner.build_prompt("coldopen", ws, Path("agents/cold_open.md"))
+    assert "[1.0–3.0] abertura" in prompt
+    assert "[25.0–28.0] gancho forte" in prompt
+    assert "cortado" not in prompt
+
+
+def test_set_cold_open_survives_reload(tmp_path):
+    from auto_edit import pipeline as pl
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "pipeline.json").write_text(json.dumps({"stages": {}}))
+    pl.set_cold_open(ws)
+    assert pl.load(ws)["cold_open"] is True

@@ -17,7 +17,7 @@ Endpoints
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
     GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
     POST /api/edit                 {video_path, type, context, language,
-                                    whisper_model, max_iterations, dry_run,
+                                    whisper_model, max_iterations, dry_run, cold_open,
                                     overlays_dir}
     POST /api/videos/<id>/resume   {from_stage, overlays_dir}
     GET  /api/jobs/<job_id>/events        (SSE)
@@ -146,6 +146,7 @@ def create_app(jobs: engine.JobManager | None = None):
                 language=body.get("language", "pt"),
                 max_iterations=int(body.get("max_iterations", 3)),
                 dry_run=bool(body.get("dry_run", False)),
+                cold_open=bool(body.get("cold_open", False)),
                 overlays_dir=body.get("overlays_dir"),
             )
         except FileNotFoundError as exc:

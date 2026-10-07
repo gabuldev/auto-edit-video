@@ -374,6 +374,18 @@ if final:
 " "$WORKSPACE"
                 break
             fi
+            # Cold open (opt-in: --cold-open): an agent picks a moment from later
+            # in the video and the plan's sequence plays it first. A failed or
+            # skipped cold open never fails the edit — it just plays in order.
+            if $PYTHON -m auto_edit.sequence wants-cold-open "$WORKSPACE"; then
+                rm -f "$WORKSPACE/cold_open.json"
+                if ( fail_stage() { exit 1; }
+                     run_standalone_agent "coldopen" "$WORKSPACE/cold_open.json" "$AGENTS_DIR/cold_open.md" ); then
+                    $PYTHON -m auto_edit.sequence cold-open "$WORKSPACE" || log "WARNING: cold open merge failed — editing without it"
+                else
+                    log "WARNING: cold open agent failed — editing without it"
+                fi
+            fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
             # Transcript of the edited video, so evaluate judges the cut and
             # not the raw footage.

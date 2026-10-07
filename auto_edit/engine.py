@@ -528,6 +528,7 @@ class JobManager:
         dry_run: bool = False,
         overlays_dir: str | None = None,
         caption_style: dict | None = None,
+        cold_open: bool = False,
     ) -> Job:
         video = Path(video_path).resolve()
         if not video.exists():
@@ -541,6 +542,8 @@ class JobManager:
             caption_style=caption_style or {},
             language=language,
         )
+        if cold_open:
+            pl.set_cold_open(ws)
         return self._spawn(
             ws.name,
             "edit",
