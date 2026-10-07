@@ -8,6 +8,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from auto_edit.chapters import description_with_chapters
+
 STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail", "done"]
 
 # Stages that are skipped per video type
@@ -301,7 +303,9 @@ def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
             f"TÍTULO: {metadata.get('youtube_title', '')}",
             "",
             "DESCRIÇÃO:",
-            metadata.get("youtube_description", ""),
+            description_with_chapters(
+                metadata.get("youtube_description", ""), metadata.get("chapters") or []
+            ),
             "",
             "TAGS:",
             ", ".join(metadata.get("tags", [])),

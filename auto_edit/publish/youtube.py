@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable
 
 from auto_edit import config as cfg
+from auto_edit.chapters import description_with_chapters
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
@@ -67,7 +68,9 @@ def defaults(pipeline: dict, metadata: dict | None) -> dict:
         }
     return {
         "title": (m.get("youtube_title") or "").strip(),
-        "description": (m.get("youtube_description") or "").strip(),
+        "description": description_with_chapters(
+            m.get("youtube_description") or "", m.get("chapters") or []
+        ).strip(),
         "tags": [str(t) for t in (m.get("tags") or [])],
     }
 

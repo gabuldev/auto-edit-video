@@ -264,15 +264,24 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             or _read_json(workspace / "transcription.json")
         )
         language = pipeline.get("language", "pt")
-        text = _slim_for_metadata(transcript)
         sections += [
             "\n## Video Information",
             f"- Type: {video_type}",
             f"- Context: {context or '(no context provided)'}",
             f"- Language: {language}",
-            "\n## Final Video Transcription (text only)",
-            text,
         ]
+        if video_type == "long":
+            # Long gets timestamps so the agent can mark YouTube chapters.
+            sections += [
+                f"- Duration: {_mmss(float(transcript.get('duration') or 0))}",
+                "\n## Final Video Transcription ([m:ss] = start of each line in the edited video)",
+                _timed_for_metadata(transcript),
+            ]
+        else:
+            sections += [
+                "\n## Final Video Transcription (text only)",
+                _slim_for_metadata(transcript),
+            ]
         brief = _performance_section(video_type)
         if brief:
             sections += [
@@ -408,6 +417,20 @@ def _kept_lines(t: dict, plan: dict) -> str:
 def _slim_for_metadata(t: dict) -> str:
     """Plain text transcript -- no timestamps, no JSON."""
     return " ".join(s["text"].strip() for s in t.get("segments", []) if s.get("text"))
+
+
+def _mmss(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _timed_for_metadata(t: dict) -> str:
+    """One `[m:ss] text` line per segment -- what chapters are marked against."""
+    return "\n".join(
+        f"[{_mmss(float(s.get('start') or 0))}] {s['text'].strip()}"
+        for s in t.get("segments", [])
+        if s.get("text") and s["text"].strip()
+    )
 
 
 # -- Compact JSON serialization ------------------------------------------------

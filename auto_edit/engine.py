@@ -26,6 +26,7 @@ from queue import Queue
 from typing import Callable, Iterator
 
 from auto_edit import pipeline as pl
+from auto_edit.chapters import description_with_chapters
 from auto_edit import shorts as sh
 from auto_edit.publish import youtube as yt
 from auto_edit.workspace import init_workspace, workspace_root
@@ -324,6 +325,14 @@ def result(video_id: str) -> dict | None:
             files[kind] = {"path": str(path), "size": path.stat().st_size}
 
     metadata = _read_json(ws / "metadata.json")
+    if isinstance(metadata, dict) and metadata.get("chapters"):
+        # The screen copies the description as it goes on YouTube: chapters included.
+        metadata = {
+            **metadata,
+            "youtube_description": description_with_chapters(
+                metadata.get("youtube_description") or "", metadata["chapters"]
+            ),
+        }
     return {
         "id": video_id,
         "video_name": p.get("video_name", video_id),

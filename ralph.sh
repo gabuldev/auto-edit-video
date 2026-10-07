@@ -413,7 +413,11 @@ if final:
             ;;
 
         metadata)
-            run_agent "metadata" "$WORKSPACE/metadata.json" "$AGENTS_DIR/metadata.md"
+            run_agent "metadata" "$WORKSPACE/metadata.json" "$AGENTS_DIR/metadata.md" no-advance
+            # Capítulos fora das regras do YouTube somem aqui (com o motivo no
+            # log); nunca falham o stage.
+            $PYTHON -m auto_edit.chapters "$WORKSPACE" || true
+            advance_stage "metadata"
             ;;
 
         thumbnail)
