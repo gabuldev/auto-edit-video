@@ -91,16 +91,16 @@ class TestApply:
     def test_normalizes_in_place(self, tmp_path):
         ws = _ws(tmp_path, {"youtube_title": "T", "chapters": GOOD + [{"start": 600, "title": "fora"}]})
         notes = ch.apply(ws)
-        meta = json.loads((ws / "metadata.json").read_text())
+        meta = json.loads((ws / "metadata.json").read_text(encoding="utf-8"))
         assert [c["start"] for c in meta["chapters"]] == [0, 55, 140, 420]
         assert meta["youtube_title"] == "T"
         assert any("fora" in n for n in notes)
 
     def test_short_without_chapters_is_untouched(self, tmp_path):
         ws = _ws(tmp_path, {"short_title": "S"})
-        before = (ws / "metadata.json").read_text()
+        before = (ws / "metadata.json").read_text(encoding="utf-8")
         assert ch.apply(ws) == []
-        assert (ws / "metadata.json").read_text() == before
+        assert (ws / "metadata.json").read_text(encoding="utf-8") == before
 
 
 class TestPrompt:
@@ -129,7 +129,7 @@ def test_every_description_reader_includes_chapters(tmp_path, monkeypatch):
 
     txt = tmp_path / "notes.txt"
     pipeline._write_metadata_txt(txt, meta, "long")
-    assert "0:55 A nova interface" in txt.read_text()
+    assert "0:55 A nova interface" in txt.read_text(encoding="utf-8")
 
     assert "0:55 A nova interface" in yt.defaults({"type": "long"}, meta)["description"]
 
@@ -140,4 +140,4 @@ def test_every_description_reader_includes_chapters(tmp_path, monkeypatch):
     (ws / "metadata.json").write_text(json.dumps(meta))
     assert "0:55 A nova interface" in engine.result("w")["metadata"]["youtube_description"]
     # the file itself keeps them apart
-    assert json.loads((ws / "metadata.json").read_text())["youtube_description"] == "Desc."
+    assert json.loads((ws / "metadata.json").read_text(encoding="utf-8"))["youtube_description"] == "Desc."
