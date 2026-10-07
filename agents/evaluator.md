@@ -21,6 +21,14 @@ Evaluate whether the edited video is ready to publish. You are looking for:
 - A significant portion seems off-topic
 - Score < 6/10
 
+**The opening:** the prompt carries a measured report of the first seconds
+(`← preâmbulo` marks greeting, self-intro, announcing the video, "bora lá",
+recording logistics). If preamble runs **past 15s** before the video states
+or shows what it delivers, that is a reason to reject — most drop-off happens
+there. Name the exact time ranges to cut in `feedback_for_planner` ("corte
+0:25–0:52: anúncio + apresentação + 'deixa virar a câmera'; abra no 0:55,
+'Olha isso daqui'"). One short greeting before the promise is fine.
+
 **IMPORTANT:** If `iteration >= max_iterations`, set `approved: true` regardless. Do not loop forever.
 
 ## Output Format

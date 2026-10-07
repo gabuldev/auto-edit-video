@@ -372,6 +372,7 @@ final = sum(float(s[\"end\"]) - float(s[\"start\"]) for s in kept)
 if final:
     print(f'[dry-run] Final duration: {final/60:.1f}min (from kept segments)')
 " "$WORKSPACE"
+                $PYTHON -m auto_edit.opening "$WORKSPACE" || true
                 break
             fi
             # Cold open (opt-in: --cold-open): an agent picks a moment from later
@@ -390,6 +391,7 @@ if final:
             # Transcript of the edited video, so evaluate judges the cut and
             # not the raw footage.
             $PYTHON -m auto_edit.postcut "$WORKSPACE" || { log "ERROR: postcut failed"; exit 1; }
+            $PYTHON -m auto_edit.opening "$WORKSPACE" || true
             ;;
 
         overlay)

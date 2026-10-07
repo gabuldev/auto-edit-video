@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from auto_edit import opening
 from auto_edit import pipeline as pl
 from auto_edit import snap
 
@@ -203,6 +204,10 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 "Timestamps are on the FINAL timeline. A segment marked "
                 '`"partial": true` was cut through by the edit — judge whether it still reads whole.',
                 _compact_json(_slim_for_review(post_cut_transcript)),
+                "\n## Abertura do vídeo editado (medido, não opinião)",
+                "Falas dos primeiros segundos; `← preâmbulo` marca saudação, apresentação, "
+                "anúncio do vídeo, 'bora lá', logística de gravação ou pedido de inscrição.",
+                opening.format_report(opening.report(post_cut_transcript)),
             ]
         else:
             sections += [

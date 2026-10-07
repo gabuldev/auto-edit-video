@@ -36,7 +36,27 @@ Do **not** delete a block only because it feels low-energy, is an explanation, o
 
 **Order is fixed.** You may only remove intervals — never reorder or move content. Downstream the kept segments are re-sorted chronologically and merged, so any reordering you propose is silently discarded.
 
-## Step 4 — Tighten inside the blocks you kept
+## Step 4 — The opening: the promise lands in the first ~15 seconds
+
+Most viewers who leave, leave in the opening. Whatever the video promises (the
+result, the demo, the question it answers) must be said or shown within the
+first ~15 seconds of the **final** cut. Before that point, cut:
+
+- Greetings beyond one short line ("Fala galera" alone is fine; a paragraph is not)
+- "Bora lá", "vamos lá", "sem mais delongas" and other run-ups
+- Announcing the video instead of starting it ("no vídeo de hoje…", "tem algumas
+  coisas importantes que a gente precisa falar…")
+- Self-introduction ("para quem não me conhece, sou…") — keep at most one short
+  sentence, and only if it adds credibility the video needs
+- Recording logistics ("deixa só virar a câmera", "perai", "deixa eu abrir aqui")
+- Subscribe/like requests at the start
+
+These are **trims, not block drops**: keep the sentence that states what the
+video delivers and cut the run-up around it. This rule overrides "keep whole
+blocks" for the opening only — a slow opening is the one place where slow is
+not fine.
+
+## Step 5 — Tighten inside the blocks you kept
 
 Within surviving blocks, also remove:
 - Silence: no words in the interval, gap **> 1.0s**, average energy_db at or below the **silence threshold in the Audio Levels section** (measured on this recording — never a textbook number), and the gap is not doing rhetorical work. Dead air where the speaker changes scene or repositions the camera counts.
