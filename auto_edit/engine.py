@@ -26,6 +26,7 @@ from queue import Queue
 from typing import Callable, Iterator
 
 from auto_edit import pipeline as pl
+from auto_edit import retention as ret
 from auto_edit.chapters import description_with_chapters
 from auto_edit import shorts as sh
 from auto_edit.publish import youtube as yt
@@ -573,6 +574,7 @@ def youtube_account() -> dict:
         error = _yt_connect["error"]
     return {
         "connected": yt.is_connected(),
+        "needs_reconnect": yt.needs_reconnect(),
         "channel": yt.channel_title(),
         "connecting": connecting,
         "error": error,
@@ -674,6 +676,41 @@ def run_publish_youtube(
     yt.add_record(ws, "youtube", entry)
     emit({"type": "done", "status": "done", "url": res["url"], "video_id": res["video_id"]})
     return entry
+
+
+# ── Retenção (YouTube Analytics) ──────────────────────────────────────────────
+
+
+def retention_state(video_id: str) -> dict | None:
+    """The saved retention analysis of a published video (no API call)."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    return {
+        "id": video_id,
+        "youtube_id": ret.youtube_id(ws),
+        "data": ret.load(ws),
+        "account": youtube_account(),
+    }
+
+
+def refresh_retention(video_id: str, *, fetch: Callable[[str], list] | None = None) -> dict:
+    """Fetch the curve from YouTube now and save the analysis.
+
+    Raises FileNotFoundError (no workspace), RetentionError (not published /
+    no curve yet) or AuthError (not connected) — the API shows them as is.
+    """
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    if fetch is None:
+        from auto_edit import youtube_auth
+        from auto_edit.insights.youtube import YouTubeConnector
+
+        youtube_auth.credentials()  # AuthError when not connected: no browser from here
+        fetch = YouTubeConnector().fetch_retention
+    ret.refresh(ws, fetch)
+    return retention_state(video_id)
 
 
 # ── Live job registry ─────────────────────────────────────────────────────────

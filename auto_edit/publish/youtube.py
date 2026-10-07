@@ -1,8 +1,8 @@
 """Publicar no YouTube: upload resumível do vídeo final + thumbnail.
 
-Usa um token próprio (`tokens/youtube_publish.json`) com escopo de upload,
-separado do token só-leitura do `auto-edit insights`. O client secret OAuth é
-o mesmo (`AUTO_EDIT_YT_CLIENT_SECRET`) e fica fora do repo.
+A conexão com o YouTube é a mesma do `auto-edit insights`
+(`auto_edit.youtube_auth`): um token, todos os escopos. O client secret OAuth
+fica fora do repo (`AUTO_EDIT_YT_CLIENT_SECRET`).
 
 Projeto do Google Cloud sem auditoria: o YouTube trava como privado todo vídeo
 enviado pela API. Funciona, mas a publicação final é no Studio.
@@ -16,16 +16,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from auto_edit import config as cfg
+from auto_edit import youtube_auth
 from auto_edit.chapters import description_with_chapters
 
-SCOPES = [
-    "https://www.googleapis.com/auth/youtube.upload",
-    # só pra mostrar "conectado como <canal>"
-    "https://www.googleapis.com/auth/youtube.readonly",
-]
-TOKEN_NAME = "youtube_publish.json"
-CHANNEL_NAME = "youtube_publish.channel.json"
+SCOPES = youtube_auth.SCOPES
 
 PRIVACY = ("private", "unlisted", "public")
 TITLE_MAX = 100
@@ -150,116 +144,35 @@ def _parse_when(value: str) -> datetime:
     return when.astimezone(timezone.utc)
 
 
-# ── OAuth ─────────────────────────────────────────────────────────────────────
+# ── OAuth (shared with insights: auto_edit.youtube_auth) ─────────────────────
 
-
-def token_path() -> Path:
-    return cfg.tokens_dir() / TOKEN_NAME
-
-
-def client_secret() -> Path | None:
-    raw = os.environ.get("AUTO_EDIT_YT_CLIENT_SECRET")
-    if raw and Path(raw).expanduser().is_file():
-        return Path(raw).expanduser()
-    return None
-
-
-def client_config() -> dict | None:
-    """O OAuth client pra pedir consentimento.
-
-    Primeiro o JSON de `AUTO_EDIT_YT_CLIENT_SECRET`. Sem ele, o client que já
-    autorizou o `auto-edit insights`: o token dele guarda client_id/secret do
-    mesmo app Desktop, então quem já conectou o insights não baixa nada de novo.
-    """
-    secret = client_secret()
-    if secret is not None:
-        return json.loads(secret.read_text(encoding="utf-8"))
-    try:
-        token = json.loads((cfg.tokens_dir() / "youtube.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not token.get("client_id") or not token.get("client_secret"):
-        return None
-    return {
-        "installed": {
-            "client_id": token["client_id"],
-            "client_secret": token["client_secret"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": token.get("token_uri") or "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost"],
-        }
-    }
-
-
-def is_connected() -> bool:
-    return token_path().exists()
-
-
-def channel_title() -> str | None:
-    path = cfg.tokens_dir() / CHANNEL_NAME
-    try:
-        return json.loads(path.read_text(encoding="utf-8")).get("title")
-    except (OSError, ValueError):
-        return None
+token_path = youtube_auth.token_path
+client_secret = youtube_auth.client_secret
+client_config = youtube_auth.client_config
+is_connected = youtube_auth.is_connected
+needs_reconnect = youtube_auth.needs_reconnect
+channel_title = youtube_auth.channel_title
+disconnect = youtube_auth.disconnect
 
 
 def credentials(*, interactive: bool = False):
-    """Credenciais válidas, renovando o token se preciso.
+    try:
+        return youtube_auth.credentials(interactive=interactive)
+    except youtube_auth.AuthError as exc:
+        raise PublishError(str(exc)) from None
 
-    Com `interactive`, abre o navegador pro consentimento quando não há token
-    (bloqueia até o usuário autorizar). Sem ele, falta de token é erro.
-    """
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
 
-    path = token_path()
-    creds = None
-    if path.exists():
-        creds = Credentials.from_authorized_user_file(str(path), SCOPES)
-    if creds and creds.valid:
-        return creds
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    elif interactive:
-        config = client_config()
-        if config is None:
-            raise PublishError(
-                "AUTO_EDIT_YT_CLIENT_SECRET não aponta pra um client secret OAuth. "
-                "No Google Cloud: habilite a YouTube Data API v3, crie um OAuth "
-                "client do tipo 'Desktop app', baixe o JSON e aponte a variável pra ele."
-            )
-        from google_auth_oauthlib.flow import InstalledAppFlow
-
-        flow = InstalledAppFlow.from_client_config(config, SCOPES)
-        creds = flow.run_local_server(port=0, open_browser=True)
-    else:
-        raise PublishError("YouTube não conectado. Conecte a conta antes de publicar.")
-    path.write_text(creds.to_json())
-    path.chmod(0o600)
-    return creds
+def connect() -> str | None:
+    try:
+        return youtube_auth.connect()
+    except youtube_auth.AuthError as exc:
+        raise PublishError(str(exc)) from None
 
 
 def _service(creds=None):
     from googleapiclient.discovery import build
 
     return build("youtube", "v3", credentials=creds or credentials(), cache_discovery=False)
-
-
-def connect() -> str | None:
-    """Faz o OAuth (abre o navegador) e guarda o nome do canal. Devolve o nome."""
-    yt = _service(credentials(interactive=True))
-    resp = yt.channels().list(mine=True, part="snippet").execute()
-    items = resp.get("items") or []
-    title = items[0]["snippet"]["title"] if items else None
-    path = cfg.tokens_dir() / CHANNEL_NAME
-    path.write_text(json.dumps({"title": title}), encoding="utf-8")
-    path.chmod(0o600)
-    return title
-
-
-def disconnect() -> None:
-    for name in (TOKEN_NAME, CHANNEL_NAME):
-        (cfg.tokens_dir() / name).unlink(missing_ok=True)
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────

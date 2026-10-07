@@ -30,6 +30,8 @@ Endpoints
     GET  /api/videos/<id>/publish             (defaults do metadata + histórico)
     POST /api/videos/<id>/publish/youtube     {title, description, tags, privacy,
                                                publish_at, force}  upload (job, SSE)
+    GET  /api/videos/<id>/retention           (análise salva da curva de retenção)
+    POST /api/videos/<id>/retention           busca a curva no YouTube agora
     POST /api/open-url                        {url}  só links do YouTube
     GET  /api/jobs/<job_id>/events        (SSE)
     GET  /api/videos/<id>/events          (SSE, that video's current job)
@@ -285,6 +287,25 @@ def create_app(jobs: engine.JobManager | None = None):
         except yt.PublishError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"job_id": job.id, "video_id": job.video_id}), 202
+
+    @app.get("/api/videos/<video_id>/retention")
+    def retention_state(video_id: str):
+        data = engine.retention_state(video_id)
+        if data is None:
+            return jsonify({"error": "not_found", "id": video_id}), 404
+        return jsonify(data)
+
+    @app.post("/api/videos/<video_id>/retention")
+    def refresh_retention(video_id: str):
+        from auto_edit import retention as ret
+        from auto_edit import youtube_auth
+
+        try:
+            return jsonify(engine.refresh_retention(video_id))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except (ret.RetentionError, youtube_auth.AuthError) as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.post("/api/open-url")
     def open_url():

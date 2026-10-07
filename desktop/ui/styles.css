@@ -275,3 +275,29 @@ textarea.input { resize: vertical; }
 .sh-rejected summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--dim); }
 .sh-rejected ul { margin: 10px 0 0; padding-left: 18px; color: var(--faint); font-size: 12.5px; line-height: 1.7; }
 @media (max-width: 1080px) { .sh-grid { grid-template-columns: 1fr; } .sh-player { position: static; } }
+
+/* ── Retenção ─────────────────────────────────────────────────────────────── */
+.ret-head { justify-content: space-between; }
+.ret-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; }
+.ret-stat { display: flex; flex-direction: column; gap: 2px; }
+.ret-stat b { font-size: 20px; font-weight: 600; }
+.ret-stat span { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .5px; }
+.ret-chart { position: relative; }
+.ret-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ret-chart .grid { stroke: var(--border-soft); stroke-width: 1; }
+.ret-chart .axis { fill: var(--faint); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+.ret-chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ret-chart .area { fill: var(--accent); opacity: .08; }
+.ret-chart .band { fill: var(--text); opacity: .06; }
+.ret-chart .band-n { fill: var(--dim); font-size: 10px; font-weight: 600; text-anchor: middle; }
+.ret-chart .cross { stroke: var(--dim); stroke-width: 1; stroke-dasharray: 2 3; }
+.ret-chart .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.ret-tip { position: absolute; pointer-events: none; background: #0b0f14; border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 12px; color: var(--text); white-space: nowrap; transform: translate(-50%, -110%); }
+.ret-drops { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ret-drop { display: grid; grid-template-columns: 22px 92px 52px 1fr; gap: 10px; align-items: baseline; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: 9px; cursor: pointer; font-size: 12.5px; }
+.ret-drop:hover { border-color: var(--border); background: var(--panel-2); }
+.ret-drop .n { color: var(--dim); font-weight: 600; }
+.ret-drop .t { color: var(--dim); }
+.ret-drop .loss { color: var(--text); font-weight: 600; }
+.ret-drop .said { color: var(--dim); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ret-drop .kind { display: inline-block; margin-right: 6px; font-size: 10.5px; padding: 1px 6px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }

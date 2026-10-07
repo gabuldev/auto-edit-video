@@ -5,8 +5,15 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from pathlib import Path
+from typing import Optional
+
+from rich.markup import escape
+
 from auto_edit import config as cfg
+from auto_edit import retention as ret
 from auto_edit.insights import connector, service, store
+from auto_edit.workspace import workspace_root
 
 insights_app = typer.Typer(
     name="insights",
@@ -84,3 +91,42 @@ def report(platform: str | None = typer.Option(None, "-p", "--platform"),
                           str(r.get("watch_time_min")), str(r.get("avg_view_pct")),
                           str(r.get("ctr")), str(r.get("likes")))
     console.print(table)
+
+
+@insights_app.command()
+def retention(
+    video: Optional[str] = typer.Argument(None, help="Vídeo (ou nome do workspace) já publicado no YouTube"),
+    url: Optional[str] = typer.Option(None, "--url", help="URL do vídeo no YouTube, se não foi publicado pelo auto-edit"),
+    all_videos: bool = typer.Option(False, "--all", help="Atualiza todos os workspaces publicados"),
+) -> None:
+    """Onde o público saiu: curva de retenção cruzada com o que é dito.
+
+    Salva retention.json no workspace; o planner usa nos próximos vídeos.
+    """
+    root = workspace_root()
+    if all_videos:
+        targets = [p.parent for p in root.glob("*/publish.json") if ret.youtube_id(p.parent)]
+    elif video:
+        ws = root / Path(video).stem
+        if not (ws / "pipeline.json").exists():
+            console.print(f"[red]Nenhum workspace em {escape(str(ws))}.[/red]")
+            raise typer.Exit(1)
+        targets = [ws]
+    else:
+        console.print("Passe um vídeo ou --all.")
+        raise typer.Exit(1)
+
+    yt = connector.get_connector("youtube")
+    video_id = yt.video_id_from_url(url) if url else None
+    failed = False
+    for ws in targets:
+        console.print(f"[cyan]{escape(ws.name)}[/cyan]")
+        try:
+            data = ret.refresh(ws, yt.fetch_retention, video_id=video_id)
+        except (ret.RetentionError, RuntimeError) as exc:
+            console.print(f"  [yellow]{escape(str(exc))}[/yellow]")
+            failed = True
+            continue
+        console.print(ret.format_summary(data), markup=False)
+    if failed and not all_videos:
+        raise typer.Exit(1)

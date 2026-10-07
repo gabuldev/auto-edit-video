@@ -22,6 +22,7 @@ function show({ connect = false, form = false, progress = false } = {}) {
 
 function accountLine(a) {
   if (a.connecting) return "aguardando você autorizar no navegador…";
+  if (a.needs_reconnect) return "reconecte pra liberar retenção e legendas (permissões novas)";
   if (!a.connected) return "conta não conectada";
   return a.channel ? `conectado como ${escapeHtml(a.channel)}` : "conta conectada";
 }
@@ -97,7 +98,9 @@ function render(d) {
     el("btn-pub-again").hidden = true;
     show({ connect: true });
     el("btn-yt-connect").disabled = a.connecting || !a.has_client_secret;
-    el("btn-yt-connect").textContent = a.connecting ? "Esperando autorização…" : "Conectar YouTube";
+    el("btn-yt-connect").textContent = a.connecting
+      ? "Esperando autorização…"
+      : a.needs_reconnect ? "Reconectar YouTube" : "Conectar YouTube";
     el("pub-connect-note").innerHTML = a.has_client_secret
       ? (a.error ? `Não conectou: ${escapeHtml(a.error)}` : "Abre o navegador pra você autorizar o envio de vídeos pro seu canal.")
       : "Falta o client secret do Google: crie um OAuth client <b>Desktop app</b> no Google Cloud (com a YouTube Data API v3 habilitada), baixe o JSON e aponte <code class=\"mono\">AUTO_EDIT_YT_CLIENT_SECRET</code> pra ele. Depois reabra o app.";

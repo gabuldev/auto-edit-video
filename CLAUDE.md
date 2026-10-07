@@ -26,6 +26,10 @@ auto-edit publish auth youtube                       # conecta o canal (uma vez)
 auto-edit publish youtube video.mp4 --privacy unlisted
 auto-edit publish youtube video.mp4 --publish-at 2026-10-10T18:00:00-03:00
 
+# Retenção: onde o público saiu, com o que era dito (YouTube Analytics)
+auto-edit insights retention video.mp4      # salva retention.json; o planner usa nos próximos
+auto-edit insights retention --all
+
 # Status / Resume / Doctor
 auto-edit status video.mp4
 auto-edit resume video.mp4 --from plan
@@ -114,7 +118,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_OVERLAYS_STRICT` | — | `1` faz o stage `overlay` falhar quando um overlay planejado não é encontrado. Por padrão ele só avisa e renderiza sem — os MP4s são de cada pessoa e ficam fora do repo |
 | `AUTO_EDIT_SEGMENT_THRESHOLD` | `12` | Acima de N segmentos, o `execute` corta um-a-um + concat (evita OOM do FFmpeg em vídeo longo/4K) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
-| `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` e `auto-edit publish auth youtube`. Sem ele, o `publish` reaproveita o client do token do insights |
+| `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` e `auto-edit publish auth youtube`. Sem ele, reaproveita o client de um token já salvo. Publish e insights usam **uma conexão só** (`auto_edit/youtube_auth.py`, `tokens/youtube.json`). App OAuth em modo "Testing" expira o token em 7 dias: publique o app ("In production") pra não expirar |
 | `AUTO_EDIT_YT_CATEGORY` | `28` | Categoria do YouTube nos uploads do `publish` (28 = Ciência e tecnologia) |
 | `AUTO_EDIT_WORKSPACE` | `workspace` | Pasta raiz que guarda os workspaces por vídeo (CLI, MCP e motor headless) |
 
@@ -170,6 +174,7 @@ GET  /api/publish/youtube         # conta conectada? (POST .../connect abre o OA
 GET  /api/videos/<id>/publish     # defaults do metadata + histórico (publish.json)
 POST /api/videos/<id>/publish/youtube  # {title, description, tags, privacy, publish_at, force}
 POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder
+GET  /api/videos/<id>/retention   # análise salva (POST busca a curva no YouTube)
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/progress/done/error)
 GET  /api/videos/<id>/events      # SSE do job atual daquele vídeo
 ```

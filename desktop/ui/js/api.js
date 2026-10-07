@@ -86,6 +86,11 @@ export const publishYoutube = (id, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const retention = (id) => json(`/api/videos/${encodeURIComponent(id)}/retention`);
+
+export const refreshRetention = (id) =>
+  json(`/api/videos/${encodeURIComponent(id)}/retention`, { method: "POST" });
+
 export const openUrl = (url) =>
   json("/api/open-url", {
     method: "POST",

@@ -128,6 +128,15 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 '- Remove redundancy and sluggish transitions; keep intentional rhetorical pauses only.\n'
                 '- Avoid a “podcast slow” cadence unless the content demands it.'
             )
+        learned = _retention_lessons(workspace, video_type)
+        if learned:
+            sections += [
+                "\n## Onde o público saiu nos teus vídeos recentes (sinal, não regra)",
+                "Quedas acima do normal na curva de retenção do YouTube, com o que era dito "
+                "naquele trecho (`[tipo]` = preâmbulo detectado). Se este vídeo tiver trechos "
+                "do mesmo tipo, encurte ou corte; não corte conteúdo bom só por parecer.",
+                learned,
+            ]
         levels = _audio_levels_brief(transcription)
         if levels:
             sections.append(levels)
@@ -311,6 +320,18 @@ def _read_json_optional(path: Path) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _retention_lessons(workspace: Path, video_type: str) -> str:
+    """Where viewers left in this channel's recent videos of this type
+    (retention.json next to this workspace). "" when there is none — never
+    breaks the edit."""
+    try:
+        from auto_edit import retention
+
+        return retention.lessons(workspace.parent, "short" if video_type == "short" else "long")
+    except Exception:
+        return ""
 
 
 def _performance_section(video_type: str) -> str:

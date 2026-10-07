@@ -1,13 +1,10 @@
 """Connector YouTube: OAuth + Data API v3 + Analytics API v2."""
 from __future__ import annotations
 
-import os
 import re
 from datetime import date
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from auto_edit import config as cfg
 from auto_edit.insights.connector import MetricPoint, VideoRef
 
 # YT metric name -> nosso campo do MetricPoint
@@ -44,10 +41,6 @@ def _parse_duration(iso: str) -> int | None:
     return h * 3600 + mi * 60 + s
 
 
-_SCOPES = [
-    "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/yt-analytics.readonly",
-]
 _ANALYTICS_METRICS_STR = ",".join(_ANALYTICS_METRICS)
 
 
@@ -116,36 +109,15 @@ class YouTubeConnector:
         self._data = None
         self._analytics = None
 
-    def _token_path(self) -> Path:
-        return cfg.tokens_dir() / "youtube.json"
-
     def _credentials(self):
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
-        from google_auth_oauthlib.flow import InstalledAppFlow
+        # One YouTube connection for publish + insights (auto_edit.youtube_auth).
+        # Interactive: `insights auth`/`sync` open the browser when needed.
+        from auto_edit import youtube_auth
 
-        token_path = self._token_path()
-        creds = None
-        if token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(token_path), _SCOPES)
-        if creds and creds.valid:
-            return creds
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            secret = os.environ.get("AUTO_EDIT_YT_CLIENT_SECRET")
-            if not secret or not Path(secret).exists():
-                raise RuntimeError(
-                    "AUTO_EDIT_YT_CLIENT_SECRET não aponta pra um client secret OAuth. "
-                    "Crie um projeto no Google Cloud, habilite YouTube Data API v3 + "
-                    "YouTube Analytics API, crie um OAuth client 'Desktop app', baixe o "
-                    "JSON e aponte AUTO_EDIT_YT_CLIENT_SECRET pra ele."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(secret, _SCOPES)
-            creds = flow.run_local_server(port=0)
-        token_path.write_text(creds.to_json())
-        token_path.chmod(0o600)
-        return creds
+        try:
+            return youtube_auth.credentials(interactive=True)
+        except youtube_auth.AuthError as exc:
+            raise RuntimeError(str(exc)) from None
 
     def _build_services(self) -> None:
         if self._data is not None and self._analytics is not None:
@@ -194,6 +166,21 @@ class YouTubeConnector:
             refs = [r for r in refs if r.published_at >= since]
         return refs
 
+    def fetch_retention(self, video_id: str) -> list[dict]:
+        """The audience retention curve of one video (~100 points).
+
+        Empty while YouTube hasn't computed it yet (first hours after
+        publishing, or too few views).
+        """
+        self._build_services()
+        resp = self._analytics.reports().query(
+            ids="channel==MINE", startDate="2005-01-01", endDate=date.today().isoformat(),
+            dimensions="elapsedVideoTimeRatio",
+            metrics="audienceWatchRatio,relativeRetentionPerformance",
+            filters=f"video=={video_id}",
+        ).execute()
+        return parse_retention(resp.get("columnHeaders", []), resp.get("rows", []))
+
     def fetch_metrics(self, video_ids: list[str]) -> list[MetricPoint]:
         self._build_services()
         # Analytics API rejeita end-date no futuro — usa hoje.
@@ -209,6 +196,22 @@ class YouTubeConnector:
             for p in _parse_analytics(base.get("columnHeaders", []), base.get("rows", [])):
                 points[p.platform_video_id] = p
         return list(points.values())
+
+
+def parse_retention(headers: list[dict], rows: list[list]) -> list[dict]:
+    """Analytics rows → [{ratio, watch, relative}] (fractions, not percents)."""
+    names = [h.get("name") for h in headers]
+    idx = {n: i for i, n in enumerate(names)}
+    if "elapsedVideoTimeRatio" not in idx or "audienceWatchRatio" not in idx:
+        return []
+    out = []
+    for row in rows:
+        out.append({
+            "ratio": row[idx["elapsedVideoTimeRatio"]],
+            "watch": row[idx["audienceWatchRatio"]],
+            "relative": row[idx["relativeRetentionPerformance"]] if "relativeRetentionPerformance" in idx else None,
+        })
+    return out
 
 
 def _chunks(seq, n):

@@ -297,6 +297,23 @@
               <video id="res-video" class="player" controls preload="metadata"></video>
             </div>
 
+            <div class="card" id="ret-card" hidden>
+              <div class="card-head ret-head">
+                <div>
+                  <h2>Retenção no YouTube</h2>
+                  <p id="ret-sub">onde o público saiu, com o que era dito.</p>
+                </div>
+                <button class="btn btn-sm" id="btn-ret-refresh">Atualizar</button>
+              </div>
+              <div id="ret-error" class="banner err" hidden></div>
+              <div id="ret-empty" class="empty small" hidden></div>
+              <div id="ret-body" hidden>
+                <div class="ret-stats" id="ret-stats"></div>
+                <div class="ret-chart" id="ret-chart"></div>
+                <ol class="ret-drops" id="ret-drops"></ol>
+              </div>
+            </div>
+
             <div class="card" id="res-thumb-box" hidden>
               <div class="card-head"><div><h2>Thumbnail</h2></div></div>
               <img id="res-thumb" class="thumb-img" alt="thumbnail gerada" />
