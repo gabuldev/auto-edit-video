@@ -277,9 +277,28 @@ class TestResolveCaptionFfmpeg:
         monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: b == str(fake))
         assert _resolve_caption_ffmpeg() == str(fake)
 
+    def test_falls_back_to_known_locations_off_path(self, monkeypatch, tmp_path):
+        """The desktop engine runs from the .venv: PATH only has Homebrew's
+        ffmpeg (no libass) while nix's ffmpeg-full sits elsewhere."""
+        import tools.captioner as c
+
+        brew = tmp_path / "brew"
+        brew.mkdir()
+        (brew / "ffmpeg").write_text("#!/bin/sh\n")
+        (brew / "ffmpeg").chmod(0o755)
+        full = tmp_path / "nix-ffmpeg-full"
+        full.write_text("#!/bin/sh\n")
+        full.chmod(0o755)
+        monkeypatch.delenv("AUTO_EDIT_FFMPEG", raising=False)
+        monkeypatch.setenv("PATH", str(brew))
+        monkeypatch.setattr(c, "_known_ffmpeg_locations", lambda: [str(tmp_path / "missing"), str(full)])
+        monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: b == str(full))
+        assert _resolve_caption_ffmpeg() == str(full)
+
     def test_raises_actionable_error_when_none(self, monkeypatch):
         import tools.captioner as c
 
+        monkeypatch.setattr(c, "_known_ffmpeg_locations", lambda: [])
         monkeypatch.delenv("AUTO_EDIT_FFMPEG", raising=False)
         monkeypatch.setenv("PATH", "/nonexistent-dir")
         monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: False)
