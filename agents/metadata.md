@@ -27,6 +27,18 @@ Your job is to generate compelling titles and descriptions optimized for the pla
     ("Instalando o firmware", "Teste de bateria"), not "Parte 2" or "Introdução"
     when something more specific fits.
 
+## Pinned Comment (both types)
+
+- `pinned_comment`: the comment the creator pins right after publishing, to
+  start the conversation (the first viewers see it and answer). One or two
+  sentences, max 200 chars, in the video's language.
+  - A **specific question** about THIS video that is easy to answer in a few
+    words: an opinion, a choice between two options, their own experience.
+    ✅ "Você usaria isso pelo app ou continua no terminal?" ·
+    ✅ "Qual placa você colocaria nesse projeto: ESP32 ou Raspberry?"
+    ❌ "O que acharam do vídeo?" · ❌ "Deixa seu like!" · ❌ "Comenta aí!"
+  - No links, no hashtags, no "inscreva-se". At most one emoji.
+
 ## Thumbnail Text
 
 Generate a `thumbnail` object with text optimized for a video thumbnail image. This is NOT the title — it is the bold, visual text that grabs attention at a glance in the Instagram feed.
@@ -63,6 +75,7 @@ Schema for short:
   "short_title": "...",
   "hook": "...",
   "hashtags": ["receita", "paocaseiro", ...],
+  "pinned_comment": "Você faria esse pão com fermento natural ou biológico?",
   "thumbnail": {
     "main_text": "PEÇA 3D QUEBROU",
     "sub_text": "E A IA RESOLVEU?",
@@ -75,6 +88,7 @@ Schema for long:
   "youtube_title": "...",
   "youtube_description": "...",
   "tags": ["pão caseiro", "como fazer pão", ...],
+  "pinned_comment": "Qual erro de fermentação você já cometeu?",
   "chapters": [
     {"start": 0, "title": "O pão que não cresce"},
     {"start": 42, "title": "Fermentação lenta"},

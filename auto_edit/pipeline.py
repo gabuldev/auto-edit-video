@@ -296,6 +296,8 @@ def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
             "HASHTAGS:",
             " ".join(metadata.get("hashtags", [])),
         ]
+        if metadata.get("pinned_comment"):
+            lines += ["", "COMENTÁRIO PRA FIXAR:", metadata["pinned_comment"]]
     else:
         lines += [
             "=== YOUTUBE ===",
@@ -310,6 +312,8 @@ def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
             "TAGS:",
             ", ".join(metadata.get("tags", [])),
         ]
+        if metadata.get("pinned_comment"):
+            lines += ["", "COMENTÁRIO PRA FIXAR:", metadata["pinned_comment"]]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
