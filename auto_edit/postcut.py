@@ -54,48 +54,71 @@ def load_intervals(workspace: Path, duration: float) -> list[tuple[float, float]
 
 
 def remap(transcription: dict, intervals: list[tuple[float, float]]) -> dict:
-    """Project words and segments of the source onto the edited timeline."""
-    offsets: list[tuple[float, float, float]] = []  # (start, end, shift)
+    """Project words and segments of the source onto the edited timeline.
+
+    `intervals` are in *playback* order. Usually that is chronological, but a
+    reordered edit (sequence / cold open) can play a later part first, or the
+    same source window twice — so everything is placed interval by interval,
+    never by looking a source time up in a single map.
+    """
+    placed: list[tuple[float, float, float]] = []  # (src start, src end, output start)
     elapsed = 0.0
     for start, end in intervals:
-        offsets.append((start, end, elapsed - start))
+        placed.append((start, end, elapsed))
         elapsed += end - start
 
-    def project(t: float) -> float | None:
-        for start, end, shift in offsets:
-            if start - EPS <= t <= end + EPS:
-                return round(t + shift, 3)
-        return None
-
-    words = []
+    source_words = []
     for w in transcription.get("words") or []:
         try:
-            start, end = float(w["start"]), float(w["end"])
+            source_words.append((float(w["start"]), float(w["end"]), w))
         except (KeyError, TypeError, ValueError):
             continue
-        # A word survives only if both edges landed in the same kept interval.
-        new_start, new_end = project(start), project(end)
-        if new_start is None or new_end is None or new_end < new_start:
-            continue
-        words.append({**w, "start": new_start, "end": new_end})
+
+    words = []
+    for start, end, out in placed:
+        for w_start, w_end, w in source_words:
+            # A word survives only if both edges landed in the same kept interval.
+            if start - EPS <= w_start and w_end <= end + EPS and w_end >= w_start:
+                words.append({
+                    **w,
+                    "start": round(w_start - start + out, 3),
+                    "end": round(w_end - start + out, 3),
+                })
+
+    # Pieces of each source segment, in playback order. A segment that a cut
+    # went through shows up as one piece per interval it touches.
+    pieces: list[dict] = []
+    source_segments = transcription.get("segments") or []
+    for i_interval, (start, end, out) in enumerate(placed):
+        for i_seg, seg in enumerate(source_segments):
+            try:
+                seg_start, seg_end = float(seg["start"]), float(seg["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            lo, hi = max(seg_start, start), min(seg_end, end)
+            if hi <= lo:
+                continue
+            last = pieces[-1] if pieces else None
+            if last and last["seg"] == i_seg and last["interval"] == i_interval - 1:
+                # Same sentence continuing in the next interval right after:
+                # one segment, cut through (what a plain chronological cut gives).
+                last.update(interval=i_interval, out_end=hi - start + out, kept=last["kept"] + hi - lo)
+                continue
+            pieces.append({
+                "seg": i_seg,
+                "interval": i_interval,
+                "out_start": lo - start + out,
+                "out_end": hi - start + out,
+                "kept": hi - lo,
+            })
 
     segments = []
-    for seg in transcription.get("segments") or []:
-        try:
-            seg_start, seg_end = float(seg["start"]), float(seg["end"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        inside = [
-            (max(seg_start, s), min(seg_end, e)) for s, e in intervals if min(seg_end, e) > max(seg_start, s)
-        ]
-        if not inside:
-            continue
-        kept_span = sum(e - s for s, e in inside)
-        new_start, new_end = project(inside[0][0]), project(inside[-1][1])
-        if new_start is None or new_end is None:
-            continue
+    for piece in pieces:
+        seg = source_segments[piece["seg"]]
+        seg_start, seg_end = float(seg["start"]), float(seg["end"])
+        new_start, new_end = round(piece["out_start"], 3), round(piece["out_end"], 3)
         segment = {**seg, "start": new_start, "end": new_end}
-        if kept_span < (seg_end - seg_start) - EPS:
+        if piece["kept"] < (seg_end - seg_start) - EPS:
             # Flag partial survivors so the evaluator does not read a sentence
             # as intact when the edit cut through it -- and rebuild the text
             # from the words that survived, or it would show speech the edit
@@ -108,7 +131,7 @@ def remap(transcription: dict, intervals: list[tuple[float, float]]) -> dict:
             ]
             if surviving:
                 segment["text"] = " ".join(x.strip() for x in surviving if x.strip())
-            elif new_end - new_start < RESIDUE_DURATION and (transcription.get("words") or []):
+            elif new_end - new_start < RESIDUE_DURATION and source_words:
                 # Nothing but a sliver of audio is left and no word landed in
                 # it: the edit removed this sentence. Keeping it would show the
                 # evaluator speech that is not in the video.
@@ -142,12 +165,19 @@ def main(workspace: Path) -> int:
     (workspace / "post_cut_transcription.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    dropped = len(transcription.get("words") or []) - len(result["words"])
+    source_words = transcription.get("words") or []
+    survivors = sum(
+        1 for w in source_words
+        if any(a - EPS <= float(w["start"]) and float(w["end"]) <= b + EPS for a, b in intervals)
+    )
+    dropped = len(source_words) - survivors
+    repeated = len(result["words"]) - survivors  # a teaser plays its words twice
     partial = sum(1 for s in result["segments"] if s.get("partial"))
     print(
         f"[postcut] Post-cut transcript: {result['duration']:.1f}s, "
-        f"{len(result['words'])} words ({dropped} removed by the edit), "
-        f"{len(result['segments'])} segments ({partial} cut through)"
+        f"{len(result['words'])} words ({dropped} removed by the edit"
+        + (f", {repeated} repeated by the sequence" if repeated > 0 else "")
+        + f"), {len(result['segments'])} segments ({partial} cut through)"
     )
     return 0
 

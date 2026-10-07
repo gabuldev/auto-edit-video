@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, snap  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, sequence, snap  # noqa: E402  -- needs the repo root on sys.path
 
 FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MAX)
 MIN_INTERVAL_DURATION = 1.0 / 30  # 1 frame at 30fps ≈ 0.033s
@@ -87,6 +87,18 @@ def execute(workspace: Path) -> None:
     _validate_plan(reviewed_plan, duration)  # validate before processing
     energy_db, resolution = snap.load_energy_map(workspace)
     kept = _build_keep_intervals(reviewed_plan, duration, energy_db, resolution)
+
+    # Playback order: chronological unless the plan carries a `sequence`
+    # (cold open / reordered blocks). Applied on the padded intervals, so the
+    # onset snap below trims the silence of what actually plays first.
+    if reviewed_plan.get("sequence"):
+        ordered, notes = sequence.apply(kept, reviewed_plan["sequence"])
+        for note in notes:
+            print(f"[executor] sequence: {note}")
+        if ordered != kept:
+            print("[executor] Playback order from the plan's sequence:")
+            print(sequence.describe(ordered))
+        kept = ordered
 
     # Snap the first segment's start to the actual audio onset (silencedetect).
     # Without this, the LLM planner often leaves 0.3-1.0s of leading silence
