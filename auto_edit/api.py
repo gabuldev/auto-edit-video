@@ -18,7 +18,7 @@ Endpoints
     GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
     POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder
     POST /api/edit                 {video_path, type, context, language,
-                                    whisper_model, max_iterations, dry_run, cold_open,
+                                    whisper_model, max_iterations, dry_run, cold_open, reorder,
                                     overlays_dir}
     POST /api/videos/<id>/resume   {from_stage, overlays_dir}
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
@@ -172,6 +172,7 @@ def create_app(jobs: engine.JobManager | None = None):
                 max_iterations=int(body.get("max_iterations", 3)),
                 dry_run=bool(body.get("dry_run", False)),
                 cold_open=bool(body.get("cold_open", False)),
+                reorder=bool(body.get("reorder", False)),
                 overlays_dir=body.get("overlays_dir"),
             )
         except FileNotFoundError as exc:

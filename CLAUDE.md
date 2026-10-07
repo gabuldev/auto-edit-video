@@ -13,6 +13,8 @@ auto-edit long video.mp4 --context "tutorial de Python"
 
 # Cold open: abre com o melhor momento do vídeo (teaser) antes da abertura normal
 auto-edit long video.mp4 -c "..." --cold-open
+# Reordenar: o agente pode mudar a ordem dos blocos (ex.: demo antes da explicação)
+auto-edit long video.mp4 -c "..." --reorder
 
 # Batch (vários vídeos)
 auto-edit batch upload/ --type short --context "vlogs de viagem"
@@ -60,6 +62,11 @@ recortadas pelo que foi mantido (nunca traz de volta um corte). Blocos cobrem
 tudo que ficou sem se sobrepor; teasers (`role: "teaser"`, 2–15s, até 20s no
 total) tocam a mais e o trecho toca de novo no lugar. Sequência inválida é
 ignorada e o vídeo sai cronológico. Lógica em `auto_edit/sequence.py`.
+
+Com `--reorder`, o mesmo agente também pode propor a ordem dos blocos; os
+blocos são normalizados numa partição do vídeo (sem buraco nem sobreposição)
+e só valem se de fato mudarem a ordem. Se a nova ordem já abre no trecho do
+teaser, o teaser é descartado (não toca a mesma coisa duas vezes).
 
 Com `--cold-open` (ou o checkbox no app), o agente `agents/cold_open.md` roda
 no `execute`, antes do executor, e escolhe o teaser. Se ele pular, falhar ou o

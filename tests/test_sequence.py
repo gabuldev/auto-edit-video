@@ -227,3 +227,88 @@ def test_set_cold_open_survives_reload(tmp_path):
     (ws / "pipeline.json").write_text(json.dumps({"stages": {}}))
     pl.set_cold_open(ws)
     assert pl.load(ws)["cold_open"] is True
+
+
+# ── reordering blocks ─────────────────────────────────────────────────────────
+
+class TestNormalizeBlocks:
+    def test_gaps_and_overlaps_become_a_partition_in_the_agents_order(self):
+        blocks = [{"start": 21, "end": 41}, {"start": 0, "end": 18}, {"start": 39, "end": 55}]
+        out = sequence.normalize_blocks(blocks, KEPT)
+        assert out == [{"start": 21.0, "end": 39.0}, {"start": 0.0, "end": 21.0}, {"start": 39.0, "end": 120.0}]
+        played, notes = sequence.apply(KEPT, out)
+        assert notes == []
+        assert sorted(played) == sorted(KEPT) or sum(e - s for s, e in played) == sum(e - s for s, e in KEPT)
+
+    def test_needs_two_valid_blocks(self):
+        assert sequence.normalize_blocks([{"start": 0, "end": 60}], KEPT) == []
+        assert sequence.normalize_blocks([{"start": "x", "end": 1}, {"start": 2, "end": 3}], KEPT) == []
+        assert sequence.normalize_blocks(None, KEPT) == []
+
+
+def _flags_ws(tmp_path, answer, cold_open=False, reorder=True):
+    ws = _cold_ws(tmp_path, answer, cold_open=cold_open)
+    p = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))
+    p["reorder"] = reorder
+    (ws / "pipeline.json").write_text(json.dumps(p), encoding="utf-8")
+    return ws
+
+
+class TestReorderMerge:
+    def test_reorder_only(self, tmp_path):
+        ws = _flags_ws(tmp_path, {"teaser": None, "blocks": [{"start": 45, "end": 60}, {"start": 0, "end": 45}],
+                                  "order_reason": "resultado antes"})
+        notes = sequence.merge_cold_open(ws)
+        plan = json.loads((ws / "reviewed_plan.json").read_text(encoding="utf-8"))
+        played, problems = sequence.apply(KEPT, plan["sequence"])
+        assert problems == [] and played == [(50.0, 60.0), (0.0, 10.0), (20.0, 40.0)]
+        assert plan["reorder"]["reason"] == "resultado antes"
+        assert "cold_open" not in plan
+        assert any("reordenado" in n for n in notes)
+
+    def test_teaser_and_reorder_together(self, tmp_path):
+        ws = _flags_ws(tmp_path, {"teaser": {"start": 52, "end": 58, "reason": "r"},
+                                  "blocks": [{"start": 45, "end": 60}, {"start": 0, "end": 45}]}, cold_open=True)
+        sequence.merge_cold_open(ws)
+        plan = json.loads((ws / "reviewed_plan.json").read_text(encoding="utf-8"))
+        played, _ = sequence.apply(KEPT, plan["sequence"])
+        # the new order already opens on the teaser's block: no teaser, no repeat
+        assert played == [(50.0, 60.0), (0.0, 10.0), (20.0, 40.0)]
+        assert "cold_open" not in plan
+
+    def test_teaser_kept_when_its_block_is_not_first(self, tmp_path):
+        ws = _flags_ws(tmp_path, {"teaser": {"start": 25, "end": 30, "reason": "r"},
+                                  "blocks": [{"start": 45, "end": 60}, {"start": 0, "end": 45}]}, cold_open=True)
+        sequence.merge_cold_open(ws)
+        plan = json.loads((ws / "reviewed_plan.json").read_text(encoding="utf-8"))
+        played, _ = sequence.apply(KEPT, plan["sequence"])
+        assert played == [(25.0, 30.0), (50.0, 60.0), (0.0, 10.0), (20.0, 40.0)]
+
+    def test_same_order_writes_nothing(self, tmp_path):
+        ws = _flags_ws(tmp_path, {"blocks": [{"start": 0, "end": 30}, {"start": 30, "end": 60}]})
+        before = (ws / "reviewed_plan.json").read_text(encoding="utf-8")
+        notes = sequence.merge_cold_open(ws)
+        assert (ws / "reviewed_plan.json").read_text(encoding="utf-8") == before
+        assert "mesma ordem" in notes[0]
+
+    def test_blocks_ignored_when_reorder_not_asked(self, tmp_path):
+        ws = _flags_ws(tmp_path, {"teaser": None, "blocks": [{"start": 45, "end": 60}, {"start": 0, "end": 45}]},
+                       cold_open=True, reorder=False)
+        before = (ws / "reviewed_plan.json").read_text(encoding="utf-8")
+        sequence.merge_cold_open(ws)
+        assert (ws / "reviewed_plan.json").read_text(encoding="utf-8") == before
+
+    def test_wants_when_only_reorder(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("AUTO_EDIT_COLD_OPEN", raising=False)
+        monkeypatch.delenv("AUTO_EDIT_REORDER", raising=False)
+        assert sequence.wants_cold_open(_flags_ws(tmp_path, None))
+
+
+def test_prompt_says_what_is_allowed(tmp_path):
+    from auto_edit import runner
+
+    ws = _flags_ws(tmp_path, None)
+    (ws / "transcription.json").write_text(json.dumps({"segments": []}), encoding="utf-8")
+    prompt = runner.build_prompt("coldopen", ws, Path("agents/cold_open.md"))
+    assert "Reordering allowed: yes" in prompt
+    assert "Cold open (teaser) wanted: no" in prompt

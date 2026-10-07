@@ -253,6 +253,8 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             "\n## Video Information",
             f"- Type: {video_type}",
             f"- Context: {context or '(no context provided)'}",
+            f"- Cold open (teaser) wanted: {'yes' if pipeline.get('cold_open') else 'no — return teaser null'}",
+            f"- Reordering allowed: {'yes' if pipeline.get('reorder') else 'no'}",
             "\n## What the edit kept ([start–end] on the source timeline)",
             _kept_lines(transcription, plan),
         ]

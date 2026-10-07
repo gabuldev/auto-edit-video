@@ -375,8 +375,8 @@ if final:
                 $PYTHON -m auto_edit.opening "$WORKSPACE" || true
                 break
             fi
-            # Cold open (opt-in: --cold-open): an agent picks a moment from later
-            # in the video and the plan's sequence plays it first. A failed or
+            # Cold open / reorder (opt-in: --cold-open, --reorder): an agent picks a moment from later
+            # in the video to play first and/or a new block order, written as the plan's sequence. A failed or
             # skipped cold open never fails the edit — it just plays in order.
             if $PYTHON -m auto_edit.sequence wants-cold-open "$WORKSPACE"; then
                 rm -f "$WORKSPACE/cold_open.json"

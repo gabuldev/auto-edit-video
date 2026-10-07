@@ -204,6 +204,7 @@ def _run_pipeline(
     language: str = "pt",
     plan_id: Optional[str] = None,
     cold_open: bool = False,
+    reorder: bool = False,
 ) -> None:
     if not video.exists():
         console.print(f"[red]Error:[/red] File not found: {video}")
@@ -232,10 +233,14 @@ def _run_pipeline(
 
     if cold_open:
         pl.set_cold_open(ws)
+    if reorder:
+        pl.set_reorder(ws)
     console.print(f"[cyan]Type:[/cyan] {video_type}")
     console.print(f"[cyan]Context:[/cyan] {context or '(none)'}")
     if pl.load(ws).get("cold_open"):
         console.print("[cyan]Cold open:[/cyan] sim (o melhor momento abre o vídeo)")
+    if pl.load(ws).get("reorder"):
+        console.print("[cyan]Reordenação:[/cyan] sim (o agente pode mudar a ordem dos blocos)")
     console.print(f"[cyan]Whisper model:[/cyan] {whisper_model}")
     console.print(f"[cyan]Language:[/cyan] {language}")
     console.print(f"[cyan]Workspace:[/cyan] {ws}")
@@ -300,6 +305,7 @@ def short(
     plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'S2' or '2026-W19/S2'). Use 'none' to skip prompt."),
     no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
     cold_open: bool = typer.Option(False, "--cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
+    reorder: bool = typer.Option(False, "--reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
 ) -> None:
     """Edit a short-form video (adds captions, generates Reels/Shorts metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -325,6 +331,7 @@ def short(
         language=language,
         plan_id=pid,
         cold_open=cold_open,
+        reorder=reorder,
     )
 
 
@@ -355,6 +362,7 @@ def long(
         help="Folder holding the overlay .mp4s (sets AUTO_EDIT_ASSETS_OVERLAYS).",
     ),
     cold_open: bool = typer.Option(False, "--cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
+    reorder: bool = typer.Option(False, "--reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -377,6 +385,7 @@ def long(
         language=language,
         plan_id=pid,
         cold_open=cold_open,
+        reorder=reorder,
     )
 
 

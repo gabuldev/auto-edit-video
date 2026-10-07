@@ -80,6 +80,13 @@ def save(workspace: Path, pipeline: dict) -> None:
     )
 
 
+def set_reorder(workspace: Path, enabled: bool = True) -> None:
+    """Let the execute stage reorder whole blocks (kept across `resume`)."""
+    p = load(workspace)
+    p["reorder"] = bool(enabled)
+    save(workspace, p)
+
+
 def set_cold_open(workspace: Path, enabled: bool = True) -> None:
     """Ask the execute stage for a cold open (kept across `resume`)."""
     p = load(workspace)

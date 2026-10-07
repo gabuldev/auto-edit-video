@@ -154,62 +154,137 @@ def kept_intervals(plan: dict) -> list[Interval]:
     return sorted(out)
 
 
-def wants_cold_open(workspace) -> bool:
-    """Cold open was asked for (pipeline.json or AUTO_EDIT_COLD_OPEN) and the
-    plan has no sequence yet — a hand-made one is never overwritten."""
+def _flags(ws) -> tuple[bool, bool]:
+    """(cold_open, reorder) asked for this workspace (pipeline.json or env)."""
     import os
+
+    pipeline = _read(ws / "pipeline.json") or {}
+
+    def env(name: str) -> bool:
+        return os.environ.get(name, "").lower() in ("1", "true", "yes")
+
+    return (
+        bool(pipeline.get("cold_open")) or env("AUTO_EDIT_COLD_OPEN"),
+        bool(pipeline.get("reorder")) or env("AUTO_EDIT_REORDER"),
+    )
+
+
+def wants_cold_open(workspace) -> bool:
+    """Cold open or reordering was asked for and the plan has no sequence yet
+    — a hand-made one is never overwritten."""
     from pathlib import Path
 
     ws = Path(workspace)
-    pipeline = _read(ws / "pipeline.json") or {}
-    asked = bool(pipeline.get("cold_open")) or os.environ.get("AUTO_EDIT_COLD_OPEN", "").lower() in ("1", "true", "yes")
     plan = _read(ws / "reviewed_plan.json") or {}
-    return asked and not plan.get("sequence")
+    return any(_flags(ws)) and not plan.get("sequence")
+
+
+def normalize_blocks(blocks, kept: list[Interval]) -> list[dict]:
+    """The agent's blocks, in its order, turned into a partition of the video.
+
+    Boundaries from the agent are approximate. Sorted by start, each block is
+    stretched to meet the next one (no gaps, no overlap), the first starts at
+    0 and the last runs past the end — so `apply`'s "cover everything kept,
+    never overlap" rules hold by construction and nothing kept gets lost to a
+    sloppy boundary. The playback order the agent chose is kept.
+    """
+    items = []
+    for i, b in enumerate(blocks or []):
+        try:
+            items.append({"order": i, "start": float(b["start"]), "end": float(b["end"])})
+        except (KeyError, TypeError, ValueError):
+            return []
+    if len(items) < 2:
+        return []
+    by_time = sorted(items, key=lambda it: it["start"])
+    by_time[0]["start"] = 0.0
+    for prev, nxt in zip(by_time, by_time[1:]):
+        prev["end"] = nxt["start"]
+    by_time[-1]["end"] = kept[-1][1] + 60.0 if kept else by_time[-1]["end"]
+    ordered = sorted(by_time, key=lambda it: it["order"])
+    return [{"start": round(it["start"], 3), "end": round(it["end"], 3)} for it in ordered if it["end"] > it["start"]]
 
 
 def merge_cold_open(workspace) -> list[str]:
-    """Turn the agent's teaser into the plan's `sequence`. Returns log notes.
+    """Turn the agent's answer into the plan's `sequence`. Returns log notes.
 
-    Writes nothing when the agent skipped, or when the teaser would not
-    survive `apply` (inside a cut, too short/long) or sits in the opening.
+    - teaser (when cold open was asked): played first, again in its place;
+      refused inside a cut, in the first 15s kept, or outside the length limits;
+    - blocks (when reordering was asked): the new order of the whole video,
+      normalized into a partition and used only if it really reorders.
+    Writes nothing when neither survives.
     """
     import json
     from pathlib import Path
 
     ws = Path(workspace)
+    want_teaser, want_reorder = _flags(ws)
     answer = _read(ws / COLD_OPEN_FILE) or {}
-    teaser = answer.get("teaser") if isinstance(answer, dict) else None
-    if not teaser:
-        return [f"agente não escolheu cold open: {answer.get('reason') or 'sem motivo'}"]
+    if not isinstance(answer, dict):
+        return ["resposta do agente não é um objeto — sem cold open/reordenação"]
 
     plan_path = ws / "reviewed_plan.json"
     plan = _read(plan_path) or {}
     kept = kept_intervals(plan)
     if not kept:
-        return ["plano sem trechos mantidos — cold open ignorado"]
-    try:
-        start, end = float(teaser["start"]), float(teaser["end"])
-    except (KeyError, TypeError, ValueError):
-        return ["teaser sem start/end válidos — cold open ignorado"]
+        return ["plano sem trechos mantidos — nada a ordenar"]
+    everything = [{"start": 0.0, "end": round(kept[-1][1] + 60.0, 3)}]
+    notes: list[str] = []
 
-    before = _total(_clip(kept, 0.0, start))
-    if before < MIN_KEPT_BEFORE_TEASER:
-        return [f"teaser em {start:.1f}s está na abertura ({before:.1f}s depois do início) — cold open ignorado"]
+    teaser_item = None
+    teaser = answer.get("teaser") if want_teaser else None
+    if want_teaser and not teaser:
+        notes.append(f"agente não escolheu cold open: {answer.get('reason') or 'sem motivo'}")
+    if teaser:
+        try:
+            start, end = float(teaser["start"]), float(teaser["end"])
+        except (KeyError, TypeError, ValueError):
+            notes.append("teaser sem start/end válidos — cold open ignorado")
+        else:
+            before = _total(_clip(kept, 0.0, start))
+            if before < MIN_KEPT_BEFORE_TEASER:
+                notes.append(f"teaser em {start:.1f}s está na abertura ({before:.1f}s depois do início) — cold open ignorado")
+            else:
+                played, problems = apply(kept, [{"start": start, "end": end, "role": "teaser"}, *everything])
+                if problems or played == kept:
+                    notes += problems or ["teaser não muda nada — cold open ignorado"]
+                else:
+                    teaser_item = {"start": round(start, 3), "end": round(end, 3), "role": "teaser"}
 
-    candidate = [
-        {"start": round(start, 3), "end": round(end, 3), "role": "teaser"},
-        # Everything else, in order. The slack covers the executor's end padding;
-        # what plays is still clipped to what was kept.
-        {"start": 0.0, "end": round(kept[-1][1] + 60.0, 3)},
-    ]
-    played, notes = apply(kept, candidate)
-    if notes or played == kept:
-        return notes or ["teaser não muda nada — cold open ignorado"]
+    body = everything
+    reordered = False
+    if want_reorder:
+        blocks = normalize_blocks(answer.get("blocks"), kept)
+        if not blocks:
+            notes.append(f"agente manteve a ordem: {answer.get('order_reason') or 'sem blocos'}")
+        else:
+            played, problems = apply(kept, blocks)
+            if problems:
+                notes += [f"reordenação ignorada: {p}" for p in problems]
+            elif played == apply(kept, everything)[0]:
+                notes.append("blocos na mesma ordem do vídeo — nada a reordenar")
+            else:
+                body, reordered = blocks, True
 
-    plan["sequence"] = candidate
-    plan["cold_open"] = {"start": start, "end": end, "reason": teaser.get("reason")}
+    if teaser_item and reordered:
+        first = body[0]
+        if first["start"] <= teaser_item["start"] and teaser_item["end"] <= first["end"]:
+            # The new order already opens on that moment: a teaser would play it
+            # twice within seconds.
+            notes.append("teaser descartado: a reordenação já abre o vídeo nesse trecho")
+            teaser_item = None
+
+    if not teaser_item and not reordered:
+        return notes
+    plan["sequence"] = ([teaser_item] if teaser_item else []) + body
+    if teaser_item:
+        plan["cold_open"] = {"start": teaser_item["start"], "end": teaser_item["end"], "reason": teaser.get("reason")}
+        notes.append(f"cold open {teaser_item['start']:.1f}–{teaser_item['end']:.1f}s: {teaser.get('reason') or ''}")
+    if reordered:
+        plan["reorder"] = {"blocks": len(body), "reason": answer.get("order_reason")}
+        notes.append(f"reordenado em {len(body)} blocos: {answer.get('order_reason') or ''}")
     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
-    return [f"cold open {start:.1f}–{end:.1f}s ({_total(_clip(kept, start, end)):.1f}s): {teaser.get('reason') or ''}"]
+    return notes
 
 
 if __name__ == "__main__":
