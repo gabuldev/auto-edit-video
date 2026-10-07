@@ -515,11 +515,42 @@ def _ffmpeg_has_subtitles(binary: str) -> bool:
     return " subtitles " in (result.stdout or "")
 
 
+def _known_ffmpeg_locations() -> list[str]:
+    """Where an ffmpeg with libass usually lives when it isn't on PATH.
+
+    The desktop app runs the engine from the repo .venv, whose PATH only has
+    Homebrew's ffmpeg (no libass) — the nix `ffmpeg-full` the CLI wrapper puts
+    on PATH is not there. Last resort: the newest ffmpeg-full in the nix store.
+    """
+    home = Path.home()
+    paths = [
+        home / ".nix-profile/bin/ffmpeg",
+        Path("/etc/profiles/per-user") / home.name / "bin/ffmpeg",
+        Path("/run/current-system/sw/bin/ffmpeg"),
+        Path("/nix/var/nix/profiles/default/bin/ffmpeg"),
+        Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"),
+        Path("/usr/local/opt/ffmpeg-full/bin/ffmpeg"),
+    ]
+    store = Path("/nix/store")
+    if store.is_dir():
+        try:
+            full = sorted(
+                store.glob("*-ffmpeg-full-*-bin/bin/ffmpeg"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            full = []
+        paths.extend(full)
+    return [str(p) for p in paths]
+
+
 def _resolve_caption_ffmpeg() -> str:
     """Find an ffmpeg build with libass (the 'subtitles' filter) to burn captions.
 
-    Order: AUTO_EDIT_FFMPEG override, then each ffmpeg on PATH. Raises with an
-    actionable message if none has libass — many Homebrew builds ship without it.
+    Order: AUTO_EDIT_FFMPEG override, each ffmpeg on PATH, then the usual
+    nix/Homebrew ffmpeg-full spots. Raises with an actionable message if none
+    has libass — many Homebrew builds ship without it.
     """
     candidates: list[str] = []
     env = os.environ.get("AUTO_EDIT_FFMPEG")
@@ -527,10 +558,12 @@ def _resolve_caption_ffmpeg() -> str:
         candidates.append(env)
 
     seen = set(candidates)
-    for d in os.environ.get("PATH", "").split(os.pathsep):
-        if not d:
-            continue
-        p = os.path.join(d, "ffmpeg")
+    on_path = [
+        os.path.join(d, "ffmpeg")
+        for d in os.environ.get("PATH", "").split(os.pathsep)
+        if d
+    ]
+    for p in on_path + _known_ffmpeg_locations():
         if p not in seen and os.path.isfile(p) and os.access(p, os.X_OK):
             seen.add(p)
             candidates.append(p)
