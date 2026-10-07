@@ -2,7 +2,7 @@
 // pronto pra copiar. É a última parada: daqui você posta.
 
 import * as api from "./api.js";
-import { el, escapeHtml, humanSize, setEngine } from "./shell.js";
+import { el, escapeHtml, releaseMedia, humanSize, setEngine } from "./shell.js";
 import { go } from "./router.js";
 import { mountPublish, unmountPublish } from "./publish.js";
 import { mountRetention } from "./retention.js";
@@ -155,6 +155,6 @@ export default {
   },
   unmount() {
     unmountPublish();
-    el("res-video").pause?.();
+    releaseMedia(el("res-video"));
   },
 };

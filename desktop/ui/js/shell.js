@@ -19,3 +19,15 @@ export function setEngine(ok) {
   el("engine-label").textContent = ok ? "engine ok" : "offline";
   document.querySelectorAll("[data-offline-banner]").forEach((b) => { b.hidden = ok; });
 }
+
+// Leaving a screen with a player: pausing keeps the decoder and the buffered
+// 4K file alive in the webview. Dropping the source and calling load() is the
+// standard way to make the engine release them.
+export function releaseMedia(video) {
+  if (!video) return;
+  video.pause?.();
+  if (video.hasAttribute("src")) {
+    video.removeAttribute("src");
+    video.load?.();
+  }
+}

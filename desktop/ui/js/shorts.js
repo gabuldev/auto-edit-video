@@ -4,7 +4,7 @@
 // fila. É o `auto-edit shorts <video> [--pick]` com tela.
 
 import * as api from "./api.js";
-import { el, escapeHtml, setEngine } from "./shell.js";
+import { el, escapeHtml, releaseMedia, setEngine } from "./shell.js";
 import { go } from "./router.js";
 
 const state = { id: null, data: null, picked: new Set(), stream: null, lines: [], playing: null, busy: false };
@@ -233,6 +233,6 @@ export default {
   },
   unmount() {
     closeStream();
-    el("sh-video").pause?.();
+    releaseMedia(el("sh-video"));
   },
 };
