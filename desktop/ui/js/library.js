@@ -145,6 +145,7 @@ export default {
       });
       wired = true;
     }
+    clearInterval(timer); // defensive: never two pollers
     refresh();
     timer = setInterval(refresh, 5000); // fallback poll: SSE only covers live jobs
   },
