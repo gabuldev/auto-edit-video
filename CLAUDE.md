@@ -48,8 +48,8 @@ auto-edit plan ingest --run   # parear pastas com slots e editar tudo
 ## Pipeline
 
 ```
-extract → plan → review → execute → overlay → caption → evaluate → metadata → done
-Whisper   Claude  Claude   FFmpeg   FFmpeg    FFmpeg    Claude     Claude
+extract → plan → review → evaluate → execute → overlay → caption → metadata → done
+Whisper   Claude  Claude   Claude     FFmpeg    FFmpeg    FFmpeg    Claude
 ```
 
 - **short**: pula overlay, faz caption (legendas estilo CapCut) — planner = `agents/planner.md` (limpeza)
@@ -57,7 +57,11 @@ Whisper   Claude  Claude   FFmpeg   FFmpeg    FFmpeg    Claude     Claude
 
 O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
 
-Se o evaluator rejeitar, o pipeline volta ao `plan` com feedback (até 3 iterações).
+O evaluator julga o **corte planejado**, antes de renderizar: a transcrição do
+corte sai do plano (`postcut --planned`, mesmos intervalos do executor, sem
+FFmpeg) e o cold open/reordenação roda logo antes dele. Se rejeitar, o pipeline
+volta ao `plan` com feedback (até 3 iterações) e só refaz plan → review →
+evaluate; o FFmpeg corta uma vez só, depois da aprovação.
 
 ### Ordem de reprodução (cold open / reordenação)
 

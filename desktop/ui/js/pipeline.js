@@ -5,7 +5,7 @@ import * as api from "./api.js";
 import { el, escapeHtml, setEngine } from "./shell.js";
 import { go } from "./router.js";
 
-const STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail"];
+const STAGES = ["extract", "plan", "review", "evaluate", "execute", "overlay", "caption", "metadata", "thumbnail"];
 const STAGE_HINT = {
   extract: "Whisper transcreve o áudio",
   plan: "o planner decide os cortes",
@@ -13,7 +13,7 @@ const STAGE_HINT = {
   execute: "FFmpeg corta o vídeo",
   overlay: "aplica overlays (só long)",
   caption: "legendas estilo CapCut (só short)",
-  evaluate: "o evaluator aprova ou devolve pro plan",
+  evaluate: "julga o corte planejado (antes de renderizar) e aprova ou devolve pro plan",
   metadata: "título, descrição e tags",
   thumbnail: "escolhe o frame de capa",
 };

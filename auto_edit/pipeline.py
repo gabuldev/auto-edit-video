@@ -10,7 +10,9 @@ from pathlib import Path
 
 from auto_edit.chapters import description_with_chapters
 
-STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail", "done"]
+# evaluate runs on the *planned* cut, before anything renders: a rejection
+# only replays plan → review → evaluate (agent calls), never the FFmpeg cut.
+STAGES = ["extract", "plan", "review", "evaluate", "execute", "overlay", "caption", "metadata", "thumbnail", "done"]
 
 # Stages that are skipped per video type
 SKIP_FOR_LONG = {"caption"}

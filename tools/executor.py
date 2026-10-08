@@ -15,10 +15,15 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, sequence, snap  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, sequence, snap  # noqa: E402
+from auto_edit.intervals import (  # noqa: E402,F401  -- names kept for callers/tests
+    MIN_INTERVAL_DURATION,
+    build_keep_intervals as _build_keep_intervals,
+    invert_cuts as _invert_cuts,
+    merge_intervals as _merge_intervals,
+)  # needs the repo root on sys.path
 
 FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MAX)
-MIN_INTERVAL_DURATION = 1.0 / 30  # 1 frame at 30fps ≈ 0.033s
 
 # Above this many kept segments, cut each one on its own and concat the parts
 # instead of building one filter_complex with a trim branch per segment. The
@@ -188,46 +193,6 @@ def _validate_plan(plan: dict, duration: float) -> None:
             print(f"[executor] Ignoring degenerate cut[{i}] start={start:.3f} >= end={end:.3f} (no-op)")
 
 
-def _build_keep_intervals(
-    plan: dict,
-    duration: float,
-    energy_db: list[float] | None = None,
-    resolution: float = 0.0,
-) -> list[tuple[float, float]]:
-    """
-    Convert kept_segments from reviewed_plan.json into (start, end) tuples.
-    Applies end-padding (default 0.2s, override AUTO_EDIT_END_PADDING) to each
-    segment end (not start) to avoid cutting word tails -- but only as far as
-    the audio stays audible, so the pad never reaches into a silence cut.
-    Clamps to video duration and merges overlapping intervals.
-    """
-    end_padding = float(os.environ.get("AUTO_EDIT_END_PADDING", "0.2"))
-    threshold = snap.silence_threshold_db(energy_db or [])
-    raw = plan.get("kept_segments", [])
-    if not raw:
-        # Fallback: invert the cuts list
-        cuts = sorted(plan.get("cuts", []), key=lambda c: c["start"])
-        raw = _invert_cuts(cuts, duration)
-
-    padded: list[tuple[float, float]] = []
-    for seg in raw:
-        start = max(0.0, float(seg["start"]))
-        raw_end = float(seg["end"])
-        pad = snap.audible_tail(raw_end, end_padding, energy_db or [], resolution, threshold)
-        end = min(duration, raw_end + pad)
-        if end > start:
-            padded.append((start, end))
-
-    merged = _merge_intervals(sorted(padded))
-
-    # filter out sub-frame intervals that would produce 0 frames in concat
-    filtered = [(s, e) for s, e in merged if (e - s) >= MIN_INTERVAL_DURATION]
-    if not filtered:
-        raise RuntimeError("All kept segments are shorter than 1 frame — nothing to output")
-
-    return filtered
-
-
 def _detect_audio_onset(
     video: Path,
     segment_start: float,
@@ -297,37 +262,6 @@ def snap_start_to_audio_onset(
     if new_start <= first_start:
         return intervals
     return [(new_start, first_end)] + intervals[1:]
-
-
-def _invert_cuts(cuts: list[dict], duration: float) -> list[dict]:
-    """Convert a list of cut intervals into keep intervals."""
-    keep = []
-    cursor = 0.0
-    for cut in cuts:
-        s = float(cut["start"])
-        e = float(cut["end"])
-        if s >= e:
-            continue  # degenerate cut (no-op) — skip so cursor never regresses
-        if s > cursor:
-            keep.append({"start": cursor, "end": s})
-        cursor = e
-    if cursor < duration:
-        keep.append({"start": cursor, "end": duration})
-    return keep
-
-
-def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """Merge overlapping or touching intervals."""
-    if not intervals:
-        return []
-    merged = [intervals[0]]
-    for s, e in intervals[1:]:
-        ps, pe = merged[-1]
-        if s <= pe:
-            merged[-1] = (ps, max(pe, e))
-        else:
-            merged.append((s, e))
-    return merged
 
 
 # ── FFmpeg execution ──────────────────────────────────────────────────────────
