@@ -4,7 +4,7 @@ import * as api from "./api.js";
 import { el, escapeHtml, setEngine } from "./shell.js";
 import { go } from "./router.js";
 
-const STAGES = ["extract", "plan", "review", "execute", "overlay", "caption", "evaluate", "metadata", "thumbnail"];
+const STAGES = ["extract", "plan", "review", "evaluate", "execute", "overlay", "caption", "metadata", "thumbnail"];
 
 const streams = new Map(); // video id -> EventSource
 const noStream = new Set(); // ids whose SSE 404'd (status says running, engine has no live job)

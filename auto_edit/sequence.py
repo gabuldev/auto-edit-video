@@ -26,6 +26,8 @@ motivo no log — nunca perde conteúdo):
 """
 from __future__ import annotations
 
+import re
+
 TOLERANCE = 0.05  # seconds of kept audio a block may miss (rounding / padding)
 MIN_PIECE = 1 / 30  # anything shorter than a frame is not worth a cut
 TEASER_MIN = 2.0
@@ -169,6 +171,19 @@ def _flags(ws) -> tuple[bool, bool]:
     )
 
 
+# Evaluator feedback that blames the cold open: the next iteration goes without
+# one instead of picking (and failing) the same kind of teaser again.
+_TEASER_COMPLAINT = re.compile(r"teaser|cold open|cold-open|abertura com (um )?trecho", re.I)
+
+
+def blamed_by_evaluator(workspace) -> bool:
+    from pathlib import Path
+
+    pipeline = _read(Path(workspace) / "pipeline.json") or {}
+    feedback = pipeline.get("evaluator_feedback") or ""
+    return pipeline.get("iteration", 1) > 1 and bool(_TEASER_COMPLAINT.search(feedback))
+
+
 def wants_cold_open(workspace) -> bool:
     """Cold open or reordering was asked for and the plan has no sequence yet
     — a hand-made one is never overwritten."""
@@ -177,6 +192,28 @@ def wants_cold_open(workspace) -> bool:
     ws = Path(workspace)
     plan = _read(ws / "reviewed_plan.json") or {}
     return any(_flags(ws)) and not plan.get("sequence")
+
+
+def snap_to_sentences(start: float, end: float, segments: list[dict]) -> tuple[float, float] | None:
+    """Widen a teaser to the whole transcript lines it touches, so it never
+    starts or ends mid-sentence. Lines are dropped from the end while it is
+    longer than TEASER_MAX; None when not even one line fits."""
+    lines = []
+    for seg in segments or []:
+        try:
+            s, e = float(seg["start"]), float(seg["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if e > start + 0.05 and s < end - 0.05:
+            lines.append((s, e))
+    if not lines:
+        return start, end
+    lines.sort()
+    while lines and lines[-1][1] - lines[0][0] > TEASER_MAX:
+        lines.pop()
+    if not lines:
+        return None
+    return lines[0][0], lines[-1][1]
 
 
 def normalize_blocks(blocks, kept: list[Interval]) -> list[dict]:
@@ -232,6 +269,9 @@ def merge_cold_open(workspace) -> list[str]:
     notes: list[str] = []
 
     teaser_item = None
+    if want_teaser and blamed_by_evaluator(ws):
+        want_teaser = False
+        notes.append("cold open pulado nesta volta: o evaluator reclamou do teaser da anterior")
     teaser = answer.get("teaser") if want_teaser else None
     if want_teaser and not teaser:
         notes.append(f"agente não escolheu cold open: {answer.get('reason') or 'sem motivo'}")
@@ -240,7 +280,21 @@ def merge_cold_open(workspace) -> list[str]:
             start, end = float(teaser["start"]), float(teaser["end"])
         except (KeyError, TypeError, ValueError):
             notes.append("teaser sem start/end válidos — cold open ignorado")
-        else:
+            start = end = None
+        if start is not None:
+            transcription = _read(ws / "transcription.json") or {}
+            snapped = snap_to_sentences(start, end, transcription.get("segments") or [])
+            if snapped is None:
+                notes.append("teaser não cabe em frases inteiras de até 15s — cold open ignorado")
+                start = end = None
+            else:
+                start, end = snapped
+        if start is not None:
+            # A sentence the plan cut through would play as a fragment.
+            if _total(_clip(kept, start, end)) < 0.9 * (end - start):
+                notes.append(f"teaser {start:.1f}–{end:.1f}s atravessa um corte (frase pela metade) — cold open ignorado")
+                start = end = None
+        if start is not None:
             before = _total(_clip(kept, 0.0, start))
             if before < MIN_KEPT_BEFORE_TEASER:
                 notes.append(f"teaser em {start:.1f}s está na abertura ({before:.1f}s depois do início) — cold open ignorado")

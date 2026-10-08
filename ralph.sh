@@ -375,23 +375,10 @@ if final:
                 $PYTHON -m auto_edit.opening "$WORKSPACE" || true
                 break
             fi
-            # Cold open / reorder (opt-in: --cold-open, --reorder): an agent picks a moment from later
-            # in the video to play first and/or a new block order, written as the plan's sequence. A failed or
-            # skipped cold open never fails the edit — it just plays in order.
-            if $PYTHON -m auto_edit.sequence wants-cold-open "$WORKSPACE"; then
-                rm -f "$WORKSPACE/cold_open.json"
-                if ( fail_stage() { exit 1; }
-                     run_standalone_agent "coldopen" "$WORKSPACE/cold_open.json" "$AGENTS_DIR/cold_open.md" ); then
-                    $PYTHON -m auto_edit.sequence cold-open "$WORKSPACE" || log "WARNING: cold open merge failed — editing without it"
-                else
-                    log "WARNING: cold open agent failed — editing without it"
-                fi
-            fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
-            # Transcript of the edited video, so evaluate judges the cut and
-            # not the raw footage.
+            # Transcript of what was actually rendered (padding, onset snap):
+            # captions, overlays, chapters and metadata read it.
             $PYTHON -m auto_edit.postcut "$WORKSPACE" || { log "ERROR: postcut failed"; exit 1; }
-            $PYTHON -m auto_edit.opening "$WORKSPACE" || true
             ;;
 
         overlay)
@@ -405,6 +392,22 @@ if final:
             ;;
 
         evaluate)
+            # Cold open / reorder (on by default; --no-cold-open/--no-reorder): an agent picks a moment from later
+            # in the video to play first and/or a new block order, written as the plan's sequence. A failed or
+            # skipped cold open never fails the edit — it just plays in order.
+            if $PYTHON -m auto_edit.sequence wants-cold-open "$WORKSPACE"; then
+                rm -f "$WORKSPACE/cold_open.json"
+                if ( fail_stage() { exit 1; }
+                     run_standalone_agent "coldopen" "$WORKSPACE/cold_open.json" "$AGENTS_DIR/cold_open.md" ); then
+                    $PYTHON -m auto_edit.sequence cold-open "$WORKSPACE" || log "WARNING: cold open merge failed — editing without it"
+                else
+                    log "WARNING: cold open agent failed — editing without it"
+                fi
+            fi
+            # Judge the planned cut before rendering anything: a rejection loops
+            # back to plan without paying for the FFmpeg cut.
+            $PYTHON -m auto_edit.postcut --planned "$WORKSPACE" || true
+            $PYTHON -m auto_edit.opening "$WORKSPACE" || true
             run_agent "evaluate" "$WORKSPACE/assessment.json" "$AGENTS_DIR/evaluator.md"
             # eval-result handles approved/reject + loop-back logic, prints "next:<stage>"
             NEXT=$($PYTHON -m auto_edit.pipeline eval-result "$WORKSPACE")

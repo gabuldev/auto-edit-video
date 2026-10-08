@@ -148,6 +148,38 @@ def remap(transcription: dict, intervals: list[tuple[float, float]]) -> dict:
     }
 
 
+def planned(workspace: Path) -> dict | None:
+    """The transcript of the cut the plan describes, before anything renders.
+
+    Same intervals the executor will cut (end padding, silence-aware tails,
+    the plan's playback sequence), so the evaluator judges the real edit
+    without waiting for FFmpeg. Only the executor's onset snap of the first
+    interval is missing — a fraction of a second of leading silence.
+    """
+    from auto_edit import intervals as iv
+    from auto_edit import sequence, snap
+
+    try:
+        transcription = json.loads((workspace / "transcription.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    plan_file = next((workspace / n for n in ("reviewed_plan.json", "cut_plan.json") if (workspace / n).exists()), None)
+    if plan_file is None:
+        return None
+    plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    duration = float(transcription.get("duration") or 0.0)
+    energy, resolution = snap.load_energy_map(workspace)
+    kept = iv.build_keep_intervals(plan, duration, energy, resolution)
+    if plan.get("sequence"):
+        kept, _notes = sequence.apply(kept, plan["sequence"])
+    result = remap(transcription, kept)
+    result["derived_from"] = "transcription.json + planned cut (before render)"
+    (workspace / "post_cut_transcription.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return result
+
+
 def main(workspace: Path) -> int:
     transcription_file = workspace / "transcription.json"
     if not transcription_file.exists():
@@ -184,6 +216,13 @@ def main(workspace: Path) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("usage: python -m auto_edit.postcut <workspace>", file=sys.stderr)
+        print("usage: python -m auto_edit.postcut [--planned] <workspace>", file=sys.stderr)
         sys.exit(1)
+    if sys.argv[1] == "--planned":
+        res = planned(Path(sys.argv[2]))
+        if res is None:
+            print("[postcut] No plan/transcription — evaluating without a post-cut transcript")
+        else:
+            print(f"[postcut] Planned cut: {res['duration']:.1f}s, {len(res['words'])} words (before render)")
+        sys.exit(0)
     sys.exit(main(Path(sys.argv[1])))
