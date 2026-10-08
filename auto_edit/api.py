@@ -21,6 +21,7 @@ Endpoints
                                     whisper_model, max_iterations, dry_run, cold_open, reorder,
                                     overlays_dir}
     POST /api/videos/<id>/resume   {from_stage, overlays_dir}
+    POST /api/videos/<id>/stop     para o que está rodando (job, ralph avulso, fila)
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
     POST /api/videos/<id>/shorts       {max_dur}  roda o clipper (job, SSE)
     POST /api/videos/<id>/shorts/cut   {pick: [1, 3], max_dur}  corta em fila
@@ -316,6 +317,13 @@ def create_app(jobs: engine.JobManager | None = None):
         if not engine.open_url(body.get("url")):
             return jsonify({"error": "só links do YouTube"}), 400
         return jsonify({"opened": body["url"]})
+
+    @app.post("/api/videos/<video_id>/stop")
+    def stop(video_id: str):
+        try:
+            return jsonify(jobs.stop(video_id))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
 
     @app.get("/api/jobs/<job_id>/events")
     def job_events(job_id: str):

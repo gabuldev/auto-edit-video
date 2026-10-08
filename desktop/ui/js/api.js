@@ -98,5 +98,7 @@ export const openUrl = (url) =>
     body: JSON.stringify({ url }),
   });
 
+export const stop = (id) => json(`/api/videos/${encodeURIComponent(id)}/stop`, { method: "POST" });
+
 export const videoEvents = (id) =>
   new EventSource(`${API}/api/videos/${encodeURIComponent(id)}/events`);

@@ -58,7 +58,7 @@ function render(d) {
   el("res-sub").innerHTML =
     `<span class="badge ${d.type === "short" ? "short" : "long"}">${d.type || "?"}</span>` +
     `<span class="chip ${d.status}"><span class="d"></span>${
-      { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila" }[d.status] || d.status
+      { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila", interrupted: "Interrompido" }[d.status] || d.status
     }</span>`;
 
   // Shorts derivam de um long pronto; o próprio short não vira short.
