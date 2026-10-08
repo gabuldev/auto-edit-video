@@ -31,7 +31,11 @@ function match(path) {
 export function resolve() {
   const path = location.hash.replace(/^#/, "") || "/";
   const { screen, params } = match(path);
-  if (current && current !== screen) current.unmount?.();
+  // Always unmount, even when the next route is the same screen (another
+  // video on Pipeline, or go() to the current path): mount() starts timers and
+  // live streams, and mounting twice without unmounting stacked them up until
+  // the page pegged the CPU.
+  if (current) current.unmount?.();
   current = screen;
 
   document.querySelectorAll("[data-screen]").forEach((s) => {

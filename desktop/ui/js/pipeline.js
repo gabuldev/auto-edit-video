@@ -122,10 +122,15 @@ async function doStop() {
 }
 
 function pushLog(line) {
+  // Append one line instead of rebuilding the whole box on every log line
+  // (FFmpeg prints several per second); trim the oldest only past the cap.
   state.lines.push(line);
-  if (state.lines.length > MAX_LOG_LINES) state.lines.splice(0, state.lines.length - MAX_LOG_LINES);
   const box = el("pipe-log");
-  box.textContent = state.lines.join("\n");
+  box.append((box.firstChild ? "\n" : "") + line);
+  if (state.lines.length > MAX_LOG_LINES * 1.5) {
+    state.lines.splice(0, state.lines.length - MAX_LOG_LINES);
+    box.textContent = state.lines.join("\n");
+  }
   if (state.pinned) box.scrollTop = box.scrollHeight;
   el("log-empty").hidden = state.lines.length > 0;
 }
@@ -208,6 +213,8 @@ export default {
     state.pinned = true;
     el("pipe-log").textContent = "";
     el("log-empty").hidden = false;
+    clearInterval(state.timer); // defensive: never two pollers
+    closeStream();
     load(id);
     openStream(id);
     state.timer = setInterval(() => load(id), 5000); // stages, caso o SSE não esteja vivo
