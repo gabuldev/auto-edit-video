@@ -164,10 +164,15 @@ def _read(path: Path):
 
 
 def youtube_id(ws: Path) -> str | None:
-    """The YouTube id this workspace was published as (publish.json, last upload)."""
+    """The YouTube id this workspace was published as: the last upload in
+    publish.json or, for a video published by hand, the one a previous
+    `insights retention --url` saved in retention.json."""
     record = _read(ws / "publish.json") or {}
     uploads = record.get("youtube") or []
-    return uploads[-1].get("video_id") if uploads else None
+    if uploads:
+        return uploads[-1].get("video_id")
+    saved = _read(ws / RETENTION_NAME)
+    return saved.get("video_id") if isinstance(saved, dict) else None
 
 
 def save(ws: Path, video_id: str, data: dict) -> dict:

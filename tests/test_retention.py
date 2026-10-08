@@ -177,3 +177,13 @@ def test_steep_natural_start_is_not_a_drop():
     assert all(d["start"] >= retention.EARLY for d in good["drops"])
     bad = retention.analyze(pts(0.3), DURATION, TRANSCRIPT)
     assert any(d["start"] < retention.EARLY for d in bad["drops"])
+
+
+def test_hand_published_video_keeps_its_id(tmp_path):
+    """Published outside auto-edit: the --url id is remembered for the next refresh."""
+    ws = _ws(tmp_path, published=False)
+    retention.refresh(ws, lambda vid: _points(), video_id="manual1")
+    assert retention.youtube_id(ws) == "manual1"
+    asked = []
+    retention.refresh(ws, lambda vid: asked.append(vid) or _points())
+    assert asked == ["manual1"]
