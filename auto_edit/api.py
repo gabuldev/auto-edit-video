@@ -280,6 +280,8 @@ def create_app(jobs: engine.JobManager | None = None):
                     "tags": tags,
                     "privacy": body.get("privacy", "private"),
                     "publish_at": body.get("publish_at"),
+                    "captions": body.get("captions", True),
+                    "comment": body.get("comment"),
                 },
                 force=force,
             )

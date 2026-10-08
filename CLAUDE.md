@@ -27,6 +27,8 @@ auto-edit shorts video.mp4 --pick 1,3   # corta os escolhidos
 auto-edit publish auth youtube                       # conecta o canal (uma vez)
 auto-edit publish youtube video.mp4 --privacy unlisted
 auto-edit publish youtube video.mp4 --publish-at 2026-10-10T18:00:00-03:00
+# long: legenda (.srt da transcrição) vai junto por padrão (--no-captions desliga);
+# --comment posta o comentário pra fixar (vídeo privado não aceita; fixar é no Studio)
 
 # Retenção: onde o público saiu, com o que era dito (YouTube Analytics)
 auto-edit insights retention video.mp4      # salva retention.json; o planner usa nos próximos

@@ -194,10 +194,16 @@ def finalize(workspace: Path) -> Path:
 
     # Copy SRT if available
     srt_src = workspace / "captions.srt"
+    srt_dst = output_dir / f"{video_name}.srt"
     if srt_src.exists():
-        srt_dst = output_dir / f"{video_name}.srt"
         shutil.copy2(srt_src, srt_dst)
         print(f"[finalize] SRT → {srt_dst}")
+    elif pipeline.get("type") == "long":
+        # The long has no burned captions: a subtitle track for YouTube.
+        from auto_edit import subtitles
+
+        if subtitles.write_for_workspace(workspace, srt_dst):
+            print(f"[finalize] SRT (legenda do long) → {srt_dst}")
 
     # Copy thumbnail if available
     thumb_src = workspace / "thumbnail.png"

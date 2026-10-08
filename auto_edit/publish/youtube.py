@@ -199,14 +199,19 @@ def upload(
     body: dict,
     *,
     thumbnail: Path | None = None,
+    captions: Path | None = None,
+    language: str | None = None,
+    comment: str | None = None,
     on_progress: Callable[[float], None] = lambda pct: None,
     service=None,
 ) -> dict:
-    """Envia o vídeo (upload resumível em pedaços) e, se houver, a thumbnail.
+    """Envia o vídeo (upload resumível em pedaços) e, se houver, a thumbnail,
+    a legenda (.srt, no idioma do vídeo) e o comentário pra fixar.
 
-    Devolve {"video_id", "url", "warnings"}. Uma thumbnail recusada não desfaz
-    o upload: vira aviso (canal sem verificação por telefone não pode usar
-    thumbnail personalizada).
+    Devolve {"video_id", "url", "warnings", "captions", "comment_id"}. Nada
+    depois do vídeo desfaz o upload: thumbnail, legenda ou comentário recusado
+    vira aviso (canal sem verificação por telefone não pode usar thumbnail
+    personalizada; vídeo privado não aceita comentário).
     """
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
@@ -234,10 +239,37 @@ def upload(
             ).execute()
         except HttpError as exc:
             warnings.append(f"thumbnail não enviada: {_reason(exc)}")
+
+    captions_sent = False
+    if captions is not None:
+        try:
+            yt.captions().insert(
+                part="snippet",
+                body={"snippet": {"videoId": video_id, "language": language or "pt", "name": "", "isDraft": False}},
+                media_body=MediaFileUpload(str(captions), mimetype="application/octet-stream", resumable=False),
+            ).execute()
+            captions_sent = True
+        except HttpError as exc:
+            warnings.append(f"legenda não enviada: {_reason(exc)}")
+
+    comment_id = None
+    if comment:
+        try:
+            resp = yt.commentThreads().insert(
+                part="snippet",
+                body={"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": comment}}}},
+            ).execute()
+            comment_id = resp.get("id")
+        except HttpError as exc:
+            warnings.append(
+                f"comentário não postado: {_reason(exc)} (vídeo privado não aceita comentário — poste e fixe pelo Studio)"
+            )
     return {
         "video_id": video_id,
         "url": f"https://www.youtube.com/watch?v={video_id}",
         "warnings": warnings,
+        "captions": captions_sent,
+        "comment_id": comment_id,
     }
 
 

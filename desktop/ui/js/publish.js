@@ -39,7 +39,7 @@ function historyHTML(items) {
       return `
       <div class="pub-item">
         <span class="grow" title="${escapeHtml(p.title || "")}">${escapeHtml(p.title || p.video_id)}</span>
-        <span class="mono dim">${PRIVACY_LABEL[p.privacy] || p.privacy}${sched} · ${when}</span>
+        <span class="mono dim">${PRIVACY_LABEL[p.privacy] || p.privacy}${sched}${p.captions ? " · legenda" : ""}${p.comment_id ? " · comentário" : ""} · ${when}</span>
         <button class="btn btn-sm" data-url="${escapeHtml(p.url)}">abrir</button>
         <button class="btn btn-sm" data-url="https://studio.youtube.com/video/${encodeURIComponent(p.video_id)}/edit">Studio</button>
         ${(p.warnings || []).map((w) => `<span class="warn">${escapeHtml(w)}</span>`).join("")}
@@ -55,6 +55,12 @@ function fillForm(d) {
   el("pub-tags").value = (f.tags || []).join(", ");
   el("pub-privacy").value = f.privacy || "private";
   el("pub-when").value = "";
+  el("pub-captions-row").hidden = !d.captions;
+  el("pub-captions").checked = Boolean(d.captions);
+  el("pub-comment-row").hidden = !d.pinned_comment;
+  el("pub-comment-on").checked = false;
+  el("pub-comment").value = d.pinned_comment || "";
+  el("pub-comment").hidden = true;
   syncForm();
 }
 
@@ -72,6 +78,9 @@ function syncForm() {
   if (scheduled) notes.push("Agendado: fica privado e vira público sozinho na hora marcada.");
   if (state.data?.type === "short") notes.push("Short: o YouTube não aceita thumbnail personalizada pela API — ele escolhe o frame.");
   else if (state.data?.thumbnail) notes.push("A thumbnail gerada vai junto.");
+  if (el("pub-comment-on").checked && el("pub-privacy").value === "private") {
+    notes.push("Vídeo privado não aceita comentário: escolha não listado/público ou poste depois pelo Studio.");
+  }
   notes.push("Projeto do Google sem auditoria: o YouTube trava o vídeo como privado — aí é só liberar no Studio.");
   el("pub-note").textContent = notes.join(" ");
   el("btn-publish").disabled = !len || len > max;
@@ -162,6 +171,8 @@ async function publish() {
     privacy: el("pub-privacy").value,
     publish_at: when ? new Date(when).toISOString() : null,
     force: (state.data?.published || []).length > 0,
+    captions: !el("pub-captions-row").hidden && el("pub-captions").checked,
+    comment: el("pub-comment-on").checked ? el("pub-comment").value.trim() : null,
   };
   el("btn-publish").disabled = true;
   try {
@@ -207,6 +218,11 @@ function wire() {
     render(state.data);
   });
   for (const id of ["pub-title", "pub-when"]) el(id).addEventListener("input", syncForm);
+  el("pub-privacy").addEventListener("change", syncForm);
+  el("pub-comment-on").addEventListener("change", () => {
+    el("pub-comment").hidden = !el("pub-comment-on").checked;
+    syncForm();
+  });
   el("pub-history").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-url]");
     if (b) api.openUrl(b.dataset.url).catch((err) => setError(String(err.message || err)));

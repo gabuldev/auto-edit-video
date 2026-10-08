@@ -634,6 +634,9 @@ def publish_state(video_id: str) -> dict | None:
         },
         # A API não aceita thumbnail personalizada em Shorts.
         "thumbnail": not is_short and artifact_path(video_id, "thumbnail") is not None,
+        # Legenda como faixa só no long (o short já tem legenda queimada).
+        "captions": not is_short and artifact_path(video_id, "captions") is not None,
+        "pinned_comment": (metadata or {}).get("pinned_comment") if isinstance(metadata, dict) else None,
         "limits": {"title": yt.TITLE_MAX, "description": yt.DESCRIPTION_MAX},
         "published": yt.read_record(ws).get("youtube", []),
         "account": youtube_account(),
@@ -647,6 +650,9 @@ def run_publish_youtube(
     video: Path,
     thumbnail: Path | None,
     emit: Emit,
+    captions: Path | None = None,
+    language: str | None = None,
+    comment: str | None = None,
     upload: Callable[..., dict] = yt.upload,
 ) -> dict:
     """Upload with progress events, then record it in the workspace."""
@@ -662,7 +668,10 @@ def run_publish_youtube(
 
     if thumbnail is not None:
         thumbnail = yt.prepare_thumbnail(thumbnail, ws)
-    res = upload(video, body, thumbnail=thumbnail, on_progress=progress)
+    res = upload(
+        video, body, thumbnail=thumbnail, captions=captions, language=language,
+        comment=comment, on_progress=progress,
+    )
     for warning in res.get("warnings", []):
         emit({"type": "log", "line": f"aviso: {warning}"})
     entry = {
@@ -672,6 +681,8 @@ def run_publish_youtube(
         "privacy": body["status"]["privacyStatus"],
         "publish_at": body["status"].get("publishAt"),
         "warnings": res.get("warnings", []),
+        "captions": bool(res.get("captions")),
+        "comment_id": res.get("comment_id"),
     }
     yt.add_record(ws, "youtube", entry)
     emit({"type": "done", "status": "done", "url": res["url"], "video_id": res["video_id"]})
@@ -1012,10 +1023,18 @@ class JobManager:
         )
         video = artifact_path(video_id, "video")
         thumbnail = artifact_path(video_id, "thumbnail") if state["thumbnail"] else None
+        # Long only: the short already has its captions burned in.
+        captions = None
+        if state["captions"] and fields.get("captions", True):
+            captions = artifact_path(video_id, "captions")
+        comment = (fields.get("comment") or "").strip() or None
         return self._spawn(
             video_id,
             "publish",
-            lambda emit: run_publish_youtube(ws, body, video=video, thumbnail=thumbnail, emit=emit),
+            lambda emit: run_publish_youtube(
+                ws, body, video=video, thumbnail=thumbnail, emit=emit,
+                captions=captions, language=p.get("language"), comment=comment,
+            ),
         )
 
 

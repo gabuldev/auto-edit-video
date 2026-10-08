@@ -181,7 +181,8 @@ class TestUpload:
         fake = _FakeYT([(_Status(0.4), None), (_Status(0.9), None), (None, {"id": "abc"})])
         seen = []
         res = yt.upload(self._video(tmp_path), {"snippet": {}}, thumbnail=thumb, on_progress=seen.append, service=fake)
-        assert res == {"video_id": "abc", "url": "https://www.youtube.com/watch?v=abc", "warnings": []}
+        assert res == {"video_id": "abc", "url": "https://www.youtube.com/watch?v=abc", "warnings": [],
+                       "captions": False, "comment_id": None}
         assert seen == [0.4, 0.9, 1.0]
         assert fake.thumb_for == "abc"
 
@@ -288,7 +289,7 @@ class TestPublishJob:
         body = yt.build_body(title="T", description="", tags=[], privacy="unlisted")
         calls = {}
 
-        def fake_upload(video, body, *, thumbnail, on_progress):
+        def fake_upload(video, body, *, thumbnail, on_progress, **_):
             calls["video"], calls["thumb"] = video, thumbnail
             on_progress(0.5)
             on_progress(1.0)

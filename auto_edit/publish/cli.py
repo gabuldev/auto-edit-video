@@ -44,6 +44,8 @@ def youtube(
     ),
     title: Optional[str] = typer.Option(None, "--title", help="Troca o título gerado no metadata"),
     force: bool = typer.Option(False, "--force", help="Envia de novo mesmo se já foi publicado"),
+    captions: bool = typer.Option(True, "--captions/--no-captions", help="Envia a legenda (.srt) junto (só long)"),
+    comment: bool = typer.Option(False, "--comment", help="Posta o comentário pra fixar gerado no metadata (não funciona em vídeo privado)"),
 ) -> None:
     """Envia o vídeo final (+ thumbnail, no long) com o título e a descrição do metadata."""
     ws = workspace_root() / video.stem
@@ -91,7 +93,12 @@ def youtube(
                 bar.console.print(f"[yellow]{escape(ev['line'])}[/yellow]")
 
         try:
-            entry = engine.run_publish_youtube(ws, body, video=video_file, thumbnail=thumb, emit=emit)
+            entry = engine.run_publish_youtube(
+                ws, body, video=video_file, thumbnail=thumb, emit=emit,
+                captions=engine.artifact_path(ws.name, "captions") if captions and state["captions"] else None,
+                language=p.get("language"),
+                comment=state.get("pinned_comment") if comment else None,
+            )
         except yt.PublishError as exc:
             console.print(f"[red]{escape(str(exc))}[/red]")
             raise typer.Exit(1)

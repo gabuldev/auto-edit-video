@@ -380,6 +380,15 @@
                   <input class="input mono" type="datetime-local" id="pub-when" />
                 </label>
               </div>
+              <label class="check" id="pub-captions-row" hidden>
+                <input type="checkbox" id="pub-captions" checked />
+                <span>Enviar legenda (.srt gerado da transcrição)</span>
+              </label>
+              <label class="check" id="pub-comment-row" hidden>
+                <input type="checkbox" id="pub-comment-on" />
+                <span>Postar o comentário pra fixar (fixar continua no Studio)</span>
+              </label>
+              <textarea class="input" id="pub-comment" rows="2" hidden></textarea>
               <p class="pub-note" id="pub-note"></p>
               <div class="pub-actions">
                 <button class="btn btn-primary" id="btn-publish">Enviar pro YouTube</button>
