@@ -59,7 +59,8 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .row.running { border-color: #4a3a1e; }
 .row.failed { border-color: #3a2530; }
 .vid { display: flex; align-items: center; gap: 13px; min-width: 0; }
-.thumb { width: 64px; height: 38px; border-radius: 7px; background: linear-gradient(135deg, #243244, #161d27); flex-shrink: 0; }
+.thumb { width: 64px; height: 38px; border-radius: 7px; background: linear-gradient(135deg, #243244, #161d27); flex-shrink: 0; object-fit: cover; }
+.vid-live { font-size: 10.5px; color: var(--run); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
 .vid-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vid-meta { font-size: 11px; color: var(--faint); }
 .badge { padding: 3px 9px; border-radius: 6px; font-size: 11px; font-weight: 600; }
@@ -80,6 +81,7 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .chip.running { background: rgba(245,181,68,.12); color: var(--run); } .chip.running .d { background: var(--run); }
 .chip.failed { background: rgba(248,113,113,.12); color: var(--err); } .chip.failed .d { background: var(--err); }
 .chip.idle { background: rgba(154,164,178,.10); color: var(--dim); } .chip.idle .d { background: var(--dim); }
+.chip.interrupted { background: rgba(248,113,113,.10); color: #f6bcbb; } .chip.interrupted .d { background: var(--err); }
 .chip.queued { background: rgba(91,157,255,.12); color: var(--info); } .chip.queued .d { background: var(--info); }
 
 /* ── Novo edit ─────────────────────────────────────────────────────────────── */
@@ -301,3 +303,6 @@ textarea.input { resize: vertical; }
 .ret-drop .loss { color: var(--text); font-weight: 600; }
 .ret-drop .said { color: var(--dim); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ret-drop .kind { display: inline-block; margin-right: 6px; font-size: 10.5px; padding: 1px 6px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+
+.btn-danger { border-color: rgba(248,113,113,.4); color: #f6bcbb; }
+.btn-danger.confirm { background: var(--err); color: #1a0606; border-color: var(--err); font-weight: 700; }

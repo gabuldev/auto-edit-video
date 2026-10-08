@@ -53,7 +53,7 @@ function renderHead(d) {
   el("pipe-sub").innerHTML =
     `<span class="badge ${d.type === "short" ? "short" : "long"}">${d.type || "?"}</span>` +
     `<span class="chip ${d.status}"><span class="d"></span>${
-      { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila" }[d.status] || d.status
+      { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila", interrupted: "Interrompido" }[d.status] || d.status
     }</span>` +
     `<span class="mono dim">iteração ${d.iteration || 1}/${d.max_iterations || 3}</span>` +
     (d.estimated_tokens ? `<span class="mono dim">~${Number(d.estimated_tokens).toLocaleString("pt-BR")} tokens</span>` : "");
@@ -81,8 +81,44 @@ function renderResume(d) {
   sel.disabled = live;
   el("btn-resume").disabled = live;
   el("resume-note").textContent = live
-    ? "rodando — espere terminar pra retomar"
-    : "refaz esse stage e todos os seguintes";
+    ? "rodando — pare ou espere terminar pra retomar"
+    : d.status === "interrupted"
+      ? "foi interrompido (o processo morreu) — retome daqui"
+      : "refaz esse stage e todos os seguintes";
+  const stoppable = live || d.status === "queued";
+  el("btn-stop").hidden = !stoppable;
+  if (!stoppable) resetStop();
+}
+
+// Two clicks to stop: the first arms the button, the second stops. A browser
+// confirm() would block the Tauri window.
+let stopTimer = null;
+function resetStop() {
+  clearTimeout(stopTimer);
+  el("btn-stop").classList.remove("confirm");
+  el("btn-stop").textContent = "Parar";
+}
+
+async function doStop() {
+  const btn = el("btn-stop");
+  if (!btn.classList.contains("confirm")) {
+    btn.classList.add("confirm");
+    btn.textContent = "Confirmar: parar edição";
+    stopTimer = setTimeout(resetStop, 4000);
+    return;
+  }
+  resetStop();
+  btn.disabled = true;
+  try {
+    await api.stop(state.id);
+    pushLog("── parado ──");
+  } catch (err) {
+    pushLog(`── não deu pra parar: ${err.message || err} ──`);
+  } finally {
+    btn.disabled = false;
+    closeStream();
+    load(state.id);
+  }
 }
 
 function pushLog(line) {
@@ -153,6 +189,7 @@ async function doResume() {
 
 function wire() {
   el("btn-resume").addEventListener("click", doResume);
+  el("btn-stop").addEventListener("click", doStop);
   el("pipe-log").addEventListener("scroll", (e) => {
     const box = e.currentTarget;
     state.pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 24;

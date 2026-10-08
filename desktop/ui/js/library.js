@@ -44,8 +44,14 @@ function dots(v) {
 }
 
 function chip(status) {
-  const label = { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila" }[status] || status;
+  const label = { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila", interrupted: "Interrompido" }[status] || status;
   return `<span class="chip ${status}"><span class="d"></span>${label}</span>`;
+}
+
+// The video's real name: its title once metadata ran, the context typed on
+// Novo edit before that, and only then the file name (which stays below).
+function name(v) {
+  return v.title || v.context || v.video_name || v.id;
 }
 
 function rowHTML(v) {
@@ -54,10 +60,13 @@ function rowHTML(v) {
   return `
   <div class="row ${v.status}" data-id="${v.id}">
     <div class="vid">
-      <div class="thumb"></div>
+      ${v.has_thumbnail
+        ? `<img class="thumb" loading="lazy" alt="" src="${api.API}/api/videos/${encodeURIComponent(v.id)}/file/thumbnail" />`
+        : `<div class="thumb"></div>`}
       <div style="min-width:0">
-        <div class="vid-name">${escapeHtml(v.video_name || v.id)}</div>
-        <div class="vid-meta mono" data-meta>${v.language || ""}${v.derived_from ? ` · short de ${escapeHtml(v.derived_from)}` : ""}${v.output ? " · output pronto" : ""}</div>
+        <div class="vid-name" title="${escapeHtml(name(v))}">${escapeHtml(name(v))}</div>
+        <div class="vid-meta mono">${escapeHtml(v.video_name || v.id)}${v.language ? ` · ${v.language}` : ""}${v.derived_from ? ` · short de ${escapeHtml(v.derived_from)}` : ""}</div>
+        <div class="vid-live mono" data-live hidden></div>
       </div>
     </div>
     <div>${typeBadge(v.type)}</div>
@@ -95,7 +104,9 @@ function subscribe(v) {
       row.querySelector("[data-dots]").innerHTML = dots(v);
       row.querySelector("[data-stage]").textContent = ev.stage;
     } else if (ev.type === "log") {
-      row.querySelector("[data-meta]").textContent = ev.line.slice(0, 60);
+      const live = row.querySelector("[data-live]");
+      live.hidden = false;
+      live.textContent = ev.line.slice(0, 90);
     } else if (ev.type === "done" || ev.type === "error") {
       close(v.id);
       refresh();

@@ -111,7 +111,8 @@ def browse(directory: str | None = None) -> dict:
 
 
 def overall_status(
-    pipeline: dict, active: bool = False, failed: bool = False, queued: bool = False
+    pipeline: dict, active: bool = False, failed: bool = False, queued: bool = False,
+    alive: bool | None = None,
 ) -> str:
     """Collapse a pipeline.json into one status: running | done | failed | queued | idle.
 
@@ -126,8 +127,12 @@ def overall_status(
         return "done"
     if failed or any(s.get("status") == "failed" for s in stages.values()):
         return "failed"
-    if active or any(s.get("status") == "running" for s in stages.values()):
+    if active:
         return "running"
+    if any(s.get("status") == "running" for s in stages.values()):
+        # pipeline.json says running, but nothing runs it (the process died
+        # with an old engine, the app, or the machine): it is not running.
+        return "interrupted" if alive is False else "running"
     if queued:
         return "queued"
     return "idle"
@@ -150,7 +155,25 @@ def _read_json(path: Path) -> dict | list | None:
 # ── Read models ───────────────────────────────────────────────────────────────
 
 
-def summarize(ws: Path, active: bool = False, failed: bool = False, queued: bool = False) -> dict:
+def _title(ws: Path) -> str | None:
+    """The video's real name for the library: the title the metadata stage
+    wrote (YouTube title for a long, short title for a short)."""
+    metadata = _read_json(ws / "metadata.json")
+    if not isinstance(metadata, dict):
+        return None
+    return (metadata.get("youtube_title") or metadata.get("short_title") or "").strip() or None
+
+
+def _thumbnail_file(ws: Path, pipeline: dict) -> Path | None:
+    name = pipeline.get("video_name", ws.name)
+    candidate = ws.parent / "output" / f"{name}_thumbnail.png"
+    return candidate if candidate.is_file() else None
+
+
+def summarize(
+    ws: Path, active: bool = False, failed: bool = False, queued: bool = False,
+    alive: bool | None = None,
+) -> dict:
     """One-line summary of a workspace for the library list."""
     p = pl.load(ws)
     tokens = (p.get("token_stats") or {}).get("total_estimated_tokens")
@@ -162,8 +185,11 @@ def summarize(ws: Path, active: bool = False, failed: bool = False, queued: bool
         "type": p.get("type"),
         "language": p.get("language"),
         "current_stage": p.get("current_stage"),
-        "status": overall_status(p, active=active, failed=failed, queued=queued),
+        "status": overall_status(p, active=active, failed=failed, queued=queued, alive=alive),
         "derived_from": Path(p["derived_from"]).name if p.get("derived_from") else None,
+        "title": _title(ws),
+        "context": p.get("context"),
+        "has_thumbnail": _thumbnail_file(ws, p) is not None,
         "iteration": p.get("iteration"),
         "max_iterations": p.get("max_iterations"),
         "plan_id": p.get("plan_id"),
@@ -187,6 +213,7 @@ def list_library(
     if not root.is_dir():
         return []
     items: list[dict] = []
+    live = live_ralph_workspaces()
     for pj in root.glob("*/pipeline.json"):
         ws = pj.parent
         try:
@@ -196,6 +223,7 @@ def list_library(
                     active=ws.name in active_ids,
                     failed=ws.name in failed_ids,
                     queued=ws.name in queued_ids,
+                    alive=None if live is None else ws.name in live,
                 )
             )
         except (FileNotFoundError, ValueError):
@@ -212,7 +240,11 @@ def detail(
     if not (ws / "pipeline.json").exists():
         return None
     p = pl.load(ws)
-    data = summarize(ws, active=active, failed=failed, queued=queued)
+    live = live_ralph_workspaces()
+    data = summarize(
+        ws, active=active, failed=failed, queued=queued,
+        alive=None if live is None else ws.name in live,
+    )
     data["context"] = p.get("context")
     data["stage_detail"] = p.get("stages", {})
     data["token_stats"] = p.get("token_stats")
@@ -737,8 +769,10 @@ class Job:
     id: str
     video_id: str
     kind: str  # "edit" | "resume"
-    status: str = "running"  # running | done | failed
+    status: str = "running"  # running | done | failed | cancelled
     history: list[Event] = field(default_factory=list)
+    cancelled: bool = False
+    procs: list = field(default_factory=list)  # processes this job started (to stop them)
     _subscribers: set[Queue] = field(default_factory=set)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -746,7 +780,9 @@ class Job:
     def emit(self, event: Event) -> None:
         with self._lock:
             self.history.append(event)
-            if event.get("type") == "done":
+            if event.get("status") == "cancelled" or (self.cancelled and event.get("type") == "error"):
+                self.status = "cancelled"
+            elif event.get("type") == "done":
                 self.status = "done"
             elif event.get("type") == "error":
                 self.status = "failed"
@@ -780,6 +816,75 @@ class Job:
         finally:
             with self._lock:
                 self._subscribers.discard(q)
+
+
+_current = threading.local()
+
+
+def _register(proc) -> None:
+    """Remember a process the current job started, so `stop` can end it."""
+    job = getattr(_current, "job", None)
+    if job is not None:
+        job.procs.append(proc)
+
+
+def _was_cancelled() -> bool:
+    job = getattr(_current, "job", None)
+    return bool(job and job.cancelled)
+
+
+def _own_process_group() -> dict:
+    """Popen kwargs that put ralph and everything it starts (python, ffmpeg,
+    the agent CLI) in one group, so stopping kills all of them."""
+    if sys.platform == "win32":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def _kill_tree(pid: int) -> None:
+    import signal
+
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
+        else:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+def _ralph_pids(ws: Path) -> list[int]:
+    """ralph.sh processes running on this workspace that the engine did not
+    start (a CLI run, or one orphaned by an engine restart). POSIX only."""
+    if sys.platform == "win32":
+        return []
+    target = str(ws.resolve())
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    except OSError:
+        return []
+    pids = []
+    for line in out.splitlines():
+        pid, _, cmd = line.strip().partition(" ")
+        if "ralph.sh" in cmd and target in cmd and pid.isdigit():
+            pids.append(int(pid))
+    return pids
+
+
+def live_ralph_workspaces() -> set[str] | None:
+    """Names of workspaces with a ralph.sh alive, or None when it can't be
+    known (Windows) — then nothing is called interrupted."""
+    if sys.platform == "win32":
+        return None
+    try:
+        out = subprocess.run(["ps", "-axo", "command="], capture_output=True, text=True).stdout
+    except OSError:
+        return None
+    names = set()
+    for cmd in out.splitlines():
+        if "ralph.sh" in cmd:
+            names.add(Path(cmd.strip().split()[-1]).name)
+    return names
 
 
 class JobManager:
@@ -834,6 +939,7 @@ class JobManager:
             self._by_video[video_id] = job.id
 
         def _run() -> None:
+            _current.job = job
             try:
                 target(job.emit)
             except Exception as exc:  # surface, never crash the thread silently
@@ -845,6 +951,39 @@ class JobManager:
 
         threading.Thread(target=_run, name=f"job-{job.id}", daemon=True).start()
         return job
+
+    def stop(self, video_id: str) -> dict:
+        """Stop what is running on a workspace: the engine's job (ralph and
+        everything it started), a ralph.sh started elsewhere, or a place in
+        the shorts queue. Stages left "running" go back to "pending", so the
+        video reads as stopped and can be resumed. Returns what was stopped.
+        """
+        ws = library_root() / video_id
+        if not (ws / "pipeline.json").exists():
+            raise FileNotFoundError(f"no workspace for: {video_id}")
+
+        stopped: list[str] = []
+        with self._lock:
+            if video_id in self._queued:
+                self._queued.discard(video_id)
+                stopped.append("fila")
+        job = self.job_for_video(video_id)
+        if job is not None and job.status == "running":
+            job.cancelled = True
+            for proc in list(job.procs):
+                _kill_tree(proc.pid)
+            stopped.append("job")
+        for pid in _ralph_pids(ws):
+            _kill_tree(pid)
+            stopped.append(f"ralph {pid}")
+
+        p = pl.load(ws)
+        reset = [name for name, info in p.get("stages", {}).items() if info.get("status") == "running"]
+        for name in reset:
+            p["stages"][name]["status"] = "pending"
+        if reset:
+            pl.save(ws, p)
+        return {"id": video_id, "stopped": stopped, "reset_stages": reset}
 
     def start_edit(
         self,
@@ -976,8 +1115,9 @@ class JobManager:
             stopped = False
             for short_ws in seeded:
                 with self._lock:
+                    was_queued = short_ws.name in self._queued
                     self._queued.discard(short_ws.name)
-                if stopped:
+                if stopped or not was_queued:  # failed earlier, or stopped while waiting
                     continue
                 job = self._spawn(
                     short_ws.name,
@@ -1082,7 +1222,9 @@ def run_clipper(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        **_own_process_group(),
     )
+    _register(proc)
     if proc.stdout is not None:
         for raw in proc.stdout:
             line = raw.rstrip("\n")
@@ -1090,6 +1232,9 @@ def run_clipper(
                 emit({"type": "log", "line": line})
 
     rc = proc.wait()
+    if _was_cancelled():
+        emit({"type": "error", "status": "cancelled", "message": "parado"})
+        return rc
     if rc == 0:
         emit({"type": "done", "status": "done"})
     else:
@@ -1131,7 +1276,9 @@ def run_workspace(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        **_own_process_group(),
     )
+    _register(proc)
 
     last_stage: str | None = None
     if proc.stdout is not None:
@@ -1145,6 +1292,9 @@ def run_workspace(
                 emit({"type": "stage", "stage": cur})
 
     rc = proc.wait()
+    if _was_cancelled():
+        emit({"type": "error", "status": "cancelled", "message": "parado", "stage": _current_stage(ws)})
+        return rc
     if rc == 0:
         out = None
         try:
