@@ -173,8 +173,8 @@ def create_app(jobs: engine.JobManager | None = None):
                 language=body.get("language", "pt"),
                 max_iterations=int(body.get("max_iterations", 3)),
                 dry_run=bool(body.get("dry_run", False)),
-                cold_open=bool(body.get("cold_open", False)),
-                reorder=bool(body.get("reorder", False)),
+                cold_open=bool(body.get("cold_open", True)),
+                reorder=bool(body.get("reorder", True)),
                 overlays_dir=body.get("overlays_dir"),
             )
         except FileNotFoundError as exc:
