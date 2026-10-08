@@ -304,8 +304,8 @@ def short(
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
     plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'S2' or '2026-W19/S2'). Use 'none' to skip prompt."),
     no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
-    cold_open: bool = typer.Option(False, "--cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
-    reorder: bool = typer.Option(False, "--reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
+    cold_open: bool = typer.Option(True, "--cold-open/--no-cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
+    reorder: bool = typer.Option(True, "--reorder/--no-reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
 ) -> None:
     """Edit a short-form video (adds captions, generates Reels/Shorts metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -361,8 +361,8 @@ def long(
         "--overlays-dir",
         help="Folder holding the overlay .mp4s (sets AUTO_EDIT_ASSETS_OVERLAYS).",
     ),
-    cold_open: bool = typer.Option(False, "--cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
-    reorder: bool = typer.Option(False, "--reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
+    cold_open: bool = typer.Option(True, "--cold-open/--no-cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
+    reorder: bool = typer.Option(True, "--reorder/--no-reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
