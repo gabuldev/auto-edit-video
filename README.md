@@ -1,6 +1,6 @@
 # Auto Edit Video
 
-**Edição de vídeo com IA, do arquivo bruto ao post pronto.** Você escolhe o vídeo, diz do que ele trata, e o Auto Edit transcreve, corta silêncios e enrolação, abre no melhor momento, legenda, gera título/descrição/capítulos/thumbnail e publica no YouTube. Tem **app desktop** (macOS, Windows, Linux) e **CLI**.
+**Edição de vídeo com IA, do arquivo bruto ao post pronto.** Você escolhe o vídeo, diz do que ele trata, e o Auto Edit transcreve, corta silêncios e enrolação, abre no melhor momento, legenda, gera título/descrição/capítulos/thumbnail e publica no YouTube. Tem **app desktop** (macOS Apple Silicon, Windows, Linux) e **CLI**.
 
 ![Biblioteca do Auto Edit](docs/screenshots/biblioteca.jpg)
 
@@ -11,9 +11,10 @@ Baixe o instalador do seu sistema na **[página de Releases](https://github.com/
 | Sistema | Arquivo |
 |---------|---------|
 | macOS (Apple Silicon) | `Auto-Edit_<versão>_aarch64.dmg` |
-| macOS (Intel) | `Auto-Edit_<versão>_x64.dmg` |
 | Windows | `Auto-Edit_<versão>_x64-setup.exe` (ou `.msi`) |
 | Linux | `.AppImage` ou `.deb` |
+
+Mac com processador Intel não tem instalador (as bibliotecas de IA pararam de publicar pacotes pra ele) — use o [CLI](#usar-pelo-terminal-cli).
 
 O app já vem com tudo que o pipeline precisa (Python, Whisper e um FFmpeg com legenda) — **não precisa instalar Python nem FFmpeg**. O que você instala é **um agente de IA** (veja abaixo).
 
