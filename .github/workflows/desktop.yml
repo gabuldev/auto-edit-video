@@ -87,6 +87,8 @@ jobs:
 
       - name: Stage the embedded engine (portable Python + auto-edit + FFmpeg)
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
 
       - name: Install the Tauri CLI and generate icons

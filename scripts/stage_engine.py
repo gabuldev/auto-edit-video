@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -61,7 +62,12 @@ def log(msg: str) -> None:
 
 
 def fetch(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "auto-edit-stage-engine"})
+    headers = {"User-Agent": "auto-edit-stage-engine"}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token and url.startswith("https://api.github.com/"):
+        # Unauthenticated API calls share a small per-IP quota on CI runners.
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=600) as resp:
         return resp.read()
 
@@ -166,7 +172,9 @@ def verify(out: Path, py: Path, target: str) -> None:
             raise SystemExit(f"{label} failed:\n{res.stdout[-800:]}\n{res.stderr[-800:]}")
         if label == "ffmpeg" and " subtitles " not in res.stdout:
             raise SystemExit("ffmpeg has no libass (subtitles filter) — captions would fail")
-        log(f"ok: {label}" + (f" ({res.stdout.strip().splitlines()[-1]})" if label != "ffmpeg" else " (libass)"))
+        said = (res.stdout or res.stderr).strip().splitlines()
+        detail = "libass" if label == "ffmpeg" else (said[-1] if said else "rc 0")
+        log(f"ok: {label} ({detail})")
 
 
 def size(path: Path) -> str:
