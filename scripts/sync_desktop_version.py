@@ -37,6 +37,8 @@ def sync(version: str) -> None:
 
 
 if __name__ == "__main__":
-    v = sys.argv[1].lstrip("v") if len(sys.argv) > 1 else package_version()
+    # An empty argument (a pull request build has no tag) means "the package's".
+    arg = sys.argv[1].strip().lstrip("v") if len(sys.argv) > 1 else ""
+    v = arg or package_version()
     sync(v)
-    print(f"desktop app version → {v}")
+    print(f"desktop app version -> {v}")  # ASCII: the Windows runner console is cp1252
