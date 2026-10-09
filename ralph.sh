@@ -3,7 +3,7 @@
 # Usage: bash ralph.sh <workspace_dir>
 #
 # AI stages use a headless LLM CLI (stateless). Default: Claude Code (`claude -p`).
-# Primary: AUTO_EDIT_LLM=claude|cursor|agent
+# Primary: AUTO_EDIT_LLM=claude|cursor|agy|opencode|ollama (agent = cursor)
 # Fallback (optional): AUTO_EDIT_LLM_FALLBACK — if primary CLI fails or JSON stays
 #   invalid after one retry, tries the fallback backend for that stage.
 # Cursor requires `agent` or `cursor` on PATH (https://cursor.com/docs/cli ).
@@ -59,19 +59,22 @@ _normalize_llm() {
     case "$x" in
         claude) echo "claude" ;;
         agent|cursor) echo "cursor" ;;
+        agy|antigravity) echo "agy" ;;
+        opencode) echo "opencode" ;;
+        ollama) echo "ollama" ;;
         *) return 1 ;;
     esac
 }
 
 LLM_BACKEND="$(_normalize_llm "${AUTO_EDIT_LLM:-claude}")" || {
-    echo "[ralph] ERROR: AUTO_EDIT_LLM must be claude, cursor, or agent (got: ${AUTO_EDIT_LLM:-})" >&2
+    echo "[ralph] ERROR: AUTO_EDIT_LLM must be claude, cursor, agy, opencode or ollama (got: ${AUTO_EDIT_LLM:-})" >&2
     exit 1
 }
 
 LLM_BACKEND_FALLBACK=""
 if [ -n "${AUTO_EDIT_LLM_FALLBACK:-}" ]; then
     _fb="$(_normalize_llm "${AUTO_EDIT_LLM_FALLBACK}")" || {
-        echo "[ralph] ERROR: AUTO_EDIT_LLM_FALLBACK must be claude, cursor, or agent (got: ${AUTO_EDIT_LLM_FALLBACK})" >&2
+        echo "[ralph] ERROR: AUTO_EDIT_LLM_FALLBACK must be claude, cursor, agy, opencode or ollama (got: ${AUTO_EDIT_LLM_FALLBACK})" >&2
         exit 1
     }
     if [ "$_fb" != "$LLM_BACKEND" ]; then
@@ -244,6 +247,17 @@ _run_llm_print_backend() {
             exit_code=$?
             if [ "$exit_code" -eq 124 ]; then
                 log "ERROR: LLM 'cursor' timed out after ${LLM_TIMEOUT}s"
+                return 1
+            fi
+            return "$exit_code"
+            ;;
+        agy|opencode|ollama)
+            # Antigravity / OpenCode / local Ollama: see auto_edit/agents.py.
+            timeout "$LLM_TIMEOUT" "$PYTHON" -m auto_edit.agents invoke "$backend" \
+                "$prompt_file" "$output_file"
+            exit_code=$?
+            if [ "$exit_code" -eq 124 ]; then
+                log "ERROR: LLM '$backend' timed out after ${LLM_TIMEOUT}s"
                 return 1
             fi
             return "$exit_code"

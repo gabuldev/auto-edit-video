@@ -118,7 +118,9 @@ decrescente e marca os candidatos que se sobrepõem.
 
 | Var | Default | Descrição |
 |-----|---------|-----------|
-| `AUTO_EDIT_LLM` | `claude` | CLI primário para agent stages (claude ou cursor) |
+| `AUTO_EDIT_LLM` | `claude` | Agente dos stages de IA: `claude`, `cursor`, `agy` (Antigravity), `opencode` ou `ollama` (modelo local). Ver `auto_edit/agents.py` |
+| `AUTO_EDIT_AGY_MODEL` / `AUTO_EDIT_OPENCODE_MODEL` / `AUTO_EDIT_OLLAMA_MODEL` | — | Modelo de cada agente (ex.: `opencode/big-pickle`, `qwen2.5:7b`) |
+| `AUTO_EDIT_OLLAMA_CTX` | `32768` | Janela de contexto do modelo local; prompt maior é recusado (cai no fallback), nunca truncado |
 | `AUTO_EDIT_LLM_FALLBACK` | — | CLI fallback se primário falhar |
 | `AUTO_EDIT_END_PADDING` | `0.2` | Segundos adicionados ao final de cada segmento mantido |
 | `AUTO_EDIT_LANGUAGE` | `pt` | Idioma do áudio para transcrição |
