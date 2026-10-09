@@ -1,0 +1,115 @@
+name: Desktop app
+
+# Builds the Tauri app on macOS (Apple Silicon + Intel), Windows and Linux.
+#
+# - Called by release.yml after it tags a version: the installers are attached
+#   to that GitHub release (`tag` input).
+# - On a pull request that touches the app or this workflow: same builds, no
+#   upload — the build is checked before it can break a release.
+# - By hand (Actions → Desktop app → Run workflow) to (re)build a tag.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build and attach to, e.g. v0.30.0"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and attach to, e.g. v0.30.0"
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+      - "scripts/sync_desktop_version.py"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple Silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: Linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Stamp the app with the release version
+        shell: bash
+        run: python scripts/sync_desktop_version.py "${TAG:-}"
+
+      - name: Install the Tauri CLI and generate icons
+        working-directory: desktop
+        shell: bash
+        run: |
+          npm install
+          npx tauri icon app-icon.png
+
+      - name: Build (no upload)
+        if: inputs.tag == ''
+        working-directory: desktop
+        shell: bash
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Release id
+        if: inputs.tag != ''
+        id: rel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and attach to the release
+        if: inputs.tag != ''
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          releaseId: ${{ steps.rel.outputs.id }}
+          args: --target ${{ matrix.target }}

@@ -12,6 +12,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.version && format('v{0}', steps.version.outputs.version) || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,3 +79,12 @@ jobs:
             --title "v$VERSION" \
             --notes "$NOTES" \
             --latest
+
+  desktop:
+    # The desktop installers, attached to the release just created.
+    needs: release
+    if: needs.release.outputs.tag != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
