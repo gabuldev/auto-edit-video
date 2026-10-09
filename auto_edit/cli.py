@@ -55,6 +55,11 @@ def main(
     ),
 ) -> None:
     """AI-powered video editing using Claude Code agents."""
+    # Fill the gaps (agent, models, inbox, overlays…) from ~/.auto-edit/settings.json;
+    # variables already set always win.
+    from auto_edit import settings
+
+    settings.apply_to_process()
 
 
 console = Console()

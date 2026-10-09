@@ -56,6 +56,11 @@ def inbox_root() -> Path:
     env = os.environ.get("AUTO_EDIT_INBOX")
     if env:
         return Path(env).expanduser()
+    from auto_edit import settings
+
+    saved = settings.load().get("inbox")
+    if saved:
+        return Path(saved).expanduser()
     return repo_root() / "upload"
 
 
@@ -1182,7 +1187,9 @@ class JobManager:
 
 
 def _ralph_env(ralph: Path, language: str) -> dict:
-    env = os.environ.copy()
+    from auto_edit import settings
+
+    env = settings.env_from_settings()  # os.environ, gaps filled from settings.json
     env["AUTO_EDIT_REPO_ROOT"] = str(ralph.parent.resolve())
     env["AUTO_EDIT_LANGUAGE"] = language
     env.setdefault("AUTO_EDIT_LLM", "claude")

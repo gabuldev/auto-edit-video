@@ -33,6 +33,11 @@ Endpoints
                                                publish_at, force}  upload (job, SSE)
     GET  /api/videos/<id>/retention           (análise salva da curva de retenção)
     POST /api/videos/<id>/retention           busca a curva no YouTube agora
+    GET  /api/settings / PUT /api/settings   (~/.auto-edit/settings.json)
+    GET  /api/agents                          (instalado? versão? Ollama: modelos)
+    POST /api/agents/<name>/test {model}      prompt mínimo de verdade
+    POST /api/agents/<name>/login             abre o Terminal com o login da CLI
+    POST /api/agents/ollama/pull {model}
     POST /api/open-url                        {url}  só links do YouTube
     GET  /api/jobs/<job_id>/events        (SSE)
     GET  /api/videos/<id>/events          (SSE, that video's current job)
@@ -165,18 +170,21 @@ def create_app(jobs: engine.JobManager | None = None):
         video_type = body.get("type")
         if not video_path or video_type not in ("short", "long"):
             return jsonify({"error": "video_path and type ('short'|'long') are required"}), 400
+        from auto_edit import settings
+
+        saved = settings.load()  # what the request leaves out comes from Settings
         try:
             job = jobs.start_edit(
                 video_path,
                 video_type,
                 context=body.get("context", ""),
-                whisper_model=body.get("whisper_model", "small"),
-                language=body.get("language", "pt"),
+                whisper_model=body.get("whisper_model") or saved["whisper_model"],
+                language=body.get("language") or saved["language"],
                 max_iterations=int(body.get("max_iterations", 3)),
                 dry_run=bool(body.get("dry_run", False)),
-                cold_open=bool(body.get("cold_open", True)),
-                reorder=bool(body.get("reorder", True)),
-                overlays_dir=body.get("overlays_dir"),
+                cold_open=bool(body.get("cold_open", saved["cold_open"])),
+                reorder=bool(body.get("reorder", saved["reorder"])),
+                overlays_dir=body.get("overlays_dir") or saved["overlays_dir"],
             )
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -310,6 +318,60 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify({"error": str(exc)}), 404
         except (ret.RetentionError, youtube_auth.AuthError) as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.get("/api/settings")
+    def get_settings():
+        from auto_edit import settings
+
+        return jsonify(settings.load())
+
+    @app.put("/api/settings")
+    def put_settings():
+        from auto_edit import settings
+
+        try:
+            return jsonify(settings.save(request.get_json(silent=True) or {}))
+        except settings.SettingsError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.get("/api/agents")
+    def list_agents():
+        from auto_edit import agent_status
+
+        return jsonify({"agents": agent_status.all_status()})
+
+    @app.post("/api/agents/<name>/test")
+    def test_agent(name: str):
+        from auto_edit import agent_status, agents
+
+        if name not in agents.AGENTS:
+            return jsonify({"error": f"agente desconhecido: {name}"}), 404
+        body = request.get_json(silent=True) or {}
+        return jsonify(agent_status.test(name, model=body.get("model") or None))
+
+    @app.post("/api/agents/<name>/login")
+    def login_agent(name: str):
+        from auto_edit import agent_status, agents
+
+        if name not in agents.AGENTS:
+            return jsonify({"error": f"agente desconhecido: {name}"}), 404
+        try:
+            return jsonify({"command": agent_status.open_login(name)})
+        except agents.AgentError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/agents/ollama/pull")
+    def pull_ollama():
+        from auto_edit import agent_status, agents
+
+        model = ((request.get_json(silent=True) or {}).get("model") or "").strip()
+        if not model:
+            return jsonify({"error": "informe o modelo, ex.: qwen2.5:7b"}), 400
+        try:
+            agent_status.pull(model)
+        except agents.AgentError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"model": model, "status": "downloading"}), 202
 
     @app.post("/api/open-url")
     def open_url():
