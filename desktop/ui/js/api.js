@@ -100,5 +100,22 @@ export const openUrl = (url) =>
 
 export const stop = (id) => json(`/api/videos/${encodeURIComponent(id)}/stop`, { method: "POST" });
 
+export const settings = () => json("/api/settings");
+
+export const saveSettings = (data) =>
+  json("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+
+export const agents = () => json("/api/agents").then((b) => b.agents || []);
+
+export const testAgent = (name, model) =>
+  json(`/api/agents/${name}/test`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
+
+export const loginAgent = (name) => json(`/api/agents/${name}/login`, { method: "POST" });
+
+export const pullOllama = (model) =>
+  json("/api/agents/ollama/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
+
+export const disconnectYoutube = () => json("/api/publish/youtube/disconnect", { method: "POST" });
+
 export const videoEvents = (id) =>
   new EventSource(`${API}/api/videos/${encodeURIComponent(id)}/events`);

@@ -173,6 +173,17 @@ export default {
   async mount() {
     if (!state.wired) { wire(); state.wired = true; }
     setEngine(await api.health());
+    // Defaults from Configurações, once per visit, without clobbering a form in progress.
+    if (!state.selected && !el("f-context").value) {
+      try {
+        const cfg = await api.settings();
+        el("f-language").value = cfg.language;
+        el("f-whisper").value = cfg.whisper_model;
+        el("f-coldopen").checked = cfg.cold_open;
+        el("f-reorder").checked = cfg.reorder;
+        if (cfg.overlays_dir && !el("f-overlays").value) el("f-overlays").value = cfg.overlays_dir;
+      } catch { /* engine offline: keep the form's own defaults */ }
+    }
     if (!state.loaded) await loadDir(null); // defaults to the inbox
     validate();
   },
