@@ -26,6 +26,7 @@ on:
       - "desktop/**"
       - ".github/workflows/desktop.yml"
       - "scripts/sync_desktop_version.py"
+      - "scripts/stage_engine.py"
 
 permissions:
   contents: write
@@ -52,6 +53,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ inputs.tag }}
+      PYTHONUTF8: "1"  # Windows runners default to cp1252
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,6 +85,10 @@ jobs:
         shell: bash
         run: python scripts/sync_desktop_version.py "${TAG:-}"
 
+      - name: Stage the embedded engine (portable Python + auto-edit + FFmpeg)
+        shell: bash
+        run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
+
       - name: Install the Tauri CLI and generate icons
         working-directory: desktop
         shell: bash
@@ -94,7 +100,7 @@ jobs:
         if: inputs.tag == ''
         working-directory: desktop
         shell: bash
-        run: npx tauri build --target ${{ matrix.target }}
+        run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json
 
       - name: Release id
         if: inputs.tag != ''
@@ -112,4 +118,4 @@ jobs:
         with:
           projectPath: desktop
           releaseId: ${{ steps.rel.outputs.id }}
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json
