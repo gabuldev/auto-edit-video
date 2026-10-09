@@ -332,11 +332,15 @@ def open_artifact(
 
 
 # Links the frontend may ask the OS to open — only the platforms we publish to.
-_OPENABLE_URL = re.compile(r"^https://(www\.|studio\.)?youtube\.com/|^https://youtu\.be/")
+_OPENABLE_URL = re.compile(
+    r"^https://(www\.|studio\.)?youtube\.com/|^https://youtu\.be/"
+    # where to install the agent CLIs (Settings → "como instalar")
+    r"|^https://(docs\.claude\.com|cursor\.com|antigravity\.google|opencode\.ai|ollama\.com)(/|$)"
+)
 
 
 def open_url(url: str, *, run: Callable[..., object] = subprocess.Popen) -> bool:
-    """Open a platform link in the default browser (the webview won't)."""
+    """Open a platform or agent-CLI link in the default browser (the webview won't)."""
     if not isinstance(url, str) or not _OPENABLE_URL.match(url):
         return False
     if sys.platform == "darwin":

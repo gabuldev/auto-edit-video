@@ -20,6 +20,7 @@
       <nav class="nav">
         <a class="nav-item" href="#/" data-route="/"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Biblioteca</a>
         <a class="nav-item" href="#/novo" data-route="/novo"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo edit</a>
+        <a class="nav-item" href="#/config" data-route="/config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Configurações</a>
       </nav>
       <div class="sidebar-foot">
         <div class="engine-status" id="engine-status">
@@ -476,6 +477,76 @@
             </div>
           </div>
         </div>
+      </div>
+    </main>
+
+    <!-- Configurações -->
+    <main class="main" data-screen="config" hidden>
+      <header class="topbar">
+        <div class="titles">
+          <div class="page-title">Configurações</div>
+          <div class="page-sub" id="cfg-sub">agente de IA, contas e padrões das edições</div>
+        </div>
+        <button class="btn btn-primary" id="btn-cfg-save" disabled>Salvar</button>
+      </header>
+      <div class="content form">
+        <div id="cfg-error" class="banner err" hidden></div>
+
+        <section class="card">
+          <div class="card-head"><div>
+            <h2>Agente de IA</h2>
+            <p>quem planeja, revisa e avalia os cortes. O <b>principal</b> roda sempre; o <b>fallback</b> entra se ele falhar.</p>
+          </div></div>
+          <div class="cfg-agents" id="cfg-agents"><div class="empty small">verificando as CLIs…</div></div>
+          <label class="field">
+            <span>Fallback</span>
+            <select class="input" id="cfg-fallback"></select>
+          </label>
+        </section>
+
+        <section class="card" id="cfg-ollama-card">
+          <div class="card-head"><div>
+            <h2>Ollama (modelo local)</h2>
+            <p>roda na sua máquina, sem conta. Modelos pequenos ficam abaixo dos de nuvem e não cabem no prompt do planner em vídeos longos — o fallback assume.</p>
+          </div></div>
+          <div id="cfg-ollama"></div>
+          <div class="cfg-row">
+            <input class="input mono" id="cfg-ollama-pull-model" placeholder="qwen2.5:7b" />
+            <button class="btn" id="btn-ollama-pull">Baixar modelo</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div>
+            <h2>YouTube</h2>
+            <p>publicar, legenda, comentário e retenção usam uma conexão só.</p>
+          </div></div>
+          <div class="cfg-row">
+            <span id="cfg-yt-status" class="dim">—</span>
+            <span class="grow"></span>
+            <button class="btn" id="btn-cfg-yt">Conectar YouTube</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Pastas</h2></div></div>
+          <label class="field"><span>Pasta de entrada (onde ficam as gravações)</span>
+            <input class="input mono" id="cfg-inbox" placeholder="padrão: upload/ do repo" /></label>
+          <label class="field"><span>Pasta dos overlays (ctas.mp4, lowerthird…)</span>
+            <input class="input mono" id="cfg-overlays" placeholder="padrão: assets/overlays/" /></label>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Padrões das edições</h2><p>vêm preenchidos no Novo edit.</p></div></div>
+          <div class="grid">
+            <label class="field"><span>Idioma</span>
+              <select class="input" id="cfg-language"><option value="pt">pt</option><option value="en">en</option><option value="es">es</option></select></label>
+            <label class="field"><span>Modelo do Whisper</span>
+              <select class="input" id="cfg-whisper"><option>tiny</option><option>base</option><option>small</option><option>medium</option><option>large</option></select></label>
+          </div>
+          <label class="check"><input type="checkbox" id="cfg-coldopen" /><span>Cold open — abrir com o melhor momento</span></label>
+          <label class="check"><input type="checkbox" id="cfg-reorder" /><span>Reordenar blocos quando ajudar a reter</span></label>
+        </section>
       </div>
     </main>
   </div>

@@ -306,3 +306,23 @@ textarea.input { resize: vertical; }
 
 .btn-danger { border-color: rgba(248,113,113,.4); color: #f6bcbb; }
 .btn-danger.confirm { background: var(--err); color: #1a0606; border-color: var(--err); font-weight: 700; }
+
+/* ── Configurações ──────────────────────────────────────────────────────────── */
+.cfg-agents { display: flex; flex-direction: column; gap: 8px; }
+.cfg-agent { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 11px; background: var(--panel-2); }
+.cfg-agent.primary { border-color: var(--accent); background: rgba(46,230,198,.05); }
+.cfg-agent input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin-top: 3px; }
+.cfg-agent .who { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cfg-agent .who b { font-size: 14px; }
+.cfg-agent .meta { font-size: 11.5px; color: var(--faint); }
+.cfg-agent .meta.bad { color: #f6bcbb; }
+.cfg-agent .meta.good { color: var(--ok); }
+.cfg-agent .model { margin-top: 6px; max-width: 320px; height: 32px; padding: 0 10px; font-size: 12.5px; }
+.cfg-agent .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cfg-agent .result { grid-column: 2 / 4; font-size: 12px; line-height: 1.5; padding: 6px 10px; border-radius: 7px; background: #0b0f14; color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+.cfg-agent .result.ok { color: var(--ok); }
+.cfg-agent .result.bad { color: #f6bcbb; }
+.cfg-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.cfg-row .input { max-width: 260px; height: 36px; }
+.cfg-row .grow { flex: 1; }
+.cfg-models { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }

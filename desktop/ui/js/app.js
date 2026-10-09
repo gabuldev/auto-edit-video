@@ -8,6 +8,7 @@ import pipeline from "./pipeline.js";
 import cuts from "./cuts.js";
 import result from "./result.js";
 import shorts from "./shorts.js";
+import config from "./settings.js";
 
 route("/", library);
 route("/novo", newEdit);
@@ -15,6 +16,7 @@ route("/video/:id", pipeline);
 route("/video/:id/cortes", cuts);
 route("/video/:id/resultado", result);
 route("/video/:id/shorts", shorts);
+route("/config", config);
 
 document.querySelectorAll("[data-retry]").forEach((a) =>
   a.addEventListener("click", (e) => { e.preventDefault(); refresh(); })

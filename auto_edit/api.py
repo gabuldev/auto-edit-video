@@ -377,7 +377,7 @@ def create_app(jobs: engine.JobManager | None = None):
     def open_url():
         body = request.get_json(silent=True) or {}
         if not engine.open_url(body.get("url")):
-            return jsonify({"error": "só links do YouTube"}), 400
+            return jsonify({"error": "só links do YouTube e das CLIs de agente"}), 400
         return jsonify({"opened": body["url"]})
 
     @app.post("/api/videos/<video_id>/stop")
