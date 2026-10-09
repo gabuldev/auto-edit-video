@@ -79,6 +79,7 @@ class TestApi:
         assert c.put("/api/settings", json={"whisper_model": "x"}).status_code == 400
 
     def test_edit_defaults_come_from_settings(self, home, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
         settings.save({"language": "en", "whisper_model": "medium", "cold_open": False})
         video = tmp_path / "v.mp4"
         video.write_bytes(b"x")
