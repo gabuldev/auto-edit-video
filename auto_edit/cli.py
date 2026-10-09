@@ -112,16 +112,16 @@ def _merge_target(resolutions: list[tuple[int, int]]) -> tuple[int, int]:
 
 
 VALID_MODELS = ["tiny", "base", "small", "medium", "large"]
-CLI_EPILOG = "claude, cursor, or agent (agent = Cursor)"
+CLI_EPILOG = "claude, cursor, agy, opencode or ollama (agent = Cursor, antigravity = agy)"
 
 
 def _norm_cli_token(raw: str) -> str:
-    x = raw.strip().lower()
-    if x == "agent":
-        return "cursor"
-    if x not in ("claude", "cursor"):
+    from auto_edit import agents
+
+    name = agents.normalize(raw)
+    if name is None:
         raise ValueError(raw)
-    return x
+    return name
 
 
 def _resolve_llm(
