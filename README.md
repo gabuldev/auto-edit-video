@@ -11,8 +11,8 @@ Baixe o instalador do seu sistema na **[página de Releases](https://github.com/
 | Sistema | Arquivo |
 |---------|---------|
 | macOS (Apple Silicon) | `Auto-Edit_<versão>_aarch64.dmg` |
-| Windows | `Auto-Edit_<versão>_x64-setup.exe` (ou `.msi`) |
-| Linux | `.AppImage` ou `.deb` |
+| Windows | `Auto-Edit_<versão>_x64-setup.exe` (ou `_x64_en-US.msi`) |
+| Linux | `.deb` (Ubuntu/Debian) ou `.rpm` (Fedora) |
 
 Mac com processador Intel não tem instalador (as bibliotecas de IA pararam de publicar pacotes pra ele) — use o [CLI](#usar-pelo-terminal-cli).
 
@@ -22,7 +22,7 @@ O app já vem com tudo que o pipeline precisa (Python, Whisper e um FFmpeg com l
 
 - **macOS**: "Auto-Edit está danificado" ou "não pode ser aberto" → clique com o botão direito no app → **Abrir**. Se ainda reclamar: `xattr -cr /Applications/Auto-Edit.app`.
 - **Windows**: "O Windows protegeu o computador" → **Mais informações** → **Executar assim mesmo**. O pipeline usa `bash`: instale o [Git for Windows](https://git-scm.com/download/win).
-- **Linux** (AppImage): `chmod +x Auto-Edit_*.AppImage` e rode.
+- **Linux**: `sudo apt install ./Auto-Edit_*_amd64.deb` (ou `sudo dnf install ./Auto-Edit-*.x86_64.rpm`).
 
 ### O agente de IA
 
