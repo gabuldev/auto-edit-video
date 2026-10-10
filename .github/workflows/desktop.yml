@@ -50,6 +50,9 @@ jobs:
           - name: Linux
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            # No AppImage: linuxdeploy spent 2h+ walking the thousands of
+            # shared objects in the embedded Python/torch and then failed.
+            bundles: --bundles deb,rpm
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ inputs.tag }}
@@ -102,7 +105,7 @@ jobs:
         if: inputs.tag == ''
         working-directory: desktop
         shell: bash
-        run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json
+        run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ matrix.bundles }}
 
       - name: Release id
         if: inputs.tag != ''
@@ -120,4 +123,4 @@ jobs:
         with:
           projectPath: desktop
           releaseId: ${{ steps.rel.outputs.id }}
-          args: --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ matrix.bundles }}
