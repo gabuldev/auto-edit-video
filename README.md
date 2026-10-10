@@ -1,34 +1,87 @@
 # Auto Edit Video
 
-Pipeline de edição automatizada de vídeo usando IA. Transcreve, planeja cortes, executa, adiciona legendas e gera metadata — tudo via CLI, sem intervenção manual.
+**Edição de vídeo com IA, do arquivo bruto ao post pronto.** Você escolhe o vídeo, diz do que ele trata, e o Auto Edit transcreve, corta silêncios e enrolação, abre no melhor momento, legenda, gera título/descrição/capítulos/thumbnail e publica no YouTube. Tem **app desktop** (macOS Apple Silicon, Windows, Linux) e **CLI**.
+
+![Biblioteca do Auto Edit](docs/screenshots/biblioteca.jpg)
+
+## Baixar o app
+
+Baixe o instalador do seu sistema na **[página de Releases](https://github.com/gabuldev/auto-edit-video/releases/latest)**:
+
+| Sistema | Arquivo |
+|---------|---------|
+| macOS (Apple Silicon) | `Auto-Edit_<versão>_aarch64.dmg` |
+| Windows | `Auto-Edit_<versão>_x64-setup.exe` (ou `_x64_en-US.msi`) |
+| Linux | `.deb` (Ubuntu/Debian) ou `.rpm` (Fedora) |
+
+Mac com processador Intel não tem instalador (as bibliotecas de IA pararam de publicar pacotes pra ele) — use o [CLI](#usar-pelo-terminal-cli).
+
+O app já vem com tudo que o pipeline precisa (Python, Whisper e um FFmpeg com legenda) — **não precisa instalar Python nem FFmpeg**. O que você instala é **um agente de IA** (veja abaixo).
+
+**Primeira abertura** — os instaladores ainda não são assinados, então o sistema avisa:
+
+- **macOS**: "Auto-Edit está danificado" ou "não pode ser aberto" → clique com o botão direito no app → **Abrir**. Se ainda reclamar: `xattr -cr /Applications/Auto-Edit.app`.
+- **Windows**: "O Windows protegeu o computador" → **Mais informações** → **Executar assim mesmo**. O pipeline usa `bash`: instale o [Git for Windows](https://git-scm.com/download/win).
+- **Linux**: `sudo apt install ./Auto-Edit_*_amd64.deb` (ou `sudo dnf install ./Auto-Edit-*.x86_64.rpm`).
+
+### O agente de IA
+
+Quem planeja, revisa e avalia os cortes é um agente de linha de comando que você instala e loga uma vez. Em **Configurações** o app mostra quais estão instalados, testa cada um com um prompt de verdade e abre o login:
+
+| Agente | Instalar |
+|--------|----------|
+| **Claude Code** (padrão) | [docs.claude.com](https://docs.claude.com/en/docs/claude-code) |
+| **Cursor Agent** | [cursor.com/docs/cli](https://cursor.com/docs/cli) |
+| **Antigravity** (`agy`) | [antigravity.google](https://antigravity.google) |
+| **OpenCode** | [opencode.ai](https://opencode.ai) |
+| **Ollama** (modelo local, sem conta) | [ollama.com](https://ollama.com) — bom pra shorts; em vídeos longos o prompt não cabe num modelo local e o fallback assume |
+
+![Configurações](docs/screenshots/configuracoes.jpg)
+
+## O que ele faz
+
+- **Corta** silêncios, falsas largadas, repetições e, em vídeos longos, blocos inteiros que não entregam nada.
+- **Abertura que segura**: a promessa do vídeo nos primeiros ~15s, e um **cold open** com o melhor momento antes da abertura. Quando ajuda, **reordena** os blocos (a demo antes da explicação).
+- **Avalia antes de renderizar**: um agente revisa o corte planejado e devolve pro plano se a abertura enrola ou uma frase fica cortada — o FFmpeg só corta depois de aprovado.
+- **Legendas** estilo CapCut nos shorts e `.srt` nos longs.
+- **Título, descrição, tags, capítulos, comentário pra fixar e thumbnail**.
+- **Shorts a partir de um long**: o agente sugere trechos que se sustentam sozinhos; você assiste cada um e corta os que quiser.
+- **Publica no YouTube** (com legenda e agendamento) e mostra **onde o público saiu** na curva de retenção, com o que você estava falando naquele momento — e o planner aprende com isso nos próximos vídeos.
+
+![Resultado: publicar e retenção](docs/screenshots/resultado.jpg)
+
+| Revisar cortes | Shorts de um long |
+|---|---|
+| ![Revisar cortes](docs/screenshots/revisar-cortes.jpg) | ![Shorts](docs/screenshots/shorts.jpg) |
 
 ## Como funciona
 
-O pipeline é uma state machine de 9 stages orquestrada por agentes LLM (Claude) e ferramentas FFmpeg:
+O pipeline é uma state machine orquestrada por agentes de IA e ferramentas FFmpeg:
 
 ```
-extract → plan → review → execute → overlay → caption → evaluate → metadata → done
-  │         │       │        │         │          │          │          │
-Whisper   Claude  Claude   FFmpeg   FFmpeg     FFmpeg    Claude     Claude
-+ Claude                                      + ASS
+extract → plan → review → evaluate → execute → overlay → caption → metadata → thumbnail
+Whisper   agente  agente   agente     FFmpeg    FFmpeg    FFmpeg    agente     Python
 ```
 
-| Stage | O que faz | Tipo |
-|-------|-----------|------|
-| **extract** | Transcreve o áudio (Whisper `small`) + mapa de energia + correção com Claude | Python |
-| **plan** | Analisa transcrição e planeja os cortes (silêncios, false starts, filler) | LLM Agent |
-| **review** | QA do plano de cortes (valida, adiciona cortes faltando, merge) | LLM Agent |
-| **execute** | Aplica os cortes no vídeo via FFmpeg com normalização de áudio | Python |
-| **overlay** | Compõe overlays gráficos com chroma key (apenas long-form) | LLM + Python |
-| **caption** | Gera legendas estilo CapCut com destaque por palavra (apenas shorts) | Python |
-| **evaluate** | Avalia qualidade do resultado; rejeita e volta ao plan se necessário | LLM Agent |
-| **metadata** | Gera título, descrição e hashtags para publicação | LLM Agent |
+| Stage | O que faz |
+|-------|-----------|
+| **extract** | Transcreve o áudio (Whisper) e mede a energia do áudio |
+| **plan** | Planeja os cortes; no long, faz curadoria editorial e cuida da abertura |
+| **review** | Revisa o plano (cortes faltando, frases quebradas) |
+| **evaluate** | Cold open/reordenação, e julga o **corte planejado** antes de renderizar — rejeita e volta pro plan (até 3x) |
+| **execute** | Corta o vídeo via FFmpeg, com normalização de áudio |
+| **overlay** | Overlays gráficos com chroma key (só long) |
+| **caption** | Legendas estilo CapCut (só short) |
+| **metadata** | Título, descrição, tags, capítulos e comentário pra fixar |
+| **thumbnail** | Escolhe o frame e monta a thumbnail |
 
-Se o avaliador rejeitar, o pipeline volta ao `plan` com feedback — até 3 iterações.
+## Usar pelo terminal (CLI)
 
-## Instalação
+Tudo que o app faz também roda pelo `auto-edit`. A instalação abaixo é só pra usar o CLI (ou desenvolver) — quem usa o app não precisa dela.
 
-### Opção 1 — Nix (recomendada, zero dependências manuais)
+### Instalação
+
+#### Opção 1 — Nix (recomendada, zero dependências manuais)
 
 Nix instala Python, FFmpeg e todas as deps automaticamente. Nada precisa estar pré-instalado.
 
@@ -48,7 +101,7 @@ Ou rode sem instalar:
 nix run github:gabuldev/auto-edit-video -- short video.mp4 --context "..."
 ```
 
-### Opção 2 — curl | bash (instala deps do sistema automaticamente)
+#### Opção 2 — curl | bash (instala deps do sistema automaticamente)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/gabuldev/auto-edit-video/main/install.sh | bash
@@ -56,7 +109,7 @@ curl -sSL https://raw.githubusercontent.com/gabuldev/auto-edit-video/main/instal
 
 O script detecta e instala automaticamente o que falta (Python, FFmpeg, git) via Homebrew (macOS), apt, dnf ou pacman (Linux). Instala o `auto-edit` em `~/.auto-edit-video/`.
 
-### Pós-instalação
+#### Pós-instalação
 
 ```bash
 auto-edit doctor    # valida o setup
@@ -73,11 +126,11 @@ nix profile remove auto-edit-video
 bash ~/.auto-edit-video/uninstall.sh
 ```
 
-### Dependência opcional
+#### Dependência opcional
 
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code` (necessário para stages de IA)
 
-### Desenvolvimento (Nix)
+#### Desenvolvimento (Nix)
 
 Para contribuidores:
 
@@ -293,14 +346,20 @@ auto-edit short video.mp4 \
 # Usar Claude (default)
 auto-edit short video.mp4
 
-# Usar Cursor Agent como fallback
-auto-edit short video.mp4 --cli claude --cli-fallback cursor
+# Outro agente: claude, cursor, agy (Antigravity), opencode ou ollama (local)
+auto-edit short video.mp4 --cli agy --cli-fallback claude
+
+# Modelo de cada agente
+export AUTO_EDIT_OPENCODE_MODEL=opencode/big-pickle
+export AUTO_EDIT_OLLAMA_MODEL=qwen2.5:7b
 
 # Via variáveis de ambiente
 export AUTO_EDIT_LLM=claude
 export AUTO_EDIT_LLM_FALLBACK=cursor
 export AUTO_EDIT_LLM_TIMEOUT=600  # timeout em segundos (default: 10min)
 ```
+
+O padrão também pode ficar salvo em `~/.auto-edit/settings.json` (é o que a tela de **Configurações** do app grava). Variáveis de ambiente e flags têm prioridade.
 
 ## Arquitetura
 
