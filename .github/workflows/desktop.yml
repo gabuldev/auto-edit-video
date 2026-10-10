@@ -1,6 +1,9 @@
 name: Desktop app
 
-# Builds the Tauri app on macOS (Apple Silicon + Intel), Windows and Linux.
+# Builds the Tauri app on macOS (Apple Silicon), Windows and Linux.
+# No Intel Mac build: the Python packages the engine needs (llvmlite,
+# cryptography, torch) no longer publish macOS x86_64 wheels — Intel Macs use
+# the CLI.
 #
 # - Called by release.yml after it tags a version: the installers are attached
 #   to that GitHub release (`tag` input).
@@ -26,6 +29,7 @@ on:
       - "desktop/**"
       - ".github/workflows/desktop.yml"
       - "scripts/sync_desktop_version.py"
+      - "scripts/stage_engine.py"
 
 permissions:
   contents: write
@@ -40,18 +44,19 @@ jobs:
           - name: macOS (Apple Silicon)
             os: macos-latest
             target: aarch64-apple-darwin
-          - name: macOS (Intel)
-            os: macos-latest
-            target: x86_64-apple-darwin
           - name: Windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
           - name: Linux
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            # No AppImage: linuxdeploy spent 2h+ walking the thousands of
+            # shared objects in the embedded Python/torch and then failed.
+            bundles: --bundles deb,rpm
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ inputs.tag }}
+      PYTHONUTF8: "1"  # Windows runners default to cp1252
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,6 +88,12 @@ jobs:
         shell: bash
         run: python scripts/sync_desktop_version.py "${TAG:-}"
 
+      - name: Stage the embedded engine (portable Python + auto-edit + FFmpeg)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
+
       - name: Install the Tauri CLI and generate icons
         working-directory: desktop
         shell: bash
@@ -94,7 +105,7 @@ jobs:
         if: inputs.tag == ''
         working-directory: desktop
         shell: bash
-        run: npx tauri build --target ${{ matrix.target }}
+        run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ matrix.bundles }}
 
       - name: Release id
         if: inputs.tag != ''
@@ -112,4 +123,4 @@ jobs:
         with:
           projectPath: desktop
           releaseId: ${{ steps.rel.outputs.id }}
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ matrix.bundles }}
