@@ -20,7 +20,10 @@ O app já vem com tudo que o pipeline precisa (Python, Whisper e um FFmpeg com l
 
 **Primeira abertura** — os instaladores ainda não são assinados, então o sistema avisa:
 
-- **macOS**: "Auto-Edit está danificado" ou "não pode ser aberto" → clique com o botão direito no app → **Abrir**. Se ainda reclamar: `xattr -cr /Applications/Auto-Edit.app`.
+- **macOS**: arraste o app pra **Aplicativos** e abra. Se aparecer *"não pode ser aberto porque a Apple não pode verificar…"*: **Ajustes do Sistema → Privacidade e Segurança** → role até o fim → **Abrir Mesmo Assim**. Se aparecer *"Auto-Edit está danificado"* (versões até a 0.31): rode no Terminal
+  ```bash
+  xattr -cr /Applications/Auto-Edit.app
+  ```
 - **Windows**: "O Windows protegeu o computador" → **Mais informações** → **Executar assim mesmo**. O pipeline usa `bash`: instale o [Git for Windows](https://git-scm.com/download/win).
 - **Linux**: `sudo apt install ./Auto-Edit_*_amd64.deb` (ou `sudo dnf install ./Auto-Edit-*.x86_64.rpm`).
 
