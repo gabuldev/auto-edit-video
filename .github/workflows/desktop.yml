@@ -30,6 +30,7 @@ on:
       - ".github/workflows/desktop.yml"
       - "scripts/sync_desktop_version.py"
       - "scripts/stage_engine.py"
+      - "scripts/smoke_engine.py"
 
 permissions:
   contents: write
@@ -93,6 +94,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
+
+      - name: Smoke-test the engine as the installed app runs it
+        shell: bash
+        run: python scripts/smoke_engine.py desktop/src-tauri/engine
 
       - name: Install the Tauri CLI and generate icons
         working-directory: desktop

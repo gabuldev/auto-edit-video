@@ -124,7 +124,10 @@ fn engine_command(embedded: Option<&Embedded>) -> Result<(Command, String), Stri
         // ffmpeg/ffprobe from the bundle first, then whatever the user has
         // (bash, the agent CLIs).
         let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut dirs = vec![e.bin.clone()];
+        // Windows: the bundled PortableGit brings bash and the coreutils
+        // ralph.sh needs — a non-developer machine has neither.
+        let git = e.bin.parent().map(|p| p.join("git")).unwrap_or_default();
+        let mut dirs = vec![e.bin.clone(), git.join("usr").join("bin"), git.join("bin")];
         dirs.extend(std::env::split_paths(&path));
         if let Some(h) = home() {
             dirs.push(h.join(".local/bin"));

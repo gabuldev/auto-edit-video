@@ -1333,3 +1333,7 @@ def update() -> None:
     console.print("[cyan]Reinstalling package...[/cyan]")
     subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(REPO_ROOT), "-q"], check=True)
     console.print("[green]Updated successfully.[/green]")
+
+
+if __name__ == "__main__":  # the desktop app runs `python -m auto_edit.cli serve`
+    app()

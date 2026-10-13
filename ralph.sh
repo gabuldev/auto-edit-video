@@ -18,6 +18,30 @@ set -euo pipefail
 # Defined up here because the ffmpeg resolution below already logs.
 log() { echo "[ralph] $*"; }
 
+# >>> portable
+# `timeout` is GNU coreutils: Linux and the bundled PortableGit have it, a Mac
+# without Homebrew doesn't — every agent call died with "command not found".
+# Fallback: Homebrew's gtimeout, else perl (always on macOS). Exits 124 on
+# expiry, like coreutils.
+if ! command -v timeout >/dev/null 2>&1; then
+  if command -v gtimeout >/dev/null 2>&1; then
+    timeout() { gtimeout "$@"; }
+  else
+    timeout() {
+      perl -e '
+        my $secs = shift;
+        my $pid = fork() // exit 125;
+        if (!$pid) { exec { $ARGV[0] } @ARGV or exit 127 }
+        local $SIG{ALRM} = sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 };
+        alarm $secs;
+        waitpid $pid, 0;
+        exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+      ' "$@"
+    }
+  fi
+fi
+# <<< portable
+
 # Every stage moves Portuguese text and JSON through Python's stdio and through
 # read_text()/write_text(). On Windows those default to cp1252, which cannot
 # even represent the arrows and accents the prompts and transcripts are full of
