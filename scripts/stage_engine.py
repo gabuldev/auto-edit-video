@@ -13,9 +13,10 @@ Layout of --out:
     python/          portable CPython 3.12 with auto-edit[api] + Whisper + torch (CPU)
     repo/            ralph.sh, agents/, tools/, assets/, auto_edit/ (AUTO_EDIT_REPO_ROOT)
     bin/             ffmpeg, ffprobe (with libass: captions need the subtitles filter)
+    git/             Windows only: PortableGit — bash and coreutils for ralph.sh
 
-Not included: the agent CLI (claude, agy, …) — the user installs and logs in
-to that (Settings). On Windows ralph.sh still needs bash (Git for Windows).
+Not included: the agent CLI (claude, agy, …) — the app's first run installs
+and logs in to that.
 Fails loudly if anything that the pipeline needs doesn't work in the result.
 """
 from __future__ import annotations
@@ -24,6 +25,7 @@ import argparse
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -155,6 +157,23 @@ def stage_ffmpeg(out: Path, target: str) -> None:
         tool.chmod(0o755)
 
 
+GIT_API = "https://api.github.com/repos/git-for-windows/git/releases/latest"
+
+
+def stage_bash(out: Path) -> None:
+    """Windows has no bash, and ralph.sh is bash. PortableGit (the official
+    Git for Windows, no installer) brings bash plus the coreutils ralph.sh
+    calls (timeout, tr, mktemp, tee…) — the user installs nothing."""
+    release = json.loads(fetch(GIT_API))
+    asset = next(a for a in release["assets"] if re.match(r"PortableGit-.*-64-bit\.7z\.exe$", a["name"]))
+    log(f"bash: {asset['name']}")
+    sfx = out / "portable-git.7z.exe"
+    sfx.write_bytes(fetch(asset["browser_download_url"]))
+    # A 7-Zip self-extractor: -o<dir> -y extracts silently.
+    subprocess.run([str(sfx), f"-o{out / 'git'}", "-y"], check=True)
+    sfx.unlink()
+
+
 def verify(out: Path, py: Path, target: str) -> None:
     """Everything the pipeline needs must work in the staged engine."""
     exe = ".exe" if "windows" in target else ""
@@ -196,6 +215,8 @@ def main() -> None:
     stage_packages(py, args.target)
     stage_repo(out)
     stage_ffmpeg(out, args.target)
+    if "windows" in args.target:
+        stage_bash(out)
     verify(out, py, args.target)
     log(f"engine staged in {out} ({size(out)})")
 
