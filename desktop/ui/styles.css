@@ -326,3 +326,21 @@ textarea.input { resize: vertical; }
 .cfg-row .input { max-width: 260px; height: 36px; }
 .cfg-row .grow { flex: 1; }
 .cfg-models { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+/* ── Primeira execução ─────────────────────────────────────────────────────── */
+.welcome h1 { font-size: 24px; margin: 6px 0 6px; }
+.welcome .lead { color: var(--dim); font-size: 14px; line-height: 1.6; margin: 0 0 18px; max-width: 640px; }
+.wstep .card-head { align-items: center; }
+.wstate { margin-left: auto; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); color: var(--dim); white-space: nowrap; }
+.wstate.ok { background: rgba(74,222,128,.12); color: var(--ok); }
+.wagent { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); margin-top: 8px; }
+.wagent b { font-size: 14px; }
+.wagent .grow { flex: 1; }
+.wagent .meta { font-size: 12px; color: var(--faint); }
+.wagent .meta.ok { color: var(--ok); }
+.wagent .meta.bad { color: #f6bcbb; }
+.wnote { font-size: 12.5px; color: var(--dim); margin: 8px 2px 0; line-height: 1.5; }
+.wother { margin-top: 12px; }
+.wother summary { cursor: pointer; font-size: 13px; color: var(--dim); }
+.welcome-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.cfg-row .grow { flex: 1; }

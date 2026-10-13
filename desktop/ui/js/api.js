@@ -117,5 +117,12 @@ export const pullOllama = (model) =>
 
 export const disconnectYoutube = () => json("/api/publish/youtube/disconnect", { method: "POST" });
 
+export const setupState = () => json("/api/setup");
+
+export const installAgent = (name) => json(`/api/agents/${name}/install`, { method: "POST" });
+
+export const downloadWhisper = (model) =>
+  json("/api/setup/whisper", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
+
 export const videoEvents = (id) =>
   new EventSource(`${API}/api/videos/${encodeURIComponent(id)}/events`);

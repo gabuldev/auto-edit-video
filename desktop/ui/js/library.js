@@ -3,6 +3,7 @@
 import * as api from "./api.js";
 import { el, escapeHtml, setEngine } from "./shell.js";
 import { go } from "./router.js";
+import { checkSetup } from "./welcome.js";
 
 const STAGES = ["extract", "plan", "review", "evaluate", "execute", "overlay", "caption", "metadata", "thumbnail"];
 
@@ -146,6 +147,7 @@ export default {
       wired = true;
     }
     clearInterval(timer); // defensive: never two pollers
+    checkSetup();
     refresh();
     timer = setInterval(refresh, 5000); // fallback poll: SSE only covers live jobs
   },

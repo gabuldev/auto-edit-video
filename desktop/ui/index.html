@@ -42,6 +42,9 @@
         </a>
       </header>
 
+      <div class="banner" id="setup-banner" hidden>
+        <b>Falta configurar.</b> <span id="setup-banner-text"></span> <a href="#/bemvindo">Concluir</a>
+      </div>
       <div class="banner" data-offline-banner hidden>
         <b>Motor offline.</b> O app inicia o motor sozinho; se não subir, rode
         <code class="mono">auto-edit serve</code> no terminal e clique em
@@ -547,6 +550,54 @@
           <label class="check"><input type="checkbox" id="cfg-coldopen" /><span>Cold open — abrir com o melhor momento</span></label>
           <label class="check"><input type="checkbox" id="cfg-reorder" /><span>Reordenar blocos quando ajudar a reter</span></label>
         </section>
+      </div>
+    </main>
+
+    <!-- Primeira execução -->
+    <main class="main" data-screen="welcome" hidden>
+      <div class="content form welcome">
+        <h1>Vamos deixar o Auto-Edit pronto</h1>
+        <p class="lead">O app já vem com tudo pra editar — falta só o agente de IA que planeja os cortes e o modelo que transcreve o áudio. Leva uns minutos, uma vez só.</p>
+
+        <section class="card wstep" id="ws-agent">
+          <div class="card-head">
+            <span class="step mono">1</span>
+            <div>
+              <h2>Agente de IA</h2>
+              <p>Recomendado: <b>Claude Code</b>. Precisa de uma conta Claude (Pro ou Max) ou de API.</p>
+            </div>
+            <span class="wstate" id="ws-agent-state"></span>
+          </div>
+          <div id="ws-agent-main"></div>
+          <details class="wother">
+            <summary>Usar outro agente (Cursor, Antigravity, OpenCode, Ollama)</summary>
+            <div id="ws-agent-others"></div>
+          </details>
+        </section>
+
+        <section class="card wstep" id="ws-whisper">
+          <div class="card-head">
+            <span class="step mono">2</span>
+            <div>
+              <h2>Modelo de transcrição</h2>
+              <p id="ws-whisper-sub">o Whisper transcreve o áudio no seu computador, sem enviar nada.</p>
+            </div>
+            <span class="wstate" id="ws-whisper-state"></span>
+          </div>
+          <div class="cfg-row">
+            <button class="btn btn-primary" id="btn-ws-whisper">Baixar</button>
+            <div class="pub-progress grow" id="ws-whisper-progress" hidden>
+              <div class="pub-bar"><span id="ws-whisper-bar"></span></div>
+              <span class="mono" id="ws-whisper-pct">0%</span>
+            </div>
+          </div>
+        </section>
+
+        <div id="ws-error" class="banner err" hidden></div>
+        <div class="welcome-foot">
+          <a href="#/" id="ws-later" class="dim">configurar depois</a>
+          <button class="btn btn-primary" id="btn-ws-done" disabled>Começar a editar</button>
+        </div>
       </div>
     </main>
   </div>
