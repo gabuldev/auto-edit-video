@@ -95,19 +95,70 @@ fn engine_cwd() -> PathBuf {
     dir
 }
 
-fn start_engine(log_dir: &Path) -> Result<Child, String> {
+/// The engine shipped inside the app (scripts/stage_engine.py → resources
+/// "engine"): a portable Python with auto-edit, the pipeline files and an
+/// FFmpeg with libass. None in dev builds, which use the installed CLI.
+struct Embedded {
+    python: PathBuf,
+    repo: PathBuf,
+    bin: PathBuf,
+}
+
+fn embedded_engine(resource_dir: Option<PathBuf>) -> Option<Embedded> {
+    let root = resource_dir?.join("engine");
+    let python = if cfg!(windows) {
+        root.join("python").join("python.exe")
+    } else {
+        root.join("python").join("bin").join("python3")
+    };
+    if !python.is_file() {
+        return None;
+    }
+    Some(Embedded { python, repo: root.join("repo"), bin: root.join("bin") })
+}
+
+fn engine_command(embedded: Option<&Embedded>) -> Result<(Command, String), String> {
+    if let Some(e) = embedded {
+        let mut cmd = Command::new(&e.python);
+        cmd.args(["-m", "auto_edit.cli", "serve"]);
+        // ffmpeg/ffprobe from the bundle first, then whatever the user has
+        // (bash, the agent CLIs).
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let mut dirs = vec![e.bin.clone()];
+        dirs.extend(std::env::split_paths(&path));
+        if let Some(h) = home() {
+            dirs.push(h.join(".local/bin"));
+        }
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            cmd.env("PATH", joined);
+        }
+        let ffmpeg = e.bin.join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
+        cmd.env("AUTO_EDIT_REPO_ROOT", &e.repo)
+            .env("AUTO_EDIT_FFMPEG", ffmpeg)
+            .env("PYTHON", &e.python)
+            .env("PYTHONNOUSERSITE", "1")
+            .env("PYTHONUTF8", "1");
+        return Ok((cmd, format!("{} (embutido)", e.python.display())));
+    }
     let bin = find_auto_edit().ok_or(
         "`auto-edit` não encontrado. Instale o CLI ou aponte AUTO_EDIT_BIN pro executável.",
     )?;
+    let mut cmd = Command::new(&bin);
+    cmd.arg("serve");
+    Ok((cmd, bin.display().to_string()))
+}
+
+fn start_engine(log_dir: &Path, embedded: Option<&Embedded>) -> Result<Child, String> {
+    let (mut cmd, what) = engine_command(embedded)?;
 
     let _ = fs::create_dir_all(log_dir);
     let log_path = log_dir.join("engine.log");
     let log = File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
 
-    let mut cmd = Command::new(&bin);
-    cmd.arg("serve")
-        .current_dir(engine_cwd())
+    cmd.current_dir(engine_cwd())
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(log_err);
@@ -118,8 +169,8 @@ fn start_engine(log_dir: &Path) -> Result<Child, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let child = cmd.spawn().map_err(|e| format!("{}: {e}", bin.display()))?;
-    eprintln!("[auto-edit] engine started: {} serve (log: {})", bin.display(), log_path.display());
+    let child = cmd.spawn().map_err(|e| format!("{what}: {e}"))?;
+    eprintln!("[auto-edit] engine started: {what} serve (log: {})", log_path.display());
     Ok(child)
 }
 
@@ -135,7 +186,8 @@ fn main() {
                 .path()
                 .app_log_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("auto-edit"));
-            match start_engine(&log_dir) {
+            let embedded = embedded_engine(app.path().resource_dir().ok());
+            match start_engine(&log_dir, embedded.as_ref()) {
                 Ok(child) => *app.state::<Engine>().0.lock().unwrap() = Some(child),
                 // Not fatal: the UI shows the offline banner and keeps polling.
                 Err(e) => eprintln!("[auto-edit] could not start engine: {e}"),
