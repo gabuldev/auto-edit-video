@@ -29,7 +29,7 @@ O app já vem com tudo que o pipeline precisa (Python, Whisper, um FFmpeg com le
 
 ### O agente de IA
 
-Quem planeja, revisa e avalia os cortes é um agente de linha de comando que você instala e loga uma vez. Em **Configurações** o app mostra quais estão instalados, testa cada um com um prompt de verdade e abre o login:
+Quem planeja, revisa e avalia os cortes é um agente de linha de comando que você instala e loga uma vez. Na **primeira abertura** o app guia isso: instala o Claude Code (abre o instalador oficial num Terminal), abre o login, testa, e já baixa o modelo do Whisper com barra de progresso. Depois, em **Configurações** o app mostra quais estão instalados, testa cada um com um prompt de verdade e abre o login:
 
 | Agente | Instalar |
 |--------|----------|
