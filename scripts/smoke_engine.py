@@ -81,8 +81,12 @@ def main(engine: Path) -> None:
     log(f"bash: {bash}")
     run([bash, "--version"], env, "bash runs")
     run([bash, "-n", str(engine / "repo" / "ralph.sh")], env, "ralph.sh syntax")
-    for tool in ("timeout", "tr", "tee", "mktemp"):  # what ralph.sh calls
+    for tool in ("tr", "tee", "mktemp"):  # what ralph.sh calls
         run([bash, "-c", f"command -v {tool}"], env, f"{tool} on PATH")
+    # timeout: coreutils, or ralph.sh's own fallback (a bare Mac has none).
+    portable = ('eval "$(sed -n "/^# >>> portable/,/^# <<< portable/p" "$1")"; '
+                'timeout 5 true || exit 1; timeout 1 sleep 5; [ $? = 124 ]')
+    run([bash, "-c", portable, "_", str(engine / "repo" / "ralph.sh")], env, "timeout works (or ralph.sh fallback)")
 
     with tempfile.TemporaryDirectory() as d:
         wav = Path(d) / "tone.wav"
