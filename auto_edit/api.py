@@ -38,6 +38,9 @@ Endpoints
     POST /api/agents/<name>/test {model}      prompt mínimo de verdade
     POST /api/agents/<name>/login             abre o Terminal com o login da CLI
     POST /api/agents/ollama/pull {model}
+    GET  /api/setup                           primeira execução: agente pronto? Whisper baixado?
+    POST /api/agents/<name>/install           instalador oficial num terminal (ou a página de download)
+    POST /api/setup/whisper {model}           baixa o modelo do Whisper (progresso em /api/setup)
     POST /api/open-url                        {url}  só links do YouTube
     GET  /api/jobs/<job_id>/events        (SSE)
     GET  /api/videos/<id>/events          (SSE, that video's current job)
@@ -346,8 +349,19 @@ def create_app(jobs: engine.JobManager | None = None):
 
         if name not in agents.AGENTS:
             return jsonify({"error": f"agente desconhecido: {name}"}), 404
+        from auto_edit import settings
+
         body = request.get_json(silent=True) or {}
-        return jsonify(agent_status.test(name, model=body.get("model") or None))
+        result = agent_status.test(name, model=body.get("model") or None)
+        if result.get("ok"):
+            # A working agent is what the first-run setup waits for; the first
+            # one that works also becomes the primary if none was verified yet.
+            saved = settings.load()
+            update = {"verified_agent": name}
+            if not saved.get("verified_agent"):
+                update["agent"] = {"primary": name}
+            settings.save(update)
+        return jsonify(result)
 
     @app.post("/api/agents/<name>/login")
     def login_agent(name: str):
@@ -359,6 +373,29 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify({"command": agent_status.open_login(name)})
         except agents.AgentError as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.get("/api/setup")
+    def setup_state():
+        from auto_edit import setup
+
+        return jsonify(setup.state())
+
+    @app.post("/api/agents/<name>/install")
+    def install_agent(name: str):
+        from auto_edit import agents, setup
+
+        if name not in agents.AGENTS:
+            return jsonify({"error": f"agente desconhecido: {name}"}), 404
+        return jsonify(setup.open_install(name))
+
+    @app.post("/api/setup/whisper")
+    def download_whisper():
+        from auto_edit import settings, setup
+
+        model = (request.get_json(silent=True) or {}).get("model") or settings.load()["whisper_model"]
+        if model not in setup.WHISPER_SIZES_MB:
+            return jsonify({"error": f"modelo desconhecido: {model}"}), 400
+        return jsonify(setup.download_whisper(model)), 202
 
     @app.post("/api/agents/ollama/pull")
     def pull_ollama():

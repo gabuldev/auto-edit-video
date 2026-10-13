@@ -67,13 +67,19 @@ def find_binary(agent: Agent) -> str | None:
     """On PATH, or in the usual per-user install spots a GUI app's PATH misses."""
     home = Path.home()
     extra = [home / ".local/bin", home / ".opencode/bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
+    if sys.platform == "win32":
+        local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
+        extra += [local / "Programs" / "Ollama", local / "Programs" / "claude", home / ".opencode/bin"]
+    exts = (".exe", ".cmd", "") if sys.platform == "win32" else ("",)
     for name in agent.binaries:
         found = shutil.which(name)
         if found:
             return found
         for d in extra:
-            if (d / name).is_file() and os.access(d / name, os.X_OK):
-                return str(d / name)
+            for ext in exts:
+                cand = d / f"{name}{ext}"
+                if cand.is_file() and os.access(cand, os.X_OK):
+                    return str(cand)
     return None
 
 

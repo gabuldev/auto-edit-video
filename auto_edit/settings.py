@@ -31,6 +31,8 @@ DEFAULTS: dict = {
     "overlays_dir": None,
     "cold_open": True,
     "reorder": True,
+    # The agent that last passed "Testar" — what tells the app it can edit.
+    "verified_agent": None,
 }
 
 # Setting → environment variable it stands for.
@@ -99,6 +101,8 @@ def validate(data: dict) -> dict:
             merged[key] = str(p)
         else:
             merged[key] = None
+    verified = merged.get("verified_agent")
+    merged["verified_agent"] = agents.normalize(verified) if verified else None
     merged["cold_open"] = bool(merged["cold_open"])
     merged["reorder"] = bool(merged["reorder"])
     merged["language"] = (merged.get("language") or "pt").strip() or "pt"

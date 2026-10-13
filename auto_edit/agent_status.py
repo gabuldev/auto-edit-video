@@ -140,12 +140,9 @@ def login_command(name: str) -> str | None:
     return " ".join([shlex.quote(binary), *rest])
 
 
-def open_login(name: str, run=subprocess.Popen) -> str:
-    """Open a terminal running the CLI's login — those are interactive TUIs
-    that can't run inside the app. Returns the command shown to the user."""
-    command = login_command(name)
-    if command is None:
-        raise agents.AgentError(f"{name} não está instalado ou não tem login")
+def open_terminal(command: str, run=subprocess.Popen) -> None:
+    """Run `command` in a new, visible terminal window (logins and installers
+    are interactive and the user should see what they do)."""
     if sys.platform == "darwin":
         script = f'tell application "Terminal" to do script {json.dumps(command)}\ntell application "Terminal" to activate'
         run(["osascript", "-e", script])
@@ -153,6 +150,15 @@ def open_login(name: str, run=subprocess.Popen) -> str:
         run(["cmd", "/c", "start", "cmd", "/k", command])
     else:
         run(["x-terminal-emulator", "-e", "bash", "-lc", f"{command}; exec bash"])
+
+
+def open_login(name: str, run=subprocess.Popen) -> str:
+    """Open a terminal running the CLI's login — those are interactive TUIs
+    that can't run inside the app. Returns the command shown to the user."""
+    command = login_command(name)
+    if command is None:
+        raise agents.AgentError(f"{name} não está instalado ou não tem login")
+    open_terminal(command, run=run)
     return command
 
 
