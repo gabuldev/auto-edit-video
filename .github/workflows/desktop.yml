@@ -31,6 +31,7 @@ on:
       - "scripts/sync_desktop_version.py"
       - "scripts/stage_engine.py"
       - "scripts/smoke_engine.py"
+      - "scripts/sign_macos_engine.py"
 
 permissions:
   contents: write
@@ -58,6 +59,10 @@ jobs:
     env:
       TAG: ${{ inputs.tag }}
       PYTHONUTF8: "1"  # Windows runners default to cp1252
+      # macOS releases are signed with a Developer ID and notarized when the
+      # Apple secrets exist (see docs/macos-signing.md); otherwise, and on
+      # pull requests, ad-hoc signed.
+      NOTARIZE: ${{ inputs.tag != '' && secrets.APPLE_CERTIFICATE != '' && startsWith(matrix.os, 'macos') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,6 +99,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
+
+      - name: Import the Developer ID certificate (macOS release)
+        if: env.NOTARIZE == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASS="$(openssl rand -hex 16)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN" -A
+          security import "$RUNNER_TEMP/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$PASS" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          # Notarization (App Store Connect API key) — read by the Tauri bundler.
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          {
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign the engine's binaries (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        # Every Mach-O inside the app must be signed with hardened runtime for
+        # notarization; signed before the smoke test so it runs what ships.
+        run: python scripts/sign_macos_engine.py desktop/src-tauri/engine --identity "${APPLE_SIGNING_IDENTITY:--}"
 
       - name: Smoke-test the engine as the installed app runs it
         shell: bash

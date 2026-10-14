@@ -49,6 +49,8 @@ def app_env(engine: Path) -> tuple[Path, dict]:
         "PYTHON": str(python),
         "PYTHONNOUSERSITE": "1",
         "PYTHONUTF8": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "NUMBA_CACHE_DIR": os.path.join(tempfile.gettempdir(), "auto-edit-smoke-numba"),
     })
     return python, env
 
@@ -64,6 +66,7 @@ def run(cmd: list[str], env: dict, label: str, **kw) -> str:
 def main(engine: Path) -> None:
     engine = engine.resolve()
     python, env = app_env(engine)
+    before = {p for p in engine.rglob("*")}
     exe = ".exe" if WIN else ""
     ffmpeg = str(engine / "bin" / f"ffmpeg{exe}")
 
@@ -116,6 +119,12 @@ def main(engine: Path) -> None:
             raise SystemExit(f"FAIL engine never answered /api/health:\n{proc.stdout.read()[-2000:]}")
     finally:
         proc.terminate()
+    # The installed app must never write inside itself: on macOS a new file
+    # breaks the signed app's seal ("damaged" on the next launch).
+    new = sorted(str(p.relative_to(engine)) for p in set(engine.rglob("*")) - before)
+    if new:
+        raise SystemExit(f"FAIL the engine wrote {len(new)} files inside the app, e.g.:\n" + "\n".join(new[:15]))
+    log("ok: nothing written inside the app")
     log("engine OK")
 
 

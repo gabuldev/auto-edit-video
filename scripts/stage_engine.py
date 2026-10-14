@@ -196,6 +196,19 @@ def verify(out: Path, py: Path, target: str) -> None:
         log(f"ok: {label} ({detail})")
 
 
+def stage_bytecode(out: Path, py: Path) -> None:
+    """Precompile every .py. The app runs with PYTHONDONTWRITEBYTECODE — on
+    macOS a file written inside the signed app breaks its seal — so the .pyc
+    have to ship. unchecked-hash: valid no matter what the installer does to
+    file mtimes."""
+    res = subprocess.run([str(py), "-m", "compileall", "-q", "-j", "0", "--invalidation-mode", "unchecked-hash",
+                          str(out / "python"), str(out / "repo")], capture_output=True, text=True)
+    # A few packages ship test files that don't parse on 3.12: not fatal.
+    if res.returncode != 0:
+        log(f"compileall: some files skipped ({len(res.stdout.splitlines())} lines of output)")
+    log("ok: bytecode precompiled")
+
+
 def size(path: Path) -> str:
     total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
     return f"{total / 1e6:.0f} MB"
@@ -218,6 +231,7 @@ def main() -> None:
     if "windows" in args.target:
         stage_bash(out)
     verify(out, py, args.target)
+    stage_bytecode(out, py)
     log(f"engine staged in {out} ({size(out)})")
 
 
