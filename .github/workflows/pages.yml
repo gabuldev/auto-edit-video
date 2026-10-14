@@ -1,6 +1,6 @@
 name: Site
 
-# Landing page (site/) on GitHub Pages. The screenshots and the icon live
+# Landing page (site/) on GitHub Pages. The screenshots live
 # elsewhere in the repo; they are copied in at build time.
 on:
   push:
@@ -35,7 +35,6 @@ jobs:
           cp -r site/. _site/
           cp -r docs/screenshots _site/screenshots
           cp docs/images/thumb_before.png docs/images/thumb_after.png _site/images/
-          cp desktop/src-tauri/icons/128x128@2x.png _site/icon.png
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
