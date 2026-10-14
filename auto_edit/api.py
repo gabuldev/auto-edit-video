@@ -39,6 +39,7 @@ Endpoints
     POST /api/agents/<name>/login             abre o Terminal com o login da CLI
     POST /api/agents/ollama/pull {model}
     GET  /api/setup                           primeira execução: agente pronto? Whisper baixado?
+    PUT/DELETE /api/agents/openrouter/key {key}  chave da API (nunca volta inteira)
     POST /api/agents/<name>/install           instalador oficial num terminal (ou a página de download)
     POST /api/setup/whisper {model}           baixa o modelo do Whisper (progresso em /api/setup)
     POST /api/open-url                        {url}  só links do YouTube
@@ -373,6 +374,23 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify({"command": agent_status.open_login(name)})
         except agents.AgentError as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.put("/api/agents/openrouter/key")
+    def save_openrouter_key():
+        from auto_edit import agent_status, agents
+
+        key = ((request.get_json(silent=True) or {}).get("key") or "").strip()
+        if not key:
+            return jsonify({"error": "cole a chave do OpenRouter (sk-or-…)"}), 400
+        agents.save_openrouter_key(key)
+        return jsonify(agent_status.status("openrouter"))
+
+    @app.delete("/api/agents/openrouter/key")
+    def delete_openrouter_key():
+        from auto_edit import agent_status, agents
+
+        agents.save_openrouter_key(None)
+        return jsonify(agent_status.status("openrouter"))
 
     @app.get("/api/setup")
     def setup_state():

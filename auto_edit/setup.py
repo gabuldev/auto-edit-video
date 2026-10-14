@@ -23,6 +23,8 @@ INSTALL = {
         "win32": "powershell -NoExit -ExecutionPolicy Bypass -Command \"irm https://claude.ai/install.ps1 | iex\"",
     },
     "opencode": {"posix": "curl -fsSL https://opencode.ai/install | bash", "win32": None},
+    "codex": {"posix": None, "win32": None},  # npm or Homebrew: the install page
+    "openrouter": {"posix": None, "win32": None},  # an API key, pasted in the app
     "ollama": {"posix": None, "win32": None},  # a desktop app: the download page
     "agy": {"posix": None, "win32": None},
     "cursor": {"posix": None, "win32": None},

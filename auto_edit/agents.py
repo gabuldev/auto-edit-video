@@ -11,6 +11,13 @@ the newer ones run through `python -m auto_edit.agents invoke <name>`:
 - **opencode**: prompt on stdin, `--format json` events out. Runs with the
   read-only `plan` agent, `--pure`, in an empty scratch directory, so an
   agent with file tools never touches the repo or the user's files.
+- **codex** (OpenAI Codex CLI): `codex exec` with the prompt on stdin, in a
+  read-only sandbox, in an empty scratch directory, `--ephemeral`; the final
+  message comes from `--output-last-message`.
+- **openrouter**: no CLI — OpenRouter's HTTP API (OpenAI-compatible) with the
+  user's API key (`OPENROUTER_API_KEY`, or the one saved in Settings under
+  `tokens/openrouter.key`). Any model on OpenRouter; `openrouter/auto` by
+  default.
 - **ollama**: a local model, called straight through Ollama's HTTP API with
   JSON mode and a context window big enough for a transcript. Not through
   opencode: wrapped in an agent harness full of tools, a 7B local model
@@ -50,6 +57,10 @@ AGENTS: dict[str, Agent] = {
                  "https://antigravity.google"),
     "opencode": Agent("opencode", "OpenCode", ("opencode",), "AUTO_EDIT_OPENCODE_MODEL",
                       "opencode auth login", "https://opencode.ai"),
+    "codex": Agent("codex", "Codex (OpenAI)", ("codex",), "AUTO_EDIT_CODEX_MODEL", "codex login",
+                   "https://developers.openai.com/codex/cli"),
+    "openrouter": Agent("openrouter", "OpenRouter", (), "AUTO_EDIT_OPENROUTER_MODEL", None,
+                        "https://openrouter.ai/settings/keys"),
     "ollama": Agent("ollama", "Ollama (local)", ("ollama",), "AUTO_EDIT_OLLAMA_MODEL", None,
                     "https://ollama.com"),
 }
@@ -69,7 +80,9 @@ def find_binary(agent: Agent) -> str | None:
     extra = [home / ".local/bin", home / ".opencode/bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")]
     if sys.platform == "win32":
         local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
-        extra += [local / "Programs" / "Ollama", local / "Programs" / "claude", home / ".opencode/bin"]
+        roaming = Path(os.environ.get("APPDATA", home / "AppData/Roaming"))
+        extra += [local / "Programs" / "Ollama", local / "Programs" / "claude", home / ".opencode/bin",
+                  roaming / "npm"]  # codex via npm
     exts = (".exe", ".cmd", "") if sys.platform == "win32" else ("",)
     for name in agent.binaries:
         found = shutil.which(name)
@@ -205,7 +218,124 @@ def run_opencode(prompt: str, *, model: str | None = None, timeout: float | None
     return "".join(texts)
 
 
-RUNNERS = {"agy": run_agy, "opencode": run_opencode, "ollama": run_ollama}
+def run_codex(prompt: str, *, model: str | None = None, timeout: float | None = None,
+              binary: str | None = None) -> str:
+    binary = binary or find_binary(AGENTS["codex"])
+    if not binary:
+        raise AgentError("codex não encontrado")
+    with tempfile.TemporaryDirectory(prefix="auto-edit-codex-") as scratch:
+        last = Path(scratch) / "last_message.txt"
+        cmd = [binary, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
+               "--color", "never", "-C", scratch, "-o", str(last)]
+        if model:
+            cmd += ["-m", model]
+        cmd.append("-")  # prompt on stdin: a transcript does not fit on a command line
+        try:
+            _run(cmd, prompt, timeout, cwd=scratch)
+        except AgentError as exc:
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                raise AgentError("Codex sem login — clique em Fazer login (entra com a conta do ChatGPT)") from None
+            raise
+        text = last.read_text(encoding="utf-8") if last.exists() else ""
+    if not text.strip():
+        raise AgentError("codex terminou sem resposta")
+    return text
+
+
+# ── openrouter ────────────────────────────────────────────────────────────────
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_DEFAULT_MODEL = "openrouter/auto"
+
+
+def openrouter_key_file() -> Path:
+    from auto_edit import config as cfg
+
+    return cfg.tokens_dir() / "openrouter.key"
+
+
+def openrouter_key() -> str | None:
+    """The environment wins over the key saved in Settings."""
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if key:
+        return key
+    try:
+        return openrouter_key_file().read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def save_openrouter_key(key: str | None) -> None:
+    """Save (or, with None/empty, remove) the key. Readable only by the user."""
+    path = openrouter_key_file()
+    key = (key or "").strip()
+    if not key:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(key, encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def _openrouter(path: str, key: str, body: dict | None = None, timeout: float | None = 30) -> dict:
+    import urllib.error
+    import urllib.request
+
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {
+        "Authorization": f"Bearer {key}",
+        # OpenRouter's app attribution headers (optional).
+        "HTTP-Referer": "https://gabuldev.github.io/auto-edit-video/",
+        "X-Title": "Auto-Edit",
+    }
+    if data:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(f"{OPENROUTER_URL}{path}", data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail)["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            pass
+        if exc.code == 401:
+            raise AgentError(f"OpenRouter recusou a chave ({detail}) — confira em Configurações") from None
+        if exc.code == 402:
+            raise AgentError(f"OpenRouter: sem créditos ({detail})") from None
+        raise AgentError(f"OpenRouter {exc.code}: {str(detail)[:300]}") from None
+    except (urllib.error.URLError, OSError) as exc:
+        raise AgentError(f"não deu pra falar com o OpenRouter ({exc})") from None
+
+
+def run_openrouter(prompt: str, *, model: str | None = None, timeout: float | None = None,
+                   binary: str | None = None) -> str:
+    key = openrouter_key()
+    if not key:
+        raise AgentError("sem chave do OpenRouter — cole a sua em Configurações (openrouter.ai/settings/keys)")
+    resp = _openrouter("/chat/completions", key, {
+        "model": model or OPENROUTER_DEFAULT_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+        # Every LLM stage answers a JSON object; models that don't support
+        # this have it dropped by OpenRouter.
+        "response_format": {"type": "json_object"},
+    }, timeout=timeout)
+    if resp.get("error"):
+        raise AgentError(f"OpenRouter: {(resp['error'] or {}).get('message') or resp['error']}")
+    choices = resp.get("choices") or []
+    text = ((choices[0].get("message") or {}).get("content") if choices else "") or ""
+    if not text.strip():
+        raise AgentError("OpenRouter respondeu vazio")
+    return text
+
+
+RUNNERS = {"agy": run_agy, "opencode": run_opencode, "codex": run_codex,
+           "openrouter": run_openrouter, "ollama": run_ollama}
 
 # agy and opencode are coding agents: handed a task, they reach for tools (agy
 # tried RunCommand on the metadata prompt and, denied by plan mode, answered
@@ -216,7 +346,7 @@ TEXT_ONLY = (
     "browse. Answer in this message only, with exactly the output the task asks "
     "for and nothing else.\n\n---\n\n"
 )
-AGENTIC = {"agy", "opencode"}
+AGENTIC = {"agy", "opencode", "codex"}
 
 
 def invoke(name: str, prompt_file: Path, output_file: Path, timeout: float | None = None) -> int:
@@ -236,5 +366,5 @@ def invoke(name: str, prompt_file: Path, output_file: Path, timeout: float | Non
 if __name__ == "__main__":
     if len(sys.argv) == 5 and sys.argv[1] == "invoke" and sys.argv[2] in RUNNERS:
         sys.exit(invoke(sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])))
-    print("usage: python -m auto_edit.agents invoke agy|opencode|ollama <prompt_file> <output_file>", file=sys.stderr)
+    print("usage: python -m auto_edit.agents invoke agy|opencode|codex|openrouter|ollama <prompt_file> <output_file>", file=sys.stderr)
     sys.exit(2)

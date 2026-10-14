@@ -112,6 +112,13 @@ export const testAgent = (name, model) =>
 
 export const loginAgent = (name) => json(`/api/agents/${name}/login`, { method: "POST" });
 
+// OpenRouter has no CLI: "installing" it is pasting an API key. The engine
+// keeps it; only a masked hint ever comes back.
+export const saveOpenrouterKey = (key) =>
+  json("/api/agents/openrouter/key", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
+
+export const deleteOpenrouterKey = () => json("/api/agents/openrouter/key", { method: "DELETE" });
+
 export const pullOllama = (model) =>
   json("/api/agents/ollama/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
 

@@ -335,7 +335,8 @@ def open_artifact(
 _OPENABLE_URL = re.compile(
     r"^https://(www\.|studio\.)?youtube\.com/|^https://youtu\.be/"
     # where to install the agent CLIs (Settings → "como instalar")
-    r"|^https://(docs\.claude\.com|cursor\.com|antigravity\.google|opencode\.ai|ollama\.com)(/|$)"
+    r"|^https://(docs\.claude\.com|cursor\.com|antigravity\.google|opencode\.ai|ollama\.com"
+    r"|developers\.openai\.com|openrouter\.ai)(/|$)"
 )
 
 

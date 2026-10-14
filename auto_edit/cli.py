@@ -117,7 +117,7 @@ def _merge_target(resolutions: list[tuple[int, int]]) -> tuple[int, int]:
 
 
 VALID_MODELS = ["tiny", "base", "small", "medium", "large"]
-CLI_EPILOG = "claude, cursor, agy, opencode or ollama (agent = Cursor, antigravity = agy)"
+CLI_EPILOG = "claude, cursor, agy, opencode, codex, openrouter or ollama (agent = Cursor, antigravity = agy)"
 
 
 def _norm_cli_token(raw: str) -> str:

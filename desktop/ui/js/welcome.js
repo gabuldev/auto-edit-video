@@ -21,6 +21,7 @@ function agentRow(a, recommended) {
   const usable = a.installed && (a.name !== "ollama" || (a.models || []).length);
   let meta;
   if (verified) meta = `<span class="meta ok">✓ funcionando</span>`;
+  else if (!a.installed && a.api_key) meta = `<span class="meta">precisa de uma chave da API</span>`;
   else if (!a.installed) meta = `<span class="meta">não instalado</span>`;
   else if (a.name === "ollama" && !(a.models || []).length) meta = `<span class="meta">instalado — falta baixar um modelo (Configurações)</span>`;
   else meta = `<span class="meta">instalado ${escapeHtml(a.version || "")} — falta testar</span>`;
@@ -30,10 +31,15 @@ function agentRow(a, recommended) {
       <b>${escapeHtml(a.label)}</b>${recommended ? ` <span class="badge long">recomendado</span>` : ""}
       ${meta}
       <span class="grow"></span>
-      ${!a.installed ? `<button class="btn btn-sm${recommended ? " btn-primary" : ""}" data-install="${a.name}">Instalar</button>` : ""}
+      ${!a.installed && !a.api_key ? `<button class="btn btn-sm${recommended ? " btn-primary" : ""}" data-install="${a.name}">Instalar</button>` : ""}
+      ${!a.installed && a.api_key ? `<button class="btn btn-sm" data-install="${a.name}">Criar chave</button>` : ""}
       ${a.installed && a.login_command && !verified ? `<button class="btn btn-sm" data-login="${a.name}">Fazer login</button>` : ""}
       ${usable && !verified ? `<button class="btn btn-sm${recommended ? " btn-primary" : ""}" data-test="${a.name}" ${state.testing[a.name] ? "disabled" : ""}>${state.testing[a.name] ? "testando…" : "Testar"}</button>` : ""}
     </div>
+    ${!a.installed && a.api_key ? `<div class="wkey">
+      <input class="input mono" type="password" autocomplete="off" spellcheck="false" data-key-input="${a.name}" placeholder="cole a chave: sk-or-…" />
+      <button class="btn btn-sm btn-primary" data-key-save="${a.name}">Salvar chave</button>
+    </div>` : ""}
     ${note ? `<div class="wnote">${note}</div>` : ""}`;
 }
 
@@ -41,8 +47,16 @@ function render() {
   const s = state.setup;
   const agents = s.agents || [];
   const claude = agents.find((a) => a.name === "claude");
+  // This re-renders every few seconds: keep a key being typed (and its focus).
+  const typing = {};
+  el("ws-agent").querySelectorAll("[data-key-input]").forEach((i) => { typing[i.dataset.keyInput] = i.value; });
+  const focused = document.activeElement?.dataset?.keyInput;
   el("ws-agent-main").innerHTML = claude ? agentRow(claude, true) : "";
   el("ws-agent-others").innerHTML = agents.filter((a) => a.name !== "claude").map((a) => agentRow(a, false)).join("");
+  el("ws-agent").querySelectorAll("[data-key-input]").forEach((i) => {
+    i.value = typing[i.dataset.keyInput] || "";
+    if (i.dataset.keyInput === focused) i.focus();
+  });
   el("ws-agent-state").textContent = s.agent_ready ? "pronto" : "pendente";
   el("ws-agent-state").classList.toggle("ok", s.agent_ready);
 
@@ -71,6 +85,18 @@ async function load() {
 }
 
 async function act(e) {
+  const k = e.target.closest("[data-key-save]");
+  if (k) {
+    setError("");
+    const input = el("ws-agent").querySelector(`[data-key-input="${k.dataset.keySave}"]`);
+    try {
+      await api.saveOpenrouterKey(input.value);
+      state.notes[k.dataset.keySave] = "Chave salva. Agora clique em <b>Testar</b>.";
+    } catch (err) {
+      setError(String(err.message || err));
+    }
+    return load();
+  }
   const b = e.target.closest("[data-install],[data-login],[data-test]");
   if (!b) return;
   setError("");
@@ -80,7 +106,9 @@ async function act(e) {
       const r = await api.installAgent(name);
       state.notes[name] = r.command
         ? "Abri o Terminal com o instalador oficial. Quando terminar, volte aqui — esta tela detecta sozinha."
-        : `Abri a página de download no navegador. Instale, volte aqui e clique em Testar.`;
+        : name === "openrouter"
+          ? "Abri o OpenRouter no navegador. Crie uma chave, cole aqui embaixo e clique em Salvar chave."
+          : `Abri a página de download no navegador. Instale, volte aqui e clique em Testar.`;
     } else if (b.dataset.login) {
       const r = await api.loginAgent(name);
       state.notes[name] = `Abri o Terminal com <code class="mono">${escapeHtml(r.command)}</code>. Faça o login lá (no Claude Code: digite <code class="mono">/login</code>) e depois clique em <b>Testar</b>.`;
