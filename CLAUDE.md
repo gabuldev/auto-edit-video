@@ -118,8 +118,8 @@ decrescente e marca os candidatos que se sobrepõem.
 
 | Var | Default | Descrição |
 |-----|---------|-----------|
-| `AUTO_EDIT_LLM` | `claude` | Agente dos stages de IA: `claude`, `cursor`, `agy` (Antigravity), `opencode` ou `ollama` (modelo local). Ver `auto_edit/agents.py` |
-| `AUTO_EDIT_AGY_MODEL` / `AUTO_EDIT_OPENCODE_MODEL` / `AUTO_EDIT_OLLAMA_MODEL` | — | Modelo de cada agente (ex.: `opencode/big-pickle`, `qwen2.5:7b`) |
+| `AUTO_EDIT_LLM` | `claude` | Agente dos stages de IA: `claude`, `cursor`, `agy` (Antigravity), `opencode`, `codex`, `openrouter` (API, chave em `OPENROUTER_API_KEY` ou salva pelo app em `tokens/openrouter.key`) ou `ollama` (modelo local). Ver `auto_edit/agents.py` |
+| `AUTO_EDIT_AGY_MODEL` / `AUTO_EDIT_OPENCODE_MODEL` / `AUTO_EDIT_CODEX_MODEL` / `AUTO_EDIT_OPENROUTER_MODEL` / `AUTO_EDIT_OLLAMA_MODEL` | — | Modelo de cada agente (ex.: `opencode/big-pickle`, `anthropic/claude-sonnet-4.5`, `qwen2.5:7b`; OpenRouter usa `openrouter/auto` sem modelo) |
 | `AUTO_EDIT_OLLAMA_CTX` | `32768` | Janela de contexto do modelo local; prompt maior é recusado (cai no fallback), nunca truncado |
 | `AUTO_EDIT_LLM_FALLBACK` | — | CLI fallback se primário falhar |
 | `AUTO_EDIT_END_PADDING` | `0.2` | Segundos adicionados ao final de cada segmento mantido |

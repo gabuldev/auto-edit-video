@@ -34,6 +34,8 @@ Quem planeja, revisa e avalia os cortes é um agente de linha de comando que voc
 | **Cursor Agent** | [cursor.com/docs/cli](https://cursor.com/docs/cli) |
 | **Antigravity** (`agy`) | [antigravity.google](https://antigravity.google) |
 | **OpenCode** | [opencode.ai](https://opencode.ai) |
+| **Codex** (OpenAI, entra com a conta do ChatGPT) | [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli) |
+| **OpenRouter** (sem instalar nada: cole uma chave da API e escolha qualquer modelo) | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | **Ollama** (modelo local, sem conta) | [ollama.com](https://ollama.com) — bom pra shorts; em vídeos longos o prompt não cabe num modelo local e o fallback assume |
 
 ![Configurações](docs/screenshots/configuracoes.jpg)
@@ -346,7 +348,7 @@ auto-edit short video.mp4 \
 # Usar Claude (default)
 auto-edit short video.mp4
 
-# Outro agente: claude, cursor, agy (Antigravity), opencode ou ollama (local)
+# Outro agente: claude, cursor, agy (Antigravity), opencode, codex, openrouter ou ollama (local)
 auto-edit short video.mp4 --cli agy --cli-fallback claude
 
 # Modelo de cada agente

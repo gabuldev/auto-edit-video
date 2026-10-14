@@ -10,6 +10,8 @@ const MODEL_HINT = {
   cursor: "auto",
   agy: "padrão da CLI",
   opencode: "ex.: opencode/big-pickle",
+  codex: "padrão da CLI (ex.: gpt-5-codex)",
+  openrouter: "openrouter/auto, ou ex.: openai/gpt-5",
   ollama: "escolha abaixo",
 };
 
@@ -31,7 +33,22 @@ function syncSave() {
   el("btn-cfg-save").textContent = dirty() ? "Salvar alterações" : "Salvo";
 }
 
+// OpenRouter: no CLI, just an API key pasted here.
+function keyForm(a) {
+  return `<div class="cfg-key">
+      <input class="input mono" type="password" autocomplete="off" spellcheck="false" data-key-input="${a.name}" placeholder="cole a chave: sk-or-…" />
+      <button class="btn btn-sm btn-primary" data-key-save="${a.name}">Salvar chave</button>
+    </div>
+    <span class="meta">crie uma em <a href="#" data-docs="${escapeHtml(a.docs)}">openrouter.ai/settings/keys</a> — fica só no seu computador.</span>`;
+}
+
 function agentMeta(a) {
+  if (a.api_key) {
+    if (!a.installed) return `<span class="meta bad">sem chave da API</span>${keyForm(a)}`;
+    return a.key_source === "env"
+      ? `<span class="meta">chave ${escapeHtml(a.key_hint || "")} (da variável OPENROUTER_API_KEY)</span>`
+      : `<span class="meta">chave ${escapeHtml(a.key_hint || "")} · <a href="#" data-key-remove="${a.name}">remover</a></span>`;
+  }
   if (!a.installed) return `<span class="meta bad">não instalado · <a href="#" data-docs="${escapeHtml(a.docs)}">como instalar</a></span>`;
   if (a.name === "ollama") {
     if (!a.server) return `<span class="meta bad">instalado, mas o servidor não está rodando (abra o app do Ollama)</span>`;
@@ -53,6 +70,7 @@ function resultHTML(name) {
   const r = state.results[name];
   if (state.busy[name]) return `<div class="result">testando… (um prompt mínimo de verdade, pode levar até 1 min)</div>`;
   if (!r) return "";
+  if (r.saved) return `<div class="result ok">✓ chave salva — clique em Testar</div>`;
   if (r.ok) return `<div class="result ok">✓ respondeu em ${r.seconds}s</div>`;
   return `<div class="result bad">✗ ${escapeHtml(r.error || "falhou")}${r.answer ? `\nresposta: ${escapeHtml(r.answer)}` : ""}</div>`;
 }
@@ -186,6 +204,24 @@ function wire() {
     }
   });
   el("cfg-agents").addEventListener("click", async (e) => {
+    const ks = e.target.closest("[data-key-save]");
+    if (ks) {
+      const input = el("cfg-agents").querySelector(`[data-key-input="${ks.dataset.keySave}"]`);
+      try {
+        await api.saveOpenrouterKey(input.value);
+        state.results[ks.dataset.keySave] = { ok: true, seconds: "—", saved: true };
+      } catch (err) {
+        state.results[ks.dataset.keySave] = { ok: false, error: String(err.message || err) };
+      }
+      return loadAgents();
+    }
+    const kr = e.target.closest("[data-key-remove]");
+    if (kr) {
+      e.preventDefault();
+      try { await api.deleteOpenrouterKey(); } catch (err) { setError(String(err.message || err)); }
+      delete state.results[kr.dataset.keyRemove];
+      return loadAgents();
+    }
     const t = e.target.closest("[data-test]");
     if (t) return test(t.dataset.test);
     const l = e.target.closest("[data-login]");

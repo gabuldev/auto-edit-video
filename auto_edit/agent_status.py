@@ -47,6 +47,9 @@ def status(name: str) -> dict:
     if name == "ollama":
         info.update(_ollama_status())
         return info
+    if name == "openrouter":
+        info.update(_openrouter_status())
+        return info
     binary = agents.find_binary(agent)
     if binary:
         info.update(installed=True, path=binary, version=_version(binary))
@@ -63,6 +66,20 @@ def _ollama_status() -> dict:
     except agents.AgentError:
         pass
     return out
+
+
+def _mask(key: str) -> str:
+    return f"{key[:6]}…{key[-4:]}" if len(key) > 12 else "…"
+
+
+def _openrouter_status() -> dict:
+    """No CLI to install: "installed" means there is an API key. The key itself
+    never leaves the engine — only a masked hint of it."""
+    key = agents.openrouter_key()
+    from_env = bool(os.environ.get("OPENROUTER_API_KEY", "").strip())
+    return {"installed": bool(key), "version": None, "api_key": True,
+            "key_hint": _mask(key) if key else None,
+            "key_source": ("env" if from_env else "settings") if key else None}
 
 
 def all_status() -> list[dict]:

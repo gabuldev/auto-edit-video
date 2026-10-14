@@ -314,7 +314,7 @@ textarea.input { resize: vertical; }
 .cfg-agent input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin-top: 3px; }
 .cfg-agent .who { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .cfg-agent .who b { font-size: 14px; }
-.cfg-agent .meta { font-size: 11.5px; color: var(--faint); }
+.cfg-agent .meta { display: block; font-size: 11.5px; color: var(--faint); } /* not the result screen's flex .meta */
 .cfg-agent .meta.bad { color: #f6bcbb; }
 .cfg-agent .meta.good { color: var(--ok); }
 .cfg-agent .model { margin-top: 6px; max-width: 320px; height: 32px; padding: 0 10px; font-size: 12.5px; }
@@ -322,6 +322,9 @@ textarea.input { resize: vertical; }
 .cfg-agent .result { grid-column: 2 / 4; font-size: 12px; line-height: 1.5; padding: 6px 10px; border-radius: 7px; background: #0b0f14; color: var(--dim); white-space: pre-wrap; word-break: break-word; }
 .cfg-agent .result.ok { color: var(--ok); }
 .cfg-agent .result.bad { color: #f6bcbb; }
+.cfg-key, .wkey { display: flex; gap: 8px; margin-top: 6px; max-width: 460px; }
+.cfg-key .input, .wkey .input { flex: 1; height: 32px; padding: 0 10px; font-size: 12.5px; min-width: 0; }
+.wkey { margin: 8px 2px 0; }
 .cfg-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .cfg-row .input { max-width: 260px; height: 36px; }
 .cfg-row .grow { flex: 1; }
