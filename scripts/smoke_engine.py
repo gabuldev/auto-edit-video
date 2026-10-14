@@ -8,7 +8,8 @@ but the staged engine on PATH — the environment the Tauri shell builds:
 2. ffmpeg with the subtitles filter (captions);
 3. bash and `bash -n ralph.sh`;
 4. a real Whisper transcription of a few seconds of generated audio;
-5. `auto-edit serve` answering /api/health.
+5. the React thumbnail renderer (auto-edit-render) drawing a real thumbnail;
+6. `auto-edit serve` answering /api/health.
 
     python scripts/smoke_engine.py desktop/src-tauri/engine
 """
@@ -100,6 +101,21 @@ def main(engine: Path) -> None:
                    "r = m.transcribe(sys.argv[1], fp16=False); print(json.dumps({'ok': True, 'segments': len(r['segments'])}))",
                    str(wav)], env, "whisper transcribes (tiny model)", timeout=900)
         log(out.strip().splitlines()[-1])
+
+        # The thumbnailer finds auto-edit-render on the app's PATH and draws
+        # the React layout (it would silently fall back to Pillow: check it didn't).
+        frame = Path(d) / "frame.jpg"
+        run([ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1920x1080",
+             "-frames:v", "1", str(frame)], env, "ffmpeg extracts a frame")
+        thumb = Path(d) / "thumb.png"
+        out = run([str(python), "-c",
+                   "import sys; sys.path.insert(0, sys.argv[1]); import thumbnailer as T; "
+                   "ok = T._render_react({'kind': 'short', 'width': 1080, 'height': 1920, 'main_text': 'Teste da thumbnail', "
+                   "'sub_text': 'é React', 'accent': [55, 224, 160], 'background': sys.argv[2]}, T.Path(sys.argv[3])); "
+                   "sys.exit(0 if ok else 1)",
+                   str(engine / "repo" / "tools"), str(frame), str(thumb)], env, "React thumbnail renders", timeout=120)
+        if not thumb.read_bytes().startswith(b"\x89PNG"):
+            raise SystemExit("FAIL renderer: output is not a PNG")
 
     port = "8799"
     proc = subprocess.Popen([str(python), "-m", "auto_edit.cli", "serve", "--port", port],

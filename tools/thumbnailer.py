@@ -1,8 +1,12 @@
 """
 THUMBNAILER stage — generates a thumbnail image for the final video.
 
-Short: extracts best frame (energy peak) + overlays bold text via Pillow.
-Long:  generates AI background via Gemini Imagen + composites face asset + styled title.
+Short: best frame (energy peak) + bold text.
+Long:  AI background via Gemini Imagen (or the best frame) + face asset + title.
+
+The layout is a React component (renderer/, `auto-edit-render`: Satori +
+resvg, no browser). If the renderer is missing or fails, the Pillow layout
+below draws it instead (AUTO_EDIT_THUMB_RENDERER=pillow forces that).
 
 Output: workspace/thumbnail.png
 
@@ -12,8 +16,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -188,14 +194,8 @@ PREFERRED_FONTS = [
 
 def _find_font() -> Path | None:
     """Find a bold TTF font in assets/thumbnails/fonts/, preferring display fonts."""
-    dirs = []
-    env = os.environ.get("AUTO_EDIT_ASSETS_FONTS")
-    if env:
-        dirs.append(Path(env))
-    dirs.append(_repo_root() / "assets" / "thumbnails" / "fonts")
-
     all_fonts: list[Path] = []
-    for d in dirs:
+    for d in _font_dirs():
         if not d.is_dir():
             continue
         all_fonts.extend(d.glob("*.ttf"))
@@ -211,6 +211,73 @@ def _find_font() -> Path | None:
                 return f
 
     return sorted(all_fonts)[0]
+
+
+def _font_dirs() -> list[Path]:
+    dirs = []
+    env = os.environ.get("AUTO_EDIT_ASSETS_FONTS")
+    if env:
+        dirs.append(Path(env))
+    dirs.append(_repo_root() / "assets" / "thumbnails" / "fonts")
+    return dirs
+
+
+# ── React renderer ──────────────────────────────────────────────────────────
+
+# Satori reads static TTF/OTF only (no variable fonts, no WOFF2).
+RENDER_FONTS = ("Anton", "BebasNeue")
+RENDER_TIMEOUT = 120
+
+
+def _render_font() -> Path | None:
+    for name in RENDER_FONTS:
+        for d in _font_dirs():
+            for f in sorted(d.glob(f"{name}*.[ot]tf")) if d.is_dir() else []:
+                return f
+    return None
+
+
+def _renderer_cmd() -> list[str] | None:
+    """`auto-edit-render` (shipped in the app's bin/, on PATH), or the source
+    run with bun in a dev checkout. None → draw with Pillow."""
+    if os.environ.get("AUTO_EDIT_THUMB_RENDERER", "").strip().lower() == "pillow":
+        return None
+    explicit = os.environ.get("AUTO_EDIT_RENDER_BIN")
+    if explicit:
+        return [explicit]
+    found = shutil.which("auto-edit-render")
+    if found:
+        return [found]
+    src = _repo_root() / "renderer"
+    bun = shutil.which("bun") or str(Path.home() / ".bun" / "bin" / "bun")
+    if Path(bun).is_file() and (src / "node_modules").is_dir():
+        return [bun, "run", str(src / "src" / "cli.tsx")]
+    return None
+
+
+def _render_react(spec: dict, output: Path) -> bool:
+    """Render the thumbnail with the React layout. False (and why) when it
+    can't — the caller then draws it with Pillow."""
+    cmd = _renderer_cmd()
+    font = _render_font()
+    if cmd is None or font is None:
+        why = "no renderer (auto-edit-render)" if cmd is None else f"no static font ({', '.join(RENDER_FONTS)})"
+        print(f"[thumbnailer] React layout unavailable: {why} — using Pillow")
+        return False
+    with tempfile.TemporaryDirectory(prefix="auto-edit-thumb-") as tmp:
+        spec_file = Path(tmp) / "spec.json"
+        spec_file.write_text(json.dumps({**spec, "font": str(font)}, ensure_ascii=False), encoding="utf-8")
+        try:
+            res = subprocess.run([*cmd, "thumbnail", str(spec_file), str(output)],
+                                 capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"[thumbnailer] React renderer failed ({exc}) — using Pillow")
+            return False
+    if res.returncode != 0 or not output.is_file():
+        print(f"[thumbnailer] React renderer failed: {(res.stderr or res.stdout).strip()[-300:]} — using Pillow")
+        return False
+    print("[thumbnailer] Rendered with the React layout")
+    return True
 
 
 def _find_logo_assets(names: list[str] | None = None) -> list[Path]:
@@ -492,7 +559,9 @@ def _forced_timestamp() -> float | None:
     return ts
 
 
-CUT_VIDEO_NAMES = ("captioned_video.mp4", "overlaid_video.mp4", "edited_video.mp4")
+# Same timeline in all three; the clean cut first — the captioned/overlaid ones
+# have subtitles and graphics burned in, which then showed up in the thumbnail.
+CUT_VIDEO_NAMES = ("edited_video.mp4", "captioned_video.mp4", "overlaid_video.mp4")
 
 
 def _frame_source(workspace: Path, pipeline: dict) -> tuple[str, dict]:
@@ -985,15 +1054,16 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     energy_peak = _find_energy_peak(transcription)
 
     frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
-
-    img = Image.open(frame_path)
-    img = _crop_center(img, w, h)
-    img = _apply_grade(img, template.get("grade"))
-
-    img = _draw_thumbnail_text(img, main_text, sub_text, template, position="center")
-
     output = workspace / "thumbnail.png"
-    img.save(output, "PNG", quality=95)
+
+    spec = {"kind": "short", "width": w, "height": h, "main_text": main_text, "sub_text": sub_text,
+            "accent": list(template.get("accent", [255, 220, 0])), "background": str(frame_path)}
+    if not _render_react(spec, output):
+        img = Image.open(frame_path)
+        img = _crop_center(img, w, h)
+        img = _apply_grade(img, template.get("grade"))
+        img = _draw_thumbnail_text(img, main_text, sub_text, template, position="center")
+        img.save(output, "PNG", quality=95)
     print(f"[thumbnailer] Short thumbnail → {output}")
 
     frame_path.unlink(missing_ok=True)
@@ -1016,29 +1086,56 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     )
 
     w, h = LONG_SIZE
+    output = workspace / "thumbnail.png"
+    face_path = _find_face_asset()
+    logo_paths = _find_logo_assets(thumb_data.get("logos"))
 
     # Background: try Imagen → frame from video → gradient (last resort)
     bg = _generate_imagen_bg(w, h, style_hint, context)
-
+    frame_path: Path | None = None
     if bg is None:
         video_path, transcription = _frame_source(workspace, pipeline)
         duration = transcription.get("duration", 30.0)
         energy_peak = _find_energy_peak(transcription)
-
         try:
             frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
-            bg = _stylize_frame_bg(Image.open(frame_path))
             print("[thumbnailer] Using best-scored video frame as background")
-            frame_path.unlink(missing_ok=True)
         except Exception:
             print("[thumbnailer] Frame extraction failed — using gradient fallback")
-            bg = _generate_gradient_bg(w, h, style_hint)
 
+    with tempfile.TemporaryDirectory(prefix="auto-edit-thumb-bg-") as tmp:
+        if bg is not None:
+            background: Path | None = Path(tmp) / "imagen.png"
+            bg.save(background)
+        else:
+            background = frame_path  # sharp: the React layout darkens it where the text sits
+        spec = {"kind": "long", "width": w, "height": h, "main_text": main_text, "sub_text": sub_text,
+                "accent": list(template.get("accent", [255, 220, 0])),
+                "background": str(background) if background else None,
+                "face": str(face_path) if face_path else None,
+                "logos": [str(p) for p in logo_paths]}
+        rendered = _render_react(spec, output)
+
+    if not rendered:
+        if bg is None:
+            if frame_path is not None:
+                bg = _stylize_frame_bg(Image.open(frame_path))
+            else:
+                bg = _generate_gradient_bg(w, h, style_hint)
+        _draw_long_pillow(bg, output, main_text, sub_text, template, face_path, logo_paths)
+    if frame_path is not None:
+        frame_path.unlink(missing_ok=True)
+    print(f"[thumbnailer] Long thumbnail → {output}")
+    return output
+
+
+def _draw_long_pillow(bg: Image.Image, output: Path, main_text: str, sub_text: str | None,
+                      template: dict, face_path: Path | None, logo_paths: list[Path]) -> None:
+    """The Pillow layout (fallback when the React renderer isn't available)."""
+    w, h = LONG_SIZE
     bg = _crop_center(bg, w, h)
     img = bg.convert("RGBA")
 
-    # Composite face asset if available
-    face_path = _find_face_asset()
     has_face = False
     if face_path:
         face = Image.open(face_path).convert("RGBA")
@@ -1048,9 +1145,7 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
         face = face.resize((face_w, face_h), Image.LANCZOS)
 
         # Position: bottom-right, flush
-        face_x = w - face_w
-        face_y = h - face_h
-        img.paste(face, (face_x, face_y), face)
+        img.paste(face, (w - face_w, h - face_h), face)
         has_face = True
         print(f"[thumbnailer] Face composited from {face_path.name}")
 
@@ -1060,18 +1155,12 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     img_rgb = img.convert("RGB")
     img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, template, position=text_pos)
 
-    # Composite logos if specified
-    logo_names = thumb_data.get("logos")
-    logo_paths = _find_logo_assets(logo_names)
     if logo_paths:
         logo_pos = "top-left" if has_face else "top-right"
         img_rgb = _composite_logos(img_rgb, logo_paths, logo_pos)
         img_rgb = img_rgb.convert("RGB")
 
-    output = workspace / "thumbnail.png"
     img_rgb.save(output, "PNG", quality=95)
-    print(f"[thumbnailer] Long thumbnail → {output}")
-    return output
 
 
 # ── Cover frame embedding ───────────────────────────────────────────────────

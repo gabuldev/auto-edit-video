@@ -1,0 +1,16 @@
+{
+  "name": "auto-edit-renderer",
+  "private": true,
+  "description": "React → PNG without a browser (Satori + resvg-wasm), compiled into one executable: auto-edit-render",
+  "type": "module",
+  "scripts": {
+    "render": "bun run src/cli.tsx",
+    "build": "bun build src/cli.tsx --compile --outfile dist/auto-edit-render"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2",
+    "opentype.js": "2.0.0",
+    "react": "19.3.1",
+    "satori": "0.57.2"
+  }
+}

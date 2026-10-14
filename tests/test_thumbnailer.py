@@ -422,6 +422,15 @@ class TestFrameSource:
         assert video == str(tmp_path / "captioned_video.mp4")
         assert transcription["duration"] == 30.0
 
+    def test_the_clean_cut_wins_over_captioned_and_overlaid(self, tmp_path):
+        # captioned/overlaid have subtitles and graphics burned in — they used
+        # to show up in the thumbnail.
+        for name in ("captioned_video.mp4", "overlaid_video.mp4", "edited_video.mp4"):
+            (tmp_path / name).write_bytes(b"x")
+        (tmp_path / "post_cut_transcription.json").write_text(json.dumps({"duration": 30.0}))
+        video, _ = _frame_source(tmp_path, {"video_path": "/long/edited_video.mp4"})
+        assert video == str(tmp_path / "edited_video.mp4")
+
     def test_falls_back_to_overlaid_then_edited(self, tmp_path):
         (tmp_path / "edited_video.mp4").write_bytes(b"x")
         (tmp_path / "post_cut_transcription.json").write_text(
@@ -444,3 +453,76 @@ class TestFrameSource:
         video, transcription = _frame_source(tmp_path, {"video_path": "/raw/v.mp4"})
         assert video == "/raw/v.mp4"
         assert transcription["duration"] == 378.75
+
+
+class TestReactRenderer:
+    """The React layout (renderer/, `auto-edit-render`) with a fake binary;
+    any failure falls back to the Pillow layout."""
+
+    @pytest.fixture
+    def fake(self, tmp_path, monkeypatch):
+        def make(script: str) -> Path:
+            exe = tmp_path / "auto-edit-render"
+            exe.write_text(f"#!{sys.executable}\nimport sys, json\n{script}\n")
+            exe.chmod(0o755)
+            monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+            monkeypatch.delenv("AUTO_EDIT_THUMB_RENDERER", raising=False)
+            return exe
+        return make
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_spec_goes_with_a_static_font_and_png_comes_back(self, fake, tmp_path):
+        fake("""
+cmd, spec_file, out = sys.argv[1:]
+spec = json.load(open(spec_file))
+assert cmd == "thumbnail" and spec["font"].endswith((".ttf", ".otf"))
+assert spec["kind"] == "short" and spec["accent"] == [1, 2, 3]
+open(out, "wb").write(b"PNG")
+""")
+        out = tmp_path / "t.png"
+        assert thumbnailer._render_react({"kind": "short", "accent": [1, 2, 3]}, out) is True
+        assert out.read_bytes() == b"PNG"
+        assert "Anton" in thumbnailer._render_font().name
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_failure_means_pillow(self, fake, tmp_path, capsys):
+        fake("sys.stderr.write('boom'); sys.exit(1)")
+        assert thumbnailer._render_react({"kind": "short"}, tmp_path / "t.png") is False
+        assert "boom" in capsys.readouterr().out
+
+    def test_forced_pillow(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("AUTO_EDIT_THUMB_RENDERER", "pillow")
+        monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", "/whatever")
+        assert thumbnailer._renderer_cmd() is None
+        assert thumbnailer._render_react({}, tmp_path / "t.png") is False
+
+    def test_short_uses_react_and_skips_pillow(self, monkeypatch, tmp_path):
+        frame = tmp_path / "frame.jpg"
+        Image.new("RGB", (1920, 1080), (40, 40, 40)).save(frame)
+        monkeypatch.setattr(thumbnailer, "_frame_source", lambda ws, p: ("v.mp4", {"duration": 10.0}))
+        monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, **kw: frame)
+        seen = {}
+
+        def react(spec, output):
+            seen.update(spec)
+            output.write_bytes(b"PNG")
+            return True
+
+        monkeypatch.setattr(thumbnailer, "_render_react", react)
+        monkeypatch.setattr(thumbnailer, "_draw_thumbnail_text", lambda *a, **kw: pytest.fail("Pillow ran"))
+        meta = {"thumbnail": {"main_text": "Meu carro", "sub_text": "fala", "template": "maker"}}
+        out = thumbnailer._thumbnail_short(tmp_path, meta, {})
+        assert out.read_bytes() == b"PNG"
+        assert seen["background"] == str(frame) and seen["accent"] == [255, 159, 46]
+        assert (seen["width"], seen["height"]) == thumbnailer.SHORT_SIZE
+
+    def test_long_falls_back_to_pillow(self, monkeypatch, tmp_path):
+        frame = tmp_path / "frame.jpg"
+        Image.new("RGB", (1920, 1080), (40, 40, 40)).save(frame)
+        monkeypatch.setattr(thumbnailer, "_generate_imagen_bg", lambda *a, **kw: None)
+        monkeypatch.setattr(thumbnailer, "_frame_source", lambda ws, p: ("v.mp4", {"duration": 10.0}))
+        monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, **kw: frame)
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: False)
+        out = thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "Título", "sub_text": "sub"}}, {})
+        assert Image.open(out).size == thumbnailer.LONG_SIZE
+        assert not frame.exists()  # the temporary frame is cleaned up
