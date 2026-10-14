@@ -142,7 +142,14 @@ fn engine_command(embedded: Option<&Embedded>) -> Result<(Command, String), Stri
             .env("AUTO_EDIT_FFMPEG", ffmpeg)
             .env("PYTHON", &e.python)
             .env("PYTHONNOUSERSITE", "1")
-            .env("PYTHONUTF8", "1");
+            .env("PYTHONUTF8", "1")
+            // Nothing may be written inside the signed app (a new file breaks
+            // its seal): .pyc come precompiled from the build, numba caches
+            // in the user's home.
+            .env("PYTHONDONTWRITEBYTECODE", "1");
+        if let Some(h) = home() {
+            cmd.env("NUMBA_CACHE_DIR", h.join(".auto-edit").join("cache").join("numba"));
+        }
         return Ok((cmd, format!("{} (embutido)", e.python.display())));
     }
     let bin = find_auto_edit().ok_or(
