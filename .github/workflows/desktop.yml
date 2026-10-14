@@ -59,10 +59,10 @@ jobs:
     env:
       TAG: ${{ inputs.tag }}
       PYTHONUTF8: "1"  # Windows runners default to cp1252
-      # macOS releases are signed with a Developer ID and notarized when the
-      # Apple secrets exist (see docs/macos-signing.md); otherwise, and on
-      # pull requests, ad-hoc signed.
-      NOTARIZE: ${{ inputs.tag != '' && secrets.APPLE_CERTIFICATE != '' && startsWith(matrix.os, 'macos') }}
+      # macOS releases are signed with a Developer ID and notarized; the Apple
+      # secrets live in Doppler (see docs/macos-signing.md). Without
+      # DOPPLER_TOKEN, and on pull requests, ad-hoc signed.
+      NOTARIZE: ${{ inputs.tag != '' && secrets.DOPPLER_TOKEN != '' && startsWith(matrix.os, 'macos') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,17 +100,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
 
+      - name: Fetch the Apple secrets from Doppler (macOS release)
+        if: env.NOTARIZE == 'true'
+        uses: dopplerhq/secrets-fetch-action@v1.3.0
+        with:
+          doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+          inject-env-vars: true  # masked in the logs
+
       - name: Import the Developer ID certificate (macOS release)
         if: env.NOTARIZE == 'true'
         shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            [ -n "${!v:-}" ] || { echo "::error::$v missing in Doppler (the DOPPLER_TOKEN config)"; exit 1; }
+          done
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           PASS="$(openssl rand -hex 16)"
           echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"

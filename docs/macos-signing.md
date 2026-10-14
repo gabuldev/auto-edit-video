@@ -4,7 +4,7 @@ Sem isso, o macOS bloqueia a primeira abertura do app ("Apple could not verify
 'Auto-Edit' is free of malware"). Com isso, o `.dmg` abre com duplo clique.
 
 O CI (`.github/workflows/desktop.yml`) assina e notariza **sozinho** em todo
-release quando os secrets abaixo existem. Sem eles, o app sai com assinatura
+release, buscando os secrets abaixo no Doppler (`DOPPLER_TOKEN`). Sem eles, o app sai com assinatura
 ad-hoc (o comportamento antigo). Pull requests sempre usam ad-hoc.
 
 ## O que o CI faz
@@ -47,20 +47,29 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 → **Team Keys** → **+** → acesso **Developer** → gere e baixe o `AuthKey_XXXX.p8`
 (só dá pra baixar uma vez). Anote o **Key ID** e o **Issuer ID** da página.
 
-### 3. Secrets no GitHub
+### 3. Secrets no Doppler
+
+Os secrets ficam no **Doppler**; o GitHub só guarda um token de leitura.
+
+| Secret no Doppler | Valor |
+|---|---|
+| `APPLE_CERTIFICATE` | o `.p12` em base64: `base64 -i DeveloperID.p12 \| pbcopy` |
+| `APPLE_CERTIFICATE_PASSWORD` | a senha do `.p12` |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: NOME (TEAMID)` |
+| `APPLE_API_KEY` | Key ID |
+| `APPLE_API_ISSUER` | Issuer ID |
+| `APPLE_API_KEY_P8` | conteúdo do `AuthKey_XXXX.p8` |
+
+Crie um **service token** (só leitura) da config onde eles estão e salve no
+GitHub:
 
 ```bash
-base64 -i DeveloperID.p12 | gh secret set APPLE_CERTIFICATE
-gh secret set APPLE_CERTIFICATE_PASSWORD          # a senha do .p12
-gh secret set APPLE_SIGNING_IDENTITY              # Developer ID Application: NOME (TEAMID)
-gh secret set APPLE_API_KEY                       # Key ID
-gh secret set APPLE_API_ISSUER                    # Issuer ID
-gh secret set APPLE_API_KEY_P8 < AuthKey_XXXX.p8
+gh secret set DOPPLER_TOKEN        # cole o token dp.st.…
 ```
 
-Depois, apague o `.p12` e o `.p8` do disco (ou guarde num cofre de senhas).
-O próximo release já sai notarizado. Pra refazer um release existente:
-**Actions → Desktop app → Run workflow** com a tag.
+Depois, apague o `.p12` e o `.p8` do disco. O próximo release já sai
+notarizado. Pra refazer um release existente: **Actions → Desktop app → Run
+workflow** com a tag.
 
 ## Conferir um app baixado
 
