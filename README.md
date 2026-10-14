@@ -18,13 +18,10 @@ Mac com processador Intel não tem instalador (as bibliotecas de IA pararam de p
 
 O app já vem com tudo que o pipeline precisa (Python, Whisper, um FFmpeg com legenda e, no Windows, o `bash`) — **não precisa instalar Python, FFmpeg nem Git**. O que você instala é **um agente de IA** (veja abaixo).
 
-**Primeira abertura** — os instaladores ainda não são assinados, então o sistema avisa:
+**Primeira abertura**:
 
-- **macOS**: arraste o app pra **Aplicativos** e abra. Se aparecer *"não pode ser aberto porque a Apple não pode verificar…"*: **Ajustes do Sistema → Privacidade e Segurança** → role até o fim → **Abrir Mesmo Assim**. Se aparecer *"Auto-Edit está danificado"* (versões até a 0.31): rode no Terminal
-  ```bash
-  xattr -cr /Applications/Auto-Edit.app
-  ```
-- **Windows**: "O Windows protegeu o computador" → **Mais informações** → **Executar assim mesmo**.
+- **macOS**: arraste o app pra **Aplicativos** e abra. Desde a 0.34.1 o app é assinado e notarizado pela Apple, então abre sem aviso. Em versões anteriores: *"Apple não pode verificar…"* → **Ajustes do Sistema → Privacidade e Segurança** → **Abrir Mesmo Assim**; *"Auto-Edit está danificado"* (até a 0.31) → `xattr -cr /Applications/Auto-Edit.app` no Terminal.
+- **Windows** (instalador ainda não assinado): "O Windows protegeu o computador" → **Mais informações** → **Executar assim mesmo**.
 - **Linux**: `sudo apt install ./Auto-Edit_*_amd64.deb` (ou `sudo dnf install ./Auto-Edit-*.x86_64.rpm`).
 
 ### O agente de IA
