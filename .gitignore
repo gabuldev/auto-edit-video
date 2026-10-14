@@ -38,8 +38,16 @@ auto-editor
 *.avi
 *.mov
 
-# Assets (overlay clips, media files — not tracked)
-assets/
+# Assets (overlay clips, media files — not tracked), except what the
+# thumbnail needs in every install: the templates and one OFL font.
+assets/*
+!assets/thumbnails/
+assets/thumbnails/*
+!assets/thumbnails/templates.json
+!assets/thumbnails/fonts/
+assets/thumbnails/fonts/*
+!assets/thumbnails/fonts/Anton-Regular.ttf
+!assets/thumbnails/fonts/OFL-Anton.txt
 
 # Database local
 data.db

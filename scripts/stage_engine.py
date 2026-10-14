@@ -179,8 +179,17 @@ def stage_renderer(out: Path, target: str) -> None:
     exe = out / "bin" / ("auto-edit-render.exe" if "windows" in target else "auto-edit-render")
     exe.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run([bun, "install", "--frozen-lockfile"], cwd=src, check=True)
-    subprocess.run([bun, "build", "src/cli.tsx", "--compile", f"--target={BUN_TARGET[target]}",
-                    "--outfile", str(exe)], cwd=src, check=True)
+    build = [bun, "build", "src/cli.tsx", "--compile", "--outfile", str(exe)]
+    # The baseline runtime is a separate download that sometimes fails to
+    # extract (seen on Windows runners): retry, then build for the runner's own
+    # CPU — the same OS and arch, just without the no-AVX2 fallback.
+    for attempt in range(2):
+        if subprocess.run([*build, f"--target={BUN_TARGET[target]}"], cwd=src).returncode == 0:
+            break
+        log(f"renderer: {BUN_TARGET[target]} build failed (attempt {attempt + 1})")
+    else:
+        log("renderer: building for the runner's CPU instead")
+        subprocess.run(build, cwd=src, check=True)
     log(f"renderer -> {exe} ({exe.stat().st_size / 1e6:.0f} MB)")
 
 
