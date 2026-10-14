@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto-Edit — edição de vídeo com IA</title>
+<meta name="description" content="Do vídeo bruto ao post pronto: o Auto-Edit transcreve, corta a enrolação, legenda, gera título, thumbnail e publica no YouTube. App para macOS, Windows e Linux.">
+<meta property="og:title" content="Auto-Edit — edição de vídeo com IA">
+<meta property="og:description" content="Do vídeo bruto ao post pronto. Corta, legenda, gera thumbnail e publica no YouTube.">
+<meta property="og:image" content="screenshots/resultado.jpg">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0b0e13">
+<link rel="icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top"><img src="icon.png" alt="" width="30" height="30"><span>Auto-Edit</span></a>
+    <nav class="nav-links">
+      <a href="#como">Como funciona</a>
+      <a href="#recursos">Recursos</a>
+      <a href="#telas">Telas</a>
+      <a href="#faq">Dúvidas</a>
+    </nav>
+    <a class="btn btn-sm btn-primary" href="#baixar">Baixar</a>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="glow g1"></div><div class="glow g2"></div>
+    <div class="wrap hero-in">
+      <div class="hero-copy">
+        <span class="pill"><span class="pulse"></span>edição de vídeo com IA</span>
+        <h1>Do vídeo bruto<br>ao <em>post pronto</em>.</h1>
+        <p class="lead">Escolha o vídeo, diga do que ele trata. O Auto-Edit transcreve, corta silêncio e enrolação, abre no melhor momento, legenda, cria título, thumbnail e publica no YouTube.</p>
+        <div class="cta">
+          <a class="btn btn-primary btn-lg" id="dl-main" href="https://github.com/gabuldev/auto-edit-video/releases/latest">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>
+            <span id="dl-main-label">Baixar o Auto-Edit</span>
+          </a>
+          <a class="btn btn-ghost btn-lg" href="#baixar">Outros sistemas</a>
+        </div>
+        <p class="meta" id="dl-meta">macOS (Apple Silicon) · Windows · Linux</p>
+      </div>
+
+      <!-- Animated timeline -->
+      <div class="editor" aria-hidden="true">
+        <div class="editor-bar"><i></i><i></i><i></i><span class="mono">bruto_11m12s.mp4</span></div>
+        <div class="editor-body">
+          <div class="stages mono">
+            <span>extract</span><span>plan</span><span>review</span><span>evaluate</span><span>execute</span><span>caption</span><span>metadata</span>
+          </div>
+          <div class="track" id="track"></div>
+          <div class="track-legend mono">
+            <span><b class="k keep"></b>mantido</span>
+            <span><b class="k cut"></b>cortado</span>
+            <span class="out">11m12s → <strong>9m17s</strong></span>
+          </div>
+          <div class="caption-demo"><span>e é <mark>assim</mark> que a gente</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap shot-wrap">
+      <figure class="window hero-shot">
+        <div class="window-bar"><i></i><i></i><i></i></div>
+        <img src="screenshots/biblioteca.jpg" alt="Biblioteca do Auto-Edit com os vídeos editados e o progresso de cada pipeline" width="1400" height="841">
+      </figure>
+    </div>
+  </section>
+
+  <!-- NUMBERS -->
+  <section class="strip">
+    <div class="wrap strip-in">
+      <div><strong>1 clique</strong><span>do arquivo ao vídeo cortado</span></div>
+      <div><strong>long + shorts</strong><span>YouTube, Reels e Shorts</span></div>
+      <div><strong>tudo embutido</strong><span>sem instalar Python nem FFmpeg</span></div>
+      <div><strong>5 agentes</strong><span>Claude, Cursor, Antigravity, OpenCode, Ollama</span></div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section id="como" class="section">
+    <div class="wrap">
+      <p class="eyebrow">Como funciona</p>
+      <h2>Três passos. O resto é com a IA.</h2>
+      <div class="steps">
+        <article class="step reveal">
+          <span class="num mono">01</span>
+          <h3>Escolha o vídeo</h3>
+          <p>Vertical vira <b>short</b> com legenda estilo CapCut. Horizontal vira <b>long</b> pro YouTube, com curadoria de blocos.</p>
+        </article>
+        <article class="step reveal">
+          <span class="num mono">02</span>
+          <h3>Diga do que se trata</h3>
+          <p>Uma frase de contexto. Ela ajuda a transcrição a acertar nomes e o planner a saber o que é essencial.</p>
+        </article>
+        <article class="step reveal">
+          <span class="num mono">03</span>
+          <h3>Revise e publique</h3>
+          <p>Veja cada trecho mantido com o que foi dito, desmarque o que quiser e envie pro YouTube com thumbnail e capítulos.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="recursos" class="section alt">
+    <div class="wrap">
+      <p class="eyebrow">Recursos</p>
+      <h2>Um editor que entende o que você falou.</h2>
+      <div class="grid">
+        <article class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M6 4l12 16M18 4L6 20"/></svg></div>
+          <h3>Corta a enrolação</h3>
+          <p>Silêncios, falsas largadas, repetições e, nos longs, blocos inteiros que não entregam nada.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M5 12h10M11 6l6 6-6 6M19 5v14"/></svg></div>
+          <h3>Abre no melhor momento</h3>
+          <p>Cold open com o trecho mais forte antes da abertura e, quando ajuda, reordena os blocos.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></div>
+          <h3>Avalia antes de renderizar</h3>
+          <p>Um agente revisa o corte planejado e devolve pro plano se a abertura enrola ou uma frase fica cortada.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 6h16v12H4zM7 14h4M13 14h4M7 11h10"/></svg></div>
+          <h3>Legendas e metadata</h3>
+          <p>Legenda palavra a palavra nos shorts, <span class="mono">.srt</span> nos longs. Título, descrição, tags, capítulos e comentário fixado.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7zM10 18h4"/></svg></div>
+          <h3>Shorts a partir do long</h3>
+          <p>A IA sugere trechos que se sustentam sozinhos. Você assiste cada um e corta os que quiser.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 7-9M15 5h4v4"/></svg></div>
+          <h3>Aprende com a retenção</h3>
+          <p>Publica no YouTube e mostra onde o público saiu, com o que você dizia ali. Os próximos cortes usam isso.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- THUMB -->
+  <section class="section">
+    <div class="wrap split">
+      <div class="split-copy">
+        <p class="eyebrow">Thumbnail</p>
+        <h2>Ele escolhe o frame. Você só aprova.</h2>
+        <p class="lead sm">Imagem tremida, boca aberta no meio da palavra, algo tampando o rosto? O Auto-Edit procura o frame nítido em que você aparece bem e monta a capa com o texto por cima.</p>
+      </div>
+      <div class="ba reveal">
+        <figure><img src="images/thumb_before.png" alt="Frame com o rosto tampado por um objeto" loading="lazy" width="540" height="960"><figcaption class="mono bad">frame qualquer</figcaption></figure>
+        <figure><img src="images/thumb_after.png" alt="Frame escolhido pelo Auto-Edit, rosto visível" loading="lazy" width="540" height="960"><figcaption class="mono good">escolhido pela IA</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREENS -->
+  <section id="telas" class="section alt">
+    <div class="wrap">
+      <p class="eyebrow">Telas</p>
+      <h2>Tudo num app. Sem terminal.</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-img="screenshots/revisar-cortes.jpg" data-alt="Revisar cortes: cada trecho mantido com o que foi dito">Revisar cortes</button>
+        <button role="tab" aria-selected="false" data-img="screenshots/resultado.jpg" data-alt="Resultado: publicar no YouTube e curva de retenção">Publicar e retenção</button>
+        <button role="tab" aria-selected="false" data-img="screenshots/shorts.jpg" data-alt="Candidatos a short sugeridos a partir de um vídeo longo">Shorts</button>
+        <button role="tab" aria-selected="false" data-img="screenshots/configuracoes.jpg" data-alt="Configurações: agentes de IA instalados e testados">Configurações</button>
+      </div>
+      <figure class="window">
+        <div class="window-bar"><i></i><i></i><i></i></div>
+        <img id="tab-img" src="screenshots/revisar-cortes.jpg" alt="Revisar cortes: cada trecho mantido com o que foi dito" loading="lazy" width="1400" height="841">
+      </figure>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section id="baixar" class="section">
+    <div class="wrap">
+      <p class="eyebrow">Baixar</p>
+      <h2>Instale e edite hoje.</h2>
+      <p class="lead sm center">O app já traz Python, Whisper e FFmpeg. Na primeira abertura ele guia a instalação e o login do agente de IA.</p>
+      <div class="dl-grid">
+        <article class="dl reveal" data-os="mac">
+          <svg class="os" viewBox="0 0 24 24"><path d="M16.4 12.6c0-2.4 2-3.5 2-3.6-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.8-3.5.8s-1.9-.8-3.1-.8C6.8 7.2 5.3 8.1 4.5 9.6c-1.7 2.9-.4 7.2 1.2 9.6.8 1.2 1.7 2.4 3 2.4 1.2 0 1.6-.8 3.1-.8s1.8.8 3.1.8 2.1-1.2 2.9-2.4c.9-1.3 1.3-2.6 1.3-2.7 0 0-2.6-1-2.7-3.9zM14.1 5.5c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.7-1.3z"/></svg>
+          <h3>macOS</h3>
+          <p class="mono">Apple Silicon (M1 ou mais novo)</p>
+          <a class="btn btn-primary" data-asset="dmg" href="https://github.com/gabuldev/auto-edit-video/releases/latest">Baixar .dmg</a>
+          <small>Assinado e notarizado pela Apple: abre direto.</small>
+        </article>
+        <article class="dl reveal" data-os="win">
+          <svg class="os" viewBox="0 0 24 24"><path d="M3 5.5l7.5-1v7H3zM11.5 4.4L21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z"/></svg>
+          <h3>Windows</h3>
+          <p class="mono">Windows 10 e 11 (64 bits)</p>
+          <a class="btn btn-primary" data-asset="exe" href="https://github.com/gabuldev/auto-edit-video/releases/latest">Baixar instalador</a>
+          <small>Se aparecer "O Windows protegeu o computador": <b>Mais informações → Executar assim mesmo</b>. Prefere o <a data-asset="msi" href="https://github.com/gabuldev/auto-edit-video/releases/latest">.msi</a>?</small>
+        </article>
+        <article class="dl reveal" data-os="linux">
+          <svg class="os linux" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="3"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></svg>
+          <h3>Linux</h3>
+          <p class="mono">Ubuntu/Debian ou Fedora</p>
+          <a class="btn btn-primary" data-asset="deb" href="https://github.com/gabuldev/auto-edit-video/releases/latest">Baixar .deb</a>
+          <small>Fedora: <a data-asset="rpm" href="https://github.com/gabuldev/auto-edit-video/releases/latest">.rpm</a>. Instale com <code>sudo apt install ./Auto-Edit_*.deb</code></small>
+        </article>
+      </div>
+      <p class="version mono" id="version"></p>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="section alt">
+    <div class="wrap narrow">
+      <p class="eyebrow">Dúvidas</p>
+      <h2>Perguntas frequentes</h2>
+      <details>
+        <summary>Preciso saber programar?</summary>
+        <p>Não. Você instala o app, e na primeira abertura ele instala e conecta o agente de IA por você, com um botão de cada vez.</p>
+      </details>
+      <details>
+        <summary>Que agente de IA ele usa?</summary>
+        <p>Por padrão o <b>Claude Code</b>. Também funciona com Cursor Agent, Antigravity, OpenCode e Ollama (modelo local, sem conta). Você troca nas Configurações.</p>
+      </details>
+      <details>
+        <summary>Meu vídeo sai do meu computador?</summary>
+        <p>A transcrição (Whisper) e o corte (FFmpeg) rodam na sua máquina. O agente de IA recebe só o texto da transcrição pra planejar os cortes. O vídeo só sai da máquina quando você publica no YouTube.</p>
+      </details>
+      <details>
+        <summary>Tenho um Mac com processador Intel. Funciona?</summary>
+        <p>O app não: as bibliotecas de IA pararam de publicar pacotes pra Mac Intel. Dá pra usar pela linha de comando; veja o <a href="https://github.com/gabuldev/auto-edit-video#usar-pelo-terminal-cli">guia do CLI</a>.</p>
+      </details>
+      <details>
+        <summary>O Windows avisou que o app não é reconhecido.</summary>
+        <p>O instalador do Windows ainda não tem assinatura. Clique em <b>Mais informações → Executar assim mesmo</b>. Isso só aparece na instalação.</p>
+      </details>
+      <details>
+        <summary>Publica em outras redes?</summary>
+        <p>Por enquanto a publicação automática é só no YouTube. O short sai vertical e legendado, pronto pra você subir onde quiser.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="glow g3"></div>
+    <div class="wrap final-in">
+      <h2>Pare de editar. Comece a postar.</h2>
+      <a class="btn btn-primary btn-lg" href="#baixar">Baixar o Auto-Edit</a>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="brand"><img src="icon.png" alt="" width="22" height="22"><span>Auto-Edit</span></span>
+    <span>feito por <a href="https://github.com/gabuldev">gabuldev</a></span>
+    <a href="https://github.com/gabuldev/auto-edit-video">código no GitHub</a>
+  </div>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>
