@@ -6,7 +6,7 @@
 
 ## Baixar o app
 
-Baixe o instalador do seu sistema na **[página de Releases](https://github.com/gabuldev/auto-edit-video/releases/latest)**:
+Baixe pelo site **[gabuldev.github.io/auto-edit-video](https://gabuldev.github.io/auto-edit-video/)** (já detecta seu sistema) ou na **[página de Releases](https://github.com/gabuldev/auto-edit-video/releases/latest)**:
 
 | Sistema | Arquivo |
 |---------|---------|
