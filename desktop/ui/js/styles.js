@@ -313,6 +313,23 @@ function setGenerating(on) {
   el("sty-gallery").classList.toggle("busy", on);
 }
 
+// Only its colors matter: shrink to ≤512px here, so a full-screen retina
+// screenshot never hits the engine's 5 MB limit.
+async function takeAiImage(file, name) {
+  if (!file) return;
+  try {
+    const img = await createImageBitmap(file);
+    const k = Math.min(1, 512 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.width * k));
+    c.height = Math.max(1, Math.round(img.height * k));
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    setAiImage(c.toDataURL("image/png"), name || "imagem");
+  } catch {
+    setError("não consegui ler a imagem");
+  }
+}
+
 function setAiImage(dataUrl, name = "") {
   state.aiImage = dataUrl;
   el("sty-ai-img").textContent = name;
@@ -413,12 +430,26 @@ function wire() {
   el("btn-sty-ai-go").addEventListener("click", generateAi);
   el("btn-sty-ai-close").addEventListener("click", () => (el("sty-ai").hidden = true));
   el("sty-ai-pick").addEventListener("click", (e) => { e.preventDefault(); el("sty-ai-file").click(); });
-  el("sty-ai-file").addEventListener("change", async (e) => {
+  el("sty-ai-file").addEventListener("change", (e) => {
     const f = e.target.files[0];
     e.target.value = "";
-    if (!f) return;
-    if (f.size > 5 * 1024 * 1024) return setError("imagem grande demais (máx. 5 MB)");
-    setAiImage(await readDataUrl(f), f.name);
+    takeAiImage(f, f?.name);
+  });
+  // A screenshot is easier pasted (⌘V / Ctrl+V) or dropped than saved and attached.
+  document.addEventListener("paste", (e) => {
+    if (el("sty-ai").hidden) return;
+    const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+    if (!item) return; // plain text still pastes into the description
+    e.preventDefault();
+    takeAiImage(item.getAsFile(), "imagem colada");
+  });
+  el("sty-ai").addEventListener("dragover", (e) => { e.preventDefault(); el("sty-ai").classList.add("drop"); });
+  el("sty-ai").addEventListener("dragleave", () => el("sty-ai").classList.remove("drop"));
+  el("sty-ai").addEventListener("drop", (e) => {
+    e.preventDefault();
+    el("sty-ai").classList.remove("drop");
+    const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith("image/"));
+    takeAiImage(f, f?.name);
   });
   el("sty-ai-img-remove").addEventListener("click", (e) => { e.preventDefault(); setAiImage(null); });
   el("sty-logo-colors").addEventListener("click", (e) => { e.preventDefault(); useLogoColors(); });

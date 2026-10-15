@@ -422,3 +422,4 @@ textarea.input { resize: vertical; }
 .sty-ai-art { display: grid; place-items: center; font-size: 34px; }
 #sty-logo-colors { display: inline-block; margin-top: 8px; }
 .sty-gallery.busy { opacity: .55; pointer-events: none; }
+.sty-ai.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
