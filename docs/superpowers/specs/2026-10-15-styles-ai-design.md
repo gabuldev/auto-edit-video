@@ -26,8 +26,8 @@ Sucesso:
 
 - `extract(image: Path | bytes, n=5) -> list[str]`: reduz (thumbnail ~128px),
   descarta pixels com alpha < 128, quantiza (`Image.quantize`, median cut),
-  descarta quase-branco/quase-preto/cinza (saturação HSV < 0.15 ou valor fora de
-  [0.12, 0.95]), ordena por frequência × saturação. Retorna hex `#rrggbb`. Pode
+  descarta cinza/quase-branco/quase-preto (saturação HSV < 0.15 ou valor < 0.12),
+  junta cores quase iguais, ordena por frequência × (0.5 + saturação). Retorna hex `#rrggbb`. Pode
   retornar lista vazia.
 - `suggest(colors) -> {accent, panel, text} | None`: accent = cor mais saturada;
   panel = mesmo matiz, valor ~0.12, saturação ~0.6; text = `#ffffff` ou `#111111`
@@ -59,13 +59,16 @@ Sucesso:
 
 | Rota | Corpo | Resposta |
 |------|-------|----------|
-| `POST /api/styles/generate` | `{description, image?}` (data URL) | `{job_id}`; o evento `done` do SSE traz `{name, description, tokens}` |
+| `POST /api/styles/generate` | `{description, image?}` (data URL) | `{name, description, tokens}` (síncrono, até ~120s) |
 | `POST /api/styles/palette` | `{image?}` (sem → logo salvo) | `{colors, suggested}` |
-| `GET /api/styles/<id>/export` | — | JSON do arquivo, `Content-Disposition: attachment` |
+| `POST /api/styles/<id>/export` | — | grava `~/Downloads/<id>.autoedit-style.json`, mostra no Finder/Explorer, `{path}` |
 | `POST /api/styles/import` | `{file}` (o JSON do arquivo) | o estilo salvo |
 
-Geração usa o `JobManager` do engine (mesmo padrão do clipper) com um job sem
-vídeo associado. Descrição vazia e sem imagem → 400.
+Geração é síncrona (a UI mostra "gerando…"): um job + SSE seria peso à toa pra
+uma chamada só. A IA é chamada por `agents.complete()` (novo): agente das
+configurações, cai no fallback. Descrição vazia e sem imagem → 400. Exportar
+grava em Downloads porque o webview não segue link de download e o app não tem
+o plugin de diálogo do Tauri.
 
 ## 5. App — `desktop/ui/js/styles.js`
 
@@ -74,7 +77,7 @@ vídeo associado. Descrição vazia e sem imagem → 400.
   (fluxo `startEditing` existente), prévias reais atualizam. Erro no painel.
 - Editor, bloco de cores: **"Usar cores do logo"** (só com logo salvo) → aplica
   `suggested` no rascunho. Sem cor marcante → aviso inline.
-- Detalhe: **"Exportar"** → diálogo de salvar do Tauri.
+- Detalhe: **"Exportar"** → arquivo em Downloads, mostrado no Finder.
 - Galeria: **"Importar"** → seletor de arquivo → `POST /import` → seleciona o novo.
 
 ## 6. CLI — `auto-edit style`
