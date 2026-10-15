@@ -133,6 +133,13 @@ def main(engine: Path) -> None:
              "    for kind in styles.PREVIEW_KINDS:\n"
              "        assert styles.preview(p['tokens'], kind).startswith(b'\\x89PNG'), (sid, kind)"],
             {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "style previews render", timeout=300)
+        # Estilos → "usar cores do logo": Pillow quantize in the staged Python.
+        run([str(python), "-c",
+             "from PIL import Image; import io\n"
+             "from auto_edit import palette\n"
+             "b = io.BytesIO(); Image.new('RGB', (32, 32), (230, 30, 40)).save(b, 'PNG')\n"
+             "assert palette.suggest(palette.extract(b.getvalue()))['accent'], 'no palette'"],
+            env, "palette from an image", timeout=60)
 
     port = "8799"
     proc = subprocess.Popen([str(python), "-m", "auto_edit.cli", "serve", "--port", port],
