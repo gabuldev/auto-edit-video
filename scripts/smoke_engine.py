@@ -8,7 +8,8 @@ but the staged engine on PATH — the environment the Tauri shell builds:
 2. ffmpeg with the subtitles filter (captions);
 3. bash and `bash -n ralph.sh`;
 4. a real Whisper transcription of a few seconds of generated audio;
-5. the React thumbnail renderer (auto-edit-render) drawing a real thumbnail;
+5. the React renderer (auto-edit-render) drawing a real thumbnail and an
+   overlay animation composited by ffmpeg;
 6. `auto-edit serve` answering /api/health.
 
     python scripts/smoke_engine.py desktop/src-tauri/engine
@@ -116,6 +117,15 @@ def main(engine: Path) -> None:
                    str(engine / "repo" / "tools"), str(frame), str(thumb)], env, "React thumbnail renders", timeout=120)
         if not thumb.read_bytes().startswith(b"\x89PNG"):
             raise SystemExit("FAIL renderer: output is not a PNG")
+        # The overlay stage: React frames + ffmpeg concat/overlay on a clip.
+        clip = Path(d) / "edited_video.mp4"
+        run([ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=3",
+             "-pix_fmt", "yuv420p", str(clip)], env, "ffmpeg makes a clip")
+        (Path(d) / "overlay_plan.json").write_text('{"overlays": [{"overlay": "cta", "start": 0.5}]}')
+        run([str(python), str(engine / "repo" / "tools" / "overlayer.py"), d],
+            {**env, "AUTO_EDIT_OVERLAY_SOURCE": "react"}, "React overlay renders", timeout=180)
+        if not (Path(d) / "overlaid_video.mp4").is_file():
+            raise SystemExit("FAIL overlay: no overlaid_video.mp4")
 
     port = "8799"
     proc = subprocess.Popen([str(python), "-m", "auto_edit.cli", "serve", "--port", port],

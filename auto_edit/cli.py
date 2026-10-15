@@ -1019,17 +1019,21 @@ def doctor() -> None:
         p = REPO_ROOT / d
         checks.append((f"{d}/", str(p), "[green]OK[/green]" if p.is_dir() else "[red]MISSING[/red]"))
 
-    # Overlay assets (long-form overlays fail if these .mp4s aren't found)
+    # Overlays: the person's own MP4s, or the React renderer that draws them
+    from auto_edit import render
     from auto_edit.overlay_assets import overlay_search_dirs
     ov_dirs = overlay_search_dirs()
     ov_hit = next((d for d in ov_dirs if d.is_dir() and any(d.glob("*.mp4"))), None)
+    renderer = render.command()
     if ov_hit is not None:
         checks.append(("overlays", str(ov_hit), f"[green]OK[/green] ({len(list(ov_hit.glob('*.mp4')))} .mp4)"))
+    elif renderer:
+        checks.append(("overlays", " ".join(renderer), "[green]OK[/green] (React — no .mp4 needed)"))
     else:
         checks.append((
             "overlays",
             " ; ".join(str(d) for d in ov_dirs),
-            "[yellow]WARN[/yellow] no .mp4 found (set AUTO_EDIT_ASSETS_OVERLAYS)",
+            "[yellow]WARN[/yellow] no .mp4 and no auto-edit-render (cd renderer && bun install)",
         ))
 
     # LLM CLI

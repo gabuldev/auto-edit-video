@@ -121,6 +121,10 @@ function renderForm() {
   el("cfg-whisper").value = d.whisper_model;
   el("cfg-coldopen").checked = d.cold_open;
   el("cfg-reorder").checked = d.reorder;
+  const brand = d.brand || {};
+  el("cfg-brand-name").value = brand.name || "";
+  el("cfg-brand-handle").value = brand.handle || "";
+  el("cfg-brand-accent").value = brand.accent || "#00d6ff";
 }
 
 async function renderYoutube() {
@@ -253,6 +257,11 @@ function wire() {
   el("cfg-whisper").addEventListener("change", (e) => { state.draft.whisper_model = e.target.value; syncSave(); });
   el("cfg-coldopen").addEventListener("change", (e) => { state.draft.cold_open = e.target.checked; syncSave(); });
   el("cfg-reorder").addEventListener("change", (e) => { state.draft.reorder = e.target.checked; syncSave(); });
+  const brand = (key, get = (x) => x.value.trim() || null) =>
+    (e) => { state.draft.brand = { ...(state.draft.brand || {}), [key]: get(e.target) }; syncSave(); };
+  el("cfg-brand-name").addEventListener("input", brand("name"));
+  el("cfg-brand-handle").addEventListener("input", brand("handle"));
+  el("cfg-brand-accent").addEventListener("input", brand("accent", (x) => x.value));
   el("btn-cfg-save").addEventListener("click", save);
   el("btn-ollama-pull").addEventListener("click", async () => {
     const model = el("cfg-ollama-pull-model").value.trim() || "qwen2.5:7b";

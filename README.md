@@ -72,7 +72,7 @@ Whisper   agente  agente   agente     FFmpeg    FFmpeg    FFmpeg    agente     P
 | **review** | Revisa o plano (cortes faltando, frases quebradas) |
 | **evaluate** | Cold open/reordenação, e julga o **corte planejado** antes de renderizar — rejeita e volta pro plan (até 3x) |
 | **execute** | Corta o vídeo via FFmpeg, com normalização de áudio |
-| **overlay** | Overlays gráficos com chroma key (só long) |
+| **overlay** | Nome na tela (lower third) e chamada pra se inscrever, animados em React — ou os seus MP4 com fundo verde, se tiver (só long) |
 | **caption** | Legendas estilo CapCut (só short) |
 | **metadata** | Título, descrição, tags, capítulos e comentário pra fixar |
 | **thumbnail** | Escolhe o frame (do corte limpo, sem legenda) e monta a thumbnail num layout em React (`renderer/`, sem navegador) |
@@ -385,7 +385,7 @@ auto-edit-video/
 │   ├── extract.py          # Transcrição + energia + correção IA
 │   ├── executor.py         # Cortes FFmpeg + loudnorm
 │   ├── captioner.py        # Legendas ASS + burn FFmpeg
-│   └── overlayer.py        # Composição de overlays + chroma key
+│   └── overlayer.py        # Composição de overlays (React ou MP4 + chroma key)
 ├── ralph.sh                # Loop engine (orquestra stages)
 ├── tests/                  # Test suite (pytest)
 ├── .claude/commands/       # Claude Code skills
@@ -402,7 +402,7 @@ upload/video.mp4
       cut_plan.json            ← plan (agente LLM)
       reviewed_plan.json       ← review (agente LLM)
       edited_video.mp4         ← execute (FFmpeg trim + concat + loudnorm)
-      overlaid_video.mp4       ← overlay (FFmpeg chroma key) [long only]
+      overlaid_video.mp4       ← overlay (React ou MP4 com chroma key) [long only]
       captions.ass             ← caption (ASS gerado)
       captioned_video.mp4      ← caption (FFmpeg subtitles burn) [short only]
       post_cut_transcription.json ← caption (timestamps remapeados)

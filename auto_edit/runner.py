@@ -182,12 +182,22 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
         ]
 
     elif stage == "overlay":
-        transcription = _read_json(workspace / "transcription.json")
+        # The rendered timeline (cuts, cold open, reordered blocks): the agent
+        # answers in `start`, already on the edit. Without it, the original
+        # transcript and `original_start` (the overlayer remaps it).
+        post_cut = _read_json_optional(workspace / "post_cut_transcription.json")
+        transcription = post_cut or _read_json(workspace / "transcription.json")
+        timeline = (
+            "These timestamps are on the EDITED video: answer with `start`."
+            if post_cut else
+            "These timestamps are on the ORIGINAL video: answer with `original_start` instead of `start`."
+        )
         sections += [
             "\n## Video Information",
             f"- Type: {video_type}",
             f"- Context: {context or '(no context provided)'}",
             "\n## Transcription Data (word timestamps)",
+            timeline,
             _compact_json(_slim_for_overlay(transcription)),
         ]
 

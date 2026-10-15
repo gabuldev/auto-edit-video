@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -31,6 +32,8 @@ DEFAULTS: dict = {
     "overlays_dir": None,
     "cold_open": True,
     "reorder": True,
+    # What the overlays show (lower third). No name → the YouTube channel's.
+    "brand": {"name": None, "handle": None, "accent": None},
     # The agent that last passed "Testar" — what tells the app it can edit.
     "verified_agent": None,
 }
@@ -106,7 +109,25 @@ def validate(data: dict) -> dict:
     merged["cold_open"] = bool(merged["cold_open"])
     merged["reorder"] = bool(merged["reorder"])
     merged["language"] = (merged.get("language") or "pt").strip() or "pt"
+    merged["brand"] = _validate_brand(merged.get("brand"))
     return merged
+
+
+def _validate_brand(brand) -> dict:
+    brand = brand if isinstance(brand, dict) else {}
+    out = {}
+    for key, limit in (("name", 40), ("handle", 40)):
+        value = brand.get(key)
+        value = value.strip() if isinstance(value, str) else ""
+        if len(value) > limit:
+            raise SettingsError(f"{key} da marca passa de {limit} caracteres")
+        out[key] = value or None
+    accent = brand.get("accent")
+    accent = accent.strip() if isinstance(accent, str) else ""
+    if accent and not re.fullmatch(r"#?[0-9a-fA-F]{6}", accent):
+        raise SettingsError(f"cor da marca inválida: {accent!r} (use #RRGGBB)")
+    out["accent"] = ("#" + accent.lstrip("#").lower()) if accent else None
+    return out
 
 
 def save(data: dict) -> dict:

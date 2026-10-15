@@ -48,6 +48,7 @@ assets/thumbnails/*
 assets/thumbnails/fonts/*
 !assets/thumbnails/fonts/Anton-Regular.ttf
 !assets/thumbnails/fonts/OFL-Anton.txt
+!assets/fonts/
 
 # Database local
 data.db

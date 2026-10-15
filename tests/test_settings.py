@@ -66,6 +66,29 @@ class TestSettings:
         assert engine.inbox_root() == inbox
 
 
+class TestBrand:
+    def test_saved_and_normalized(self, home):
+        saved = settings.save({"brand": {"name": "  Gabul ", "handle": "gabul.dev", "accent": "00D6FF"}})
+        assert saved["brand"] == {"name": "Gabul", "handle": "gabul.dev", "accent": "#00d6ff"}
+
+    @pytest.mark.parametrize("brand", [{"accent": "azul"}, {"name": "x" * 41}])
+    def test_rejects(self, home, brand):
+        with pytest.raises(settings.SettingsError):
+            settings.validate({"brand": brand})
+
+    def test_overlays_get_the_brand(self, home):
+        from auto_edit import render
+        settings.save({"brand": {"name": "Gabul", "handle": "gabul.dev", "accent": "#ff0000"}})
+        assert render.brand() == {"name": "Gabul", "handle": "@gabul.dev", "accent": [255, 0, 0]}
+
+    def test_name_falls_back_to_the_youtube_channel(self, home, monkeypatch):
+        from auto_edit import render, youtube_auth
+        monkeypatch.setattr(youtube_auth, "channel_title", lambda: "Canal X")
+        b = render.brand()
+        assert b["name"] == "Canal X" and b["handle"] is None
+        assert b["accent"] == list(render.DEFAULT_ACCENT)
+
+
 class TestApi:
     def _client(self):
         pytest.importorskip("flask")
