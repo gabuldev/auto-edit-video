@@ -413,3 +413,11 @@ textarea.input { resize: vertical; }
 @media (max-width: 900px) {
   .sty-previews, .sty-cols, .sty-row { grid-template-columns: 1fr; }
 }
+
+.sty-gallery-head { display: flex; align-items: baseline; gap: 12px; }
+.sty-ai { margin-top: 18px; }
+.sty-ai textarea { width: 100%; resize: vertical; }
+.sty-ai-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.sty-card-ai { border-style: dashed; }
+.sty-ai-art { display: grid; place-items: center; font-size: 34px; }
+#sty-logo-colors { display: inline-block; margin-top: 8px; }

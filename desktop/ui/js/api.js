@@ -144,6 +144,10 @@ export const deleteStyle = (id) => json(`/api/styles/${encodeURIComponent(id)}`,
 export const uploadLogo = (data) => json("/api/brand/logo", sendJson("PUT", { data }));
 export const deleteLogo = () => json("/api/brand/logo", { method: "DELETE" });
 export const logoUrl = () => `${API}/api/brand/logo?t=${Date.now()}`;
+export const generateStyle = (description, image) => json("/api/styles/generate", sendJson("POST", { description, image }));
+export const stylePalette = (image) => json("/api/styles/palette", sendJson("POST", image ? { image } : {}));
+export const exportStyle = (id) => json(`/api/styles/${encodeURIComponent(id)}/export`, { method: "POST" });
+export const importStyle = (file) => json("/api/styles/import", sendJson("POST", { file }));
 
 /** A blob: URL with the PNG of one part of a style. */
 export async function stylePreview(tokens, kind) {

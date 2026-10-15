@@ -11,6 +11,8 @@ const state = {
   data: null, // GET /api/styles
   selected: null, // style id shown in the detail
   draft: null, // tokens being edited (null: not editing)
+  fresh: false, // the draft is a new style (from the AI): saving never overwrites
+  aiImage: null, // data: URL of the AI's reference image
   settings: null,
   thumbs: {}, // style id → blob URL of its gallery thumbnail
   seq: 0, // ignores previews that arrive after a newer request
@@ -20,6 +22,12 @@ const state = {
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const styleOf = (id) => state.data?.styles.find((s) => s.id === id);
 const shown = () => state.draft || styleOf(state.selected)?.tokens;
+const readDataUrl = (file) => new Promise((ok, fail) => {
+  const r = new FileReader();
+  r.onload = () => ok(r.result);
+  r.onerror = fail;
+  r.readAsDataURL(file);
+});
 
 function setError(msg) {
   el("sty-error").hidden = !msg;
@@ -84,12 +92,7 @@ async function saveBrand() {
 async function pickLogo(file) {
   if (!file) return;
   if (file.size > 5 * 1024 * 1024) return setError("imagem grande demais (máx. 5 MB)");
-  const data = await new Promise((ok, fail) => {
-    const r = new FileReader();
-    r.onload = () => ok(r.result);
-    r.onerror = fail;
-    r.readAsDataURL(file);
-  });
+  const data = await readDataUrl(file);
   try {
     await api.uploadLogo(data);
     state.settings = await api.settings();
@@ -104,7 +107,11 @@ async function pickLogo(file) {
 
 function renderGallery() {
   const { styles, active } = state.data;
-  el("sty-gallery").innerHTML = styles
+  el("sty-gallery").innerHTML = `
+      <button class="sty-card sty-card-ai" data-ai>
+        <div class="sty-card-img sty-ai-art">✨</div>
+        <div class="sty-card-meta"><b>Criar com IA</b></div>
+      </button>` + styles
     .map((s) => `
       <button class="sty-card${s.id === state.selected ? " selected" : ""}" data-style="${escapeHtml(s.id)}">
         <div class="sty-card-img">${state.thumbs[s.id] ? `<img src="${state.thumbs[s.id]}" alt="" />` : `<div class="sty-spin"></div>`}</div>
@@ -136,8 +143,9 @@ function renderDetail() {
   const s = styleOf(state.selected);
   if (!s) return;
   const editing = !!state.draft;
-  el("sty-detail-name").textContent = editing ? `Personalizando: ${s.name}` : s.name;
-  el("sty-detail-desc").textContent = editing ? "as prévias atualizam enquanto você mexe" : s.description || "";
+  el("sty-detail-name").textContent = state.fresh ? "Novo estilo" : editing ? `Personalizando: ${s.name}` : s.name;
+  el("sty-detail-desc").textContent = state.fresh ? "criado pela IA — ajuste e salve" : editing ? "as prévias atualizam enquanto você mexe" : s.description || "";
+  el("btn-sty-export").hidden = editing;
   el("btn-sty-use").hidden = editing || s.id === state.data.active;
   el("btn-sty-edit").hidden = editing;
   el("btn-sty-delete").hidden = editing || s.builtin;
@@ -174,6 +182,7 @@ async function refreshPreviews(force = false) {
 function select(id) {
   if (state.draft && id !== state.selected && !confirmDiscard()) return;
   state.draft = null;
+  state.fresh = false;
   state.selected = id;
   renderGallery();
   renderDetail();
@@ -212,7 +221,8 @@ function renderEditor() {
   renderSteps();
   const s = styleOf(state.selected);
   if (!el("sty-save-name").value) el("sty-save-name").value = s.builtin ? `Meu ${s.name}` : s.name;
-  el("btn-sty-save-new").hidden = s.builtin; // a preset is always saved as a new style
+  el("btn-sty-save-new").hidden = s.builtin || state.fresh; // a preset or an AI draft is always saved as new
+  el("sty-logo-colors").hidden = !state.data.brand?.logo;
 }
 
 function renderSteps() {
@@ -250,14 +260,74 @@ async function saveDraft(asNew) {
   const name = el("sty-save-name").value.trim();
   if (!name) return setError("dê um nome pro estilo");
   try {
-    const saved = await api.saveStyle({ id: asNew || s.builtin ? null : s.id, name, tokens: state.draft, activate: true });
+    const saved = await api.saveStyle({ id: asNew || s.builtin || state.fresh ? null : s.id, name, tokens: state.draft, activate: true });
     state.draft = null;
+    state.fresh = false;
     delete state.thumbs[saved.id];
     await reload(false);
     select(saved.id);
     loadGalleryThumbs();
   } catch (err) {
     setError(String(err.message || err));
+  }
+}
+
+// ── AI, logo colors, export / import ─────────────────────────────────────────
+
+async function generateAi() {
+  const description = el("sty-ai-desc").value.trim();
+  if (!description && !state.aiImage) return setError("descreva o estilo ou anexe uma imagem");
+  if (state.draft && !confirmDiscard()) return;
+  el("btn-sty-ai-go").disabled = true;
+  el("sty-ai-status").textContent = "gerando… (até 2 min)";
+  setError("");
+  try {
+    const draft = await api.generateStyle(description, state.aiImage);
+    state.draft = draft.tokens;
+    state.fresh = true;
+    el("sty-save-name").value = draft.name;
+    el("sty-ai").hidden = true;
+    renderDetail();
+    refreshPreviews();
+    el("sty-editor").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    setError(String(err.message || err));
+  } finally {
+    el("btn-sty-ai-go").disabled = false;
+    el("sty-ai-status").textContent = "";
+  }
+}
+
+async function useLogoColors() {
+  try {
+    const { suggested } = await api.stylePalette();
+    if (!suggested) return setError("sem cor marcante no logo");
+    Object.assign(state.draft.colors, suggested);
+    renderEditor();
+    changed();
+  } catch (err) {
+    setError(String(err.message || err));
+  }
+}
+
+async function exportSelected() {
+  try {
+    const { path } = await api.exportStyle(state.selected);
+    el("sty-detail-desc").textContent = `exportado: ${path}`;
+  } catch (err) {
+    setError(String(err.message || err));
+  }
+}
+
+async function importFile(file) {
+  if (!file) return;
+  try {
+    const saved = await api.importStyle(JSON.parse(await file.text()));
+    await reload(false);
+    select(saved.id);
+    loadGalleryThumbs();
+  } catch (err) {
+    setError(err instanceof SyntaxError ? "arquivo não é um estilo do Auto-Edit" : String(err.message || err));
   }
 }
 
@@ -289,6 +359,7 @@ function wire() {
   if (wired) return;
   wired = true;
   el("sty-gallery").addEventListener("click", (e) => {
+    if (e.target.closest("[data-ai]")) { el("sty-ai").hidden = false; el("sty-ai-desc").focus(); return; }
     const card = e.target.closest("[data-style]");
     if (card) select(card.dataset.style);
   });
@@ -318,9 +389,25 @@ function wire() {
     try { await api.setActiveStyle(state.selected); await reload(false); renderDetail(); } catch (err) { setError(String(err.message || err)); }
   });
   el("btn-sty-edit").addEventListener("click", startEditing);
+  el("btn-sty-ai-go").addEventListener("click", generateAi);
+  el("btn-sty-ai-close").addEventListener("click", () => (el("sty-ai").hidden = true));
+  el("sty-ai-pick").addEventListener("click", (e) => { e.preventDefault(); el("sty-ai-file").click(); });
+  el("sty-ai-file").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) return setError("imagem grande demais (máx. 5 MB)");
+    state.aiImage = await readDataUrl(f);
+    el("sty-ai-img").textContent = f.name;
+  });
+  el("sty-logo-colors").addEventListener("click", (e) => { e.preventDefault(); useLogoColors(); });
+  el("btn-sty-export").addEventListener("click", exportSelected);
+  el("sty-import").addEventListener("click", (e) => { e.preventDefault(); el("sty-import-file").click(); });
+  el("sty-import-file").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; importFile(f); });
   el("btn-sty-cancel").addEventListener("click", () => {
     if (!confirmDiscard()) return;
     state.draft = null;
+    state.fresh = false;
     renderDetail();
     refreshPreviews();
   });
