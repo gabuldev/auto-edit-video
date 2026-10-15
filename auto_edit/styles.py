@@ -393,9 +393,9 @@ def generate(description: str, image: bytes | None = None, *, complete=None) -> 
     except agents.AgentError as exc:
         raise StyleError(f"a IA falhou: {exc}") from exc
     data = _first_json(answer)
-    if data is None:
+    tokens = None if data is None else data.get("tokens") if isinstance(data.get("tokens"), dict) else data
+    if not tokens or not set(tokens) & set(DEFAULT_TOKENS):
         raise StyleError("a IA não devolveu um estilo")
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else data
     name = data.get("name") if isinstance(data.get("name"), str) else ""
     desc = data.get("description") if isinstance(data.get("description"), str) else ""
     return {"name": name.strip()[:40] or "Estilo IA", "description": desc.strip()[:200], "tokens": validate(tokens)}

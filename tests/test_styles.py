@@ -382,3 +382,9 @@ class TestStyleCli:
         bad.write_text("{nope", encoding="utf-8")
         r = run("import", str(bad))
         assert r.exit_code == 1 and "não é um estilo" in r.output
+
+
+def test_generate_wrapper_json_without_style_keys_is_an_error(home):
+    """Any JSON is not a style: an agent's envelope must not turn into defaults."""
+    with pytest.raises(styles.StyleError, match="não devolveu um estilo"):
+        styles.generate("x", complete=lambda p: '{"type": "result", "result": "texto"}')

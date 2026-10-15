@@ -232,3 +232,25 @@ class TestComplete:
         monkeypatch.setattr(agents, "find_binary", lambda agent: None)
         with pytest.raises(agents.AgentError, match="Claude"):
             agents.complete("p")
+
+    def test_cursor_answer_is_unwrapped_with_timeout_and_env(self, env, monkeypatch):
+        env.update(AUTO_EDIT_LLM="cursor", AUTO_EDIT_CURSOR_MODEL="gpt-5")
+        calls = []
+        monkeypatch.setattr(agents, "find_binary", lambda agent: "/opt/bin/cursor-agent")
+
+        def fake_run(cmd, stdin, timeout, env=None, cwd=None):
+            calls.append((cmd, stdin, timeout, env))
+            return json.dumps({"type": "result", "result": '{"name": "X"}', "is_error": False})
+
+        monkeypatch.setattr(agents, "_run", fake_run)
+        assert agents.complete("p", timeout=33) == '{"name": "X"}'
+        cmd, stdin, timeout, e = calls[0]
+        assert cmd[0] == "/opt/bin/cursor-agent" and "--print" in cmd and cmd[cmd.index("--model") + 1] == "gpt-5"
+        assert stdin == "p" and timeout == 33 and e is env
+
+    def test_cursor_error_result_is_an_agent_error(self, env, monkeypatch):
+        env["AUTO_EDIT_LLM"] = "cursor"
+        monkeypatch.setattr(agents, "find_binary", lambda agent: "/opt/bin/agent")
+        monkeypatch.setattr(agents, "_run", lambda cmd, stdin, timeout, env=None, cwd=None: json.dumps({"type": "result", "result": "limit", "is_error": True}))
+        with pytest.raises(agents.AgentError, match="limit"):
+            agents.complete("p")

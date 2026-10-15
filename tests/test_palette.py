@@ -70,3 +70,21 @@ class TestSuggest:
         r, g, b = (int(s["panel"][i:i + 2], 16) for i in (1, 3, 5))
         assert max(r, g, b) <= 40 and b >= r  # dark, same blue-ish hue
         assert s["text"] == "#ffffff"
+
+
+class TestHugeImages:
+    """A small file can hide a huge image: refuse it before decoding."""
+
+    @staticmethod
+    def _blank(w, h) -> bytes:
+        buf = io.BytesIO()
+        Image.new("1", (w, h)).save(buf, "PNG")
+        return buf.getvalue()
+
+    def test_too_many_pixels_is_a_palette_error(self):
+        with pytest.raises(palette.PaletteError, match="grande"):
+            palette.extract(self._blank(9000, 9000))
+
+    def test_decompression_bomb_is_a_palette_error(self):
+        with pytest.raises(palette.PaletteError):
+            palette.extract(self._blank(14000, 14000))

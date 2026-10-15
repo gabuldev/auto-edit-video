@@ -13,6 +13,7 @@ const state = {
   draft: null, // tokens being edited (null: not editing)
   fresh: false, // the draft is a new style (from the AI): saving never overwrites
   aiImage: null, // data: URL of the AI's reference image
+  generating: false, // the AI is working: the gallery and the editor wait
   settings: null,
   thumbs: {}, // style id → blob URL of its gallery thumbnail
   seq: 0, // ignores previews that arrive after a newer request
@@ -180,6 +181,7 @@ async function refreshPreviews(force = false) {
 }
 
 function select(id) {
+  if (state.generating) return;
   if (state.draft && id !== state.selected && !confirmDiscard()) return;
   state.draft = null;
   state.fresh = false;
@@ -250,6 +252,7 @@ function changed() {
 }
 
 function startEditing() {
+  if (state.generating) return;
   state.draft = clone(styleOf(state.selected).tokens);
   el("sty-save-name").value = "";
   renderDetail();
@@ -277,8 +280,11 @@ async function saveDraft(asNew) {
 async function generateAi() {
   const description = el("sty-ai-desc").value.trim();
   if (!description && !state.aiImage) return setError("descreva o estilo ou anexe uma imagem");
-  if (state.draft && !confirmDiscard()) return;
-  el("btn-sty-ai-go").disabled = true;
+  if (state.draft && !confirmDiscard()) {
+    el("sty-ai-status").textContent = "você tem edições abertas: clique de novo pra descartar";
+    return;
+  }
+  setGenerating(true);
   el("sty-ai-status").textContent = "gerando… (até 2 min)";
   setError("");
   try {
@@ -287,15 +293,30 @@ async function generateAi() {
     state.fresh = true;
     el("sty-save-name").value = draft.name;
     el("sty-ai").hidden = true;
+    setAiImage(null);
     renderDetail();
     refreshPreviews();
     el("sty-editor").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (err) {
     setError(String(err.message || err));
   } finally {
-    el("btn-sty-ai-go").disabled = false;
+    setGenerating(false);
     el("sty-ai-status").textContent = "";
   }
+}
+
+// While the AI works, nothing else can start a draft that its answer would replace.
+function setGenerating(on) {
+  state.generating = on;
+  el("btn-sty-ai-go").disabled = on;
+  el("btn-sty-edit").disabled = on;
+  el("sty-gallery").classList.toggle("busy", on);
+}
+
+function setAiImage(dataUrl, name = "") {
+  state.aiImage = dataUrl;
+  el("sty-ai-img").textContent = name;
+  el("sty-ai-img-remove").hidden = !dataUrl;
 }
 
 async function useLogoColors() {
@@ -397,9 +418,9 @@ function wire() {
     e.target.value = "";
     if (!f) return;
     if (f.size > 5 * 1024 * 1024) return setError("imagem grande demais (máx. 5 MB)");
-    state.aiImage = await readDataUrl(f);
-    el("sty-ai-img").textContent = f.name;
+    setAiImage(await readDataUrl(f), f.name);
   });
+  el("sty-ai-img-remove").addEventListener("click", (e) => { e.preventDefault(); setAiImage(null); });
   el("sty-logo-colors").addEventListener("click", (e) => { e.preventDefault(); useLogoColors(); });
   el("btn-sty-export").addEventListener("click", exportSelected);
   el("sty-import").addEventListener("click", (e) => { e.preventDefault(); el("sty-import-file").click(); });

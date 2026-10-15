@@ -421,3 +421,4 @@ textarea.input { resize: vertical; }
 .sty-card-ai { border-style: dashed; }
 .sty-ai-art { display: grid; place-items: center; font-size: 34px; }
 #sty-logo-colors { display: inline-block; margin-top: 8px; }
+.sty-gallery.busy { opacity: .55; pointer-events: none; }

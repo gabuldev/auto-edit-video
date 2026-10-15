@@ -32,14 +32,23 @@ def _vivid(rgb) -> bool:
     return s >= 0.15 and v >= 0.12
 
 
+MAX_PIXELS = 40_000_000  # a logo/thumbnail never needs more; a small file can claim far more
+
+
 def _open(image: Path | str | bytes) -> Image.Image:
+    """The image shrunk to ≤128px, in RGBA. The size is checked before
+    decoding, so a tiny file that unpacks into a huge image is refused."""
     try:
         img = Image.open(io.BytesIO(image)) if isinstance(image, (bytes, bytearray)) else Image.open(image)
-        img = img.convert("RGBA")
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        if img.width * img.height > MAX_PIXELS:
+            raise PaletteError("imagem grande demais")
+        img.draft("RGB", (256, 256))  # JPEG: decode at a reduced scale
+        img.thumbnail((128, 128))
+        return img.convert("RGBA")
+    except PaletteError:
+        raise
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
         raise PaletteError("não consegui ler a imagem") from exc
-    img.thumbnail((128, 128))
-    return img
 
 
 def extract(image: Path | str | bytes, n: int = 5) -> list[str]:

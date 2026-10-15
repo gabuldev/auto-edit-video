@@ -373,16 +373,21 @@ def _complete_one(name: str, prompt: str, timeout: float, env: dict) -> str:
     if name == "claude":
         return _run([binary, *(["--model", model] if model else []), "-p"], prompt, timeout, env=env)
     if name == "cursor":
-        from auto_edit import runner
-
+        # Same flags as runner.invoke_cursor (read-only ask mode, JSON envelope),
+        # but with a timeout, the settings' env and the binary found above, in
+        # an empty scratch workspace.
         with tempfile.TemporaryDirectory(prefix="auto-edit-agent-") as td:
-            prompt_path, out_path = Path(td) / "prompt.txt", Path(td) / "out.txt"
-            prompt_path.write_text(prompt, encoding="utf-8")
-            rc = runner.invoke_cursor(prompt_path, out_path, Path(__file__).resolve().parent.parent)
-            text = out_path.read_text(encoding="utf-8") if out_path.is_file() else ""
-            if rc != 0:
-                raise AgentError(f"cursor saiu com {rc}: {text.strip()[-300:]}")
-            return text
+            out = _run([binary, "--output-format", "json", "--mode", "ask", "--trust", "--model", model or "auto",
+                        "--print", "--workspace", td], prompt, timeout, env=env, cwd=td)
+        try:
+            outer = json.loads(out.strip())
+        except ValueError:
+            return out
+        if isinstance(outer, dict) and outer.get("type") == "result" and isinstance(outer.get("result"), str):
+            if outer.get("is_error") is True:
+                raise AgentError(outer["result"].strip()[-300:] or "cursor falhou")
+            return outer["result"]
+        return out
     if name in AGENTIC:
         prompt = TEXT_ONLY + prompt
     return RUNNERS[name](prompt, model=model, timeout=timeout)
