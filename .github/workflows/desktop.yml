@@ -31,6 +31,7 @@ on:
       - "scripts/sync_desktop_version.py"
       - "scripts/stage_engine.py"
       - "scripts/smoke_engine.py"
+      - "renderer/**"
       - "scripts/sign_macos_engine.py"
       - "scripts/write_p8.py"
 
@@ -95,7 +96,12 @@ jobs:
         shell: bash
         run: python scripts/sync_desktop_version.py "${TAG:-}"
 
-      - name: Stage the embedded engine (portable Python + auto-edit + FFmpeg)
+      # Compiles renderer/ (React thumbnail) into the engine's bin/.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Stage the embedded engine (portable Python + auto-edit + FFmpeg + renderer)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

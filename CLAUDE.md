@@ -104,6 +104,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `agents/` | Prompts para stages LLM (planner, reviewer, evaluator, metadata) |
 | `ralph.sh` | Orquestrador bash que executa o pipeline stage-by-stage |
 | `assets/` | Fontes, overlays, sons para composição de vídeo |
+| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar). Dev: `cd renderer && bun install` |
 
 ## Convenções
 
@@ -128,6 +129,8 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
 | `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
+| `AUTO_EDIT_THUMB_RENDERER` | — | `pillow` desenha a thumbnail com o layout antigo (Pillow) em vez do React (`renderer/`) |
+| `AUTO_EDIT_RENDER_BIN` | — | Caminho do `auto-edit-render`. Sem ele: o do PATH (o app traz no `bin/` do motor) ou, num checkout, `bun run renderer/src/cli.tsx` |
 | `AUTO_EDIT_ASSETS_OVERLAYS` | — | Pasta com os MP4s de overlay (`ctas.mp4`, `lowerthid_gabul.mp4`). Tem prioridade sobre `assets/overlays/`. Também via `--overlays-dir` no `long`/`apply-overlays` |
 | `AUTO_EDIT_OVERLAYS_STRICT` | — | `1` faz o stage `overlay` falhar quando um overlay planejado não é encontrado. Por padrão ele só avisa e renderiza sem — os MP4s são de cada pessoa e ficam fora do repo |
 | `AUTO_EDIT_SEGMENT_THRESHOLD` | `12` | Acima de N segmentos, o `execute` corta um-a-um + concat (evita OOM do FFmpeg em vídeo longo/4K) |

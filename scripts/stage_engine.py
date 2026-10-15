@@ -12,7 +12,8 @@ Layout of --out:
 
     python/          portable CPython 3.12 with auto-edit[api] + Whisper + torch (CPU)
     repo/            ralph.sh, agents/, tools/, assets/, auto_edit/ (AUTO_EDIT_REPO_ROOT)
-    bin/             ffmpeg, ffprobe (with libass: captions need the subtitles filter)
+    bin/             ffmpeg, ffprobe (with libass: captions need the subtitles filter),
+                     auto-edit-render (renderer/ compiled by bun: the React thumbnail)
     git/             Windows only: PortableGit — bash and coreutils for ralph.sh
 
 Not included: the agent CLI (claude, agy, …) — the app's first run installs
@@ -160,6 +161,38 @@ def stage_ffmpeg(out: Path, target: str) -> None:
 GIT_API = "https://api.github.com/repos/git-for-windows/git/releases/latest"
 
 
+# renderer/ compiled into one executable per platform. x64 uses the baseline
+# build: the default one needs AVX2 and crashes on older CPUs.
+BUN_TARGET = {
+    "aarch64-apple-darwin": "bun-darwin-arm64",
+    "x86_64-apple-darwin": "bun-darwin-x64-baseline",
+    "x86_64-pc-windows-msvc": "bun-windows-x64-baseline",
+    "x86_64-unknown-linux-gnu": "bun-linux-x64-baseline",
+}
+
+
+def stage_renderer(out: Path, target: str) -> None:
+    bun = shutil.which("bun")
+    if not bun:
+        raise SystemExit("bun not found — it compiles renderer/ (https://bun.sh)")
+    src = ROOT / "renderer"
+    exe = out / "bin" / ("auto-edit-render.exe" if "windows" in target else "auto-edit-render")
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([bun, "install", "--frozen-lockfile"], cwd=src, check=True)
+    build = [bun, "build", "src/cli.tsx", "--compile", "--outfile", str(exe)]
+    # The baseline runtime is a separate download that sometimes fails to
+    # extract (seen on Windows runners): retry, then build for the runner's own
+    # CPU — the same OS and arch, just without the no-AVX2 fallback.
+    for attempt in range(2):
+        if subprocess.run([*build, f"--target={BUN_TARGET[target]}"], cwd=src).returncode == 0:
+            break
+        log(f"renderer: {BUN_TARGET[target]} build failed (attempt {attempt + 1})")
+    else:
+        log("renderer: building for the runner's CPU instead")
+        subprocess.run(build, cwd=src, check=True)
+    log(f"renderer -> {exe} ({exe.stat().st_size / 1e6:.0f} MB)")
+
+
 def stage_bash(out: Path) -> None:
     """Windows has no bash, and ralph.sh is bash. PortableGit (the official
     Git for Windows, no installer) brings bash plus the coreutils ralph.sh
@@ -182,6 +215,7 @@ def verify(out: Path, py: Path, target: str) -> None:
         ([str(py), "-c", "import auto_edit, whisper, torch, flask, numpy; print('imports ok', torch.__version__)"], "python imports"),
         ([str(py), "-m", "auto_edit.cli", "--version"], "auto-edit CLI"),
         ([str(ffmpeg), "-hide_banner", "-filters"], "ffmpeg"),
+        ([str(out / "bin" / f"auto-edit-render{exe}"), "--version"], "renderer"),
     ]
     for cmd, label in checks:
         if target == "x86_64-apple-darwin" and _arm_host():
@@ -228,6 +262,7 @@ def main() -> None:
     stage_packages(py, args.target)
     stage_repo(out)
     stage_ffmpeg(out, args.target)
+    stage_renderer(out, args.target)
     if "windows" in args.target:
         stage_bash(out)
     verify(out, py, args.target)

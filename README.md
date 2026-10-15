@@ -75,7 +75,7 @@ Whisper   agente  agente   agente     FFmpeg    FFmpeg    FFmpeg    agente     P
 | **overlay** | Overlays gráficos com chroma key (só long) |
 | **caption** | Legendas estilo CapCut (só short) |
 | **metadata** | Título, descrição, tags, capítulos e comentário pra fixar |
-| **thumbnail** | Escolhe o frame e monta a thumbnail |
+| **thumbnail** | Escolhe o frame (do corte limpo, sem legenda) e monta a thumbnail num layout em React (`renderer/`, sem navegador) |
 
 ## Usar pelo terminal (CLI)
 
@@ -428,6 +428,12 @@ upload/video.mp4
 ```bash
 pip install -e ".[test]"
 python -m pytest tests/ -v
+```
+
+A thumbnail é um componente React em `renderer/` (Satori + resvg, sem navegador). Pra usar o layout novo rodando do código, instale o [bun](https://bun.sh) e as dependências uma vez — sem isso a thumbnail sai no layout antigo (Pillow):
+
+```bash
+cd renderer && bun install
 ```
 
 ## Licença
