@@ -18,7 +18,7 @@ from fractions import Fraction
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import overlay_assets, probe, render  # noqa: E402  -- needs repo root on sys.path
+from auto_edit import overlay_assets, probe, render, styles  # noqa: E402  -- needs repo root on sys.path
 
 
 def _overlay_search_dirs() -> list[Path]:
@@ -250,11 +250,18 @@ def _render_react(kind: str, video: Path, out_dir: Path) -> dict | None:
     if kind == "lower_third" and not brand["name"]:
         print("[overlayer] lower_third: no name to show — set it in Settings (Marca) or connect YouTube")
         return None
+    style = styles.active()
+    try:
+        fonts = styles.overlay_fonts(style["tokens"])
+    except styles.StyleError as exc:
+        print(f"[overlayer] {kind}: {exc}")
+        return None
     vw, vh = _video_size(video)
     spec = {
-        "kind": kind, "video_width": vw, "video_height": vh,
-        "fps": _fps_number(_video_fps(video)), "fonts_dir": str(render.fonts_dir()), **brand,
+        "kind": kind, "video_width": vw, "video_height": vh, "fps": _fps_number(_video_fps(video)),
+        "style": style["tokens"], "brand": brand, "fonts": fonts,
     }
+    print(f"[overlayer] {kind}: style '{style['name']}'")
     out_dir.mkdir(parents=True, exist_ok=True)
     spec_file = out_dir / "spec.json"
     spec_file.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")

@@ -133,3 +133,21 @@ export const downloadWhisper = (model) =>
 
 export const videoEvents = (id) =>
   new EventSource(`${API}/api/videos/${encodeURIComponent(id)}/events`);
+
+// ── Estilos ─────────────────────────────────────────────────────────────────
+const sendJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+export const styles = () => json("/api/styles");
+export const setActiveStyle = (id) => json("/api/styles/active", sendJson("PUT", { id }));
+export const saveStyle = (style) => json("/api/styles", sendJson("POST", style));
+export const deleteStyle = (id) => json(`/api/styles/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const uploadLogo = (data) => json("/api/brand/logo", sendJson("PUT", { data }));
+export const deleteLogo = () => json("/api/brand/logo", { method: "DELETE" });
+export const logoUrl = () => `${API}/api/brand/logo?t=${Date.now()}`;
+
+/** A blob: URL with the PNG of one part of a style. */
+export async function stylePreview(tokens, kind) {
+  const r = await fetch(`${API}/api/styles/preview/${kind}`, { ...sendJson("POST", { tokens }), cache: "no-store" });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `prévia → ${r.status}`);
+  return URL.createObjectURL(await r.blob());
+}

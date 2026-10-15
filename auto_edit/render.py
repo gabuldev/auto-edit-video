@@ -1,7 +1,7 @@
 """The React renderer (`renderer/`, compiled into `auto-edit-render`).
 
 Shared by the thumbnail and the overlay stages: where the executable is, and
-the brand (name, handle, accent) the overlays draw.
+the brand (name, handle, logo) the overlays draw.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from pathlib import Path
 from auto_edit import overlay_assets
 
 TIMEOUT = 300
-DEFAULT_ACCENT = (0, 214, 255)
 
 
 def command() -> list[str] | None:
@@ -31,30 +30,10 @@ def command() -> list[str] | None:
     return None
 
 
-def fonts_dir() -> Path:
-    return overlay_assets.default_repo_root() / "assets" / "fonts"
-
-
-def _accent(value) -> tuple[int, int, int]:
-    if isinstance(value, str):
-        h = value.strip().lstrip("#")
-        if len(h) == 6:
-            try:
-                return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
-            except ValueError:
-                pass
-    elif isinstance(value, (list, tuple)) and len(value) == 3:
-        try:
-            return tuple(max(0, min(255, int(c))) for c in value)  # type: ignore[return-value]
-        except (TypeError, ValueError):
-            pass
-    return DEFAULT_ACCENT
-
-
 def brand() -> dict:
-    """Name, handle and accent for the overlays: settings ("brand"), then the
+    """Name, handle and logo for the overlays: settings ("brand"), then the
     connected YouTube channel's name. Name may be None — then there is no
-    lower third to draw."""
+    lower third to draw. Colors live in the style (auto_edit.styles)."""
     from auto_edit import settings
 
     saved = settings.load().get("brand") or {}
@@ -68,4 +47,38 @@ def brand() -> dict:
     handle = (saved.get("handle") or "").strip() or None
     if handle and not handle.startswith("@"):
         handle = f"@{handle}"
-    return {"name": name, "handle": handle, "accent": list(_accent(saved.get("accent")))}
+    logo = saved.get("logo")
+    logo = logo if logo and Path(logo).is_file() else None
+    return {"name": name, "handle": handle, "logo": logo, "logo_bg": saved.get("logo_bg") or None}
+
+
+LOGO_MAX_BYTES = 5 * 1024 * 1024
+_LOGO_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+
+
+def save_logo(data_url: str | None) -> str | None:
+    """Store the brand's logo (a data: URL from the app) under the home and
+    point settings at it; None removes it. Returns the saved path."""
+    import base64
+    import re
+
+    from auto_edit import config as cfg
+    from auto_edit import settings
+
+    folder = cfg.home_dir() / "brand"
+    for old in folder.glob("logo.*") if folder.is_dir() else []:
+        old.unlink()
+    if not data_url:
+        settings.save({"brand": {"logo": None}})
+        return None
+    m = re.fullmatch(r"data:(image/[a-z]+);base64,([A-Za-z0-9+/=\s]+)", data_url.strip())
+    if not m or m.group(1) not in _LOGO_TYPES:
+        raise ValueError("envie uma imagem PNG, JPG ou WebP")
+    data = base64.b64decode(m.group(2))
+    if len(data) > LOGO_MAX_BYTES:
+        raise ValueError("imagem grande demais (máx. 5 MB)")
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"logo{_LOGO_TYPES[m.group(1)]}"
+    path.write_bytes(data)
+    settings.save({"brand": {"logo": str(path)}})
+    return str(path)

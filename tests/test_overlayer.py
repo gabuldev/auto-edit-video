@@ -233,17 +233,20 @@ class TestRenderReact:
     @pytest.mark.skipif(sys.platform == "win32", reason="shell script renderer")
     def test_renders_with_the_brand_and_the_video_size(self, fake_bin, tmp_path, monkeypatch):
         import json
-        monkeypatch.setattr(overlayer.render, "brand", lambda: {"name": "Gabul", "handle": "@gabul.dev", "accent": [1, 2, 3]})
+        monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path / "home"))
+        monkeypatch.setattr(overlayer.render, "brand", lambda: {"name": "Gabul", "handle": "@gabul.dev", "logo": None})
         r = overlayer._render_react("lower_third", Path("v.mp4"), tmp_path / "lt")
         assert r["x"] == 10 and r["duration"] == 6
         assert r["frames_file"] == tmp_path / "lt" / "frames.txt"
         spec = json.loads((tmp_path / "lt" / "spec_copy.json").read_text())
-        assert spec["kind"] == "lower_third" and spec["name"] == "Gabul"
+        assert spec["kind"] == "lower_third" and spec["brand"]["name"] == "Gabul"
+        assert spec["style"]["colors"]["accent"] == "#00d6ff"  # the default style
+        assert set(spec["fonts"]) == {"Bold", "Regular"}
         assert (spec["video_width"], spec["video_height"]) == (1920, 1080)
         assert spec["fps"] == pytest.approx(29.97, abs=0.01)
 
     def test_lower_third_without_a_name_is_skipped(self, fake_bin, tmp_path, monkeypatch, capsys):
-        monkeypatch.setattr(overlayer.render, "brand", lambda: {"name": None, "handle": None, "accent": [1, 2, 3]})
+        monkeypatch.setattr(overlayer.render, "brand", lambda: {"name": None, "handle": None, "logo": None})
         assert overlayer._render_react("lower_third", Path("v.mp4"), tmp_path / "lt") is None
         assert "no name" in capsys.readouterr().out
 

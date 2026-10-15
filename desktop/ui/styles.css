@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
+  color-scheme: dark; /* dark scrollbars and native controls */
   --bg: #0d1015; --panel: #151a22; --panel-2: #12161e; --border: #232c38;
   --border-soft: #1e242e; --text: #e7ebf2; --dim: #9aa4b2; --faint: #6b7484;
   --accent: #2ee6c6;
@@ -348,3 +349,67 @@ textarea.input { resize: vertical; }
 .wother summary { cursor: pointer; font-size: 13px; color: var(--dim); }
 .welcome-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .cfg-row .grow { flex: 1; }
+
+/* ── Estilos ─────────────────────────────────────────────────────────────── */
+.content.sty { max-width: 1180px; }
+.sty-brand { display: flex; gap: 22px; align-items: flex-start; }
+.sty-logo { flex: none; position: relative; width: 92px; height: 92px; border-radius: 50%; border: 2px dashed var(--border); background: var(--panel-2); color: var(--dim); font-size: 34px; font-weight: 700; cursor: pointer; overflow: hidden; display: grid; place-items: center; padding: 0; }
+.sty-logo:hover { border-color: var(--accent); }
+.sty-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sty-brand-fields { flex: 1; min-width: 0; }
+.sty-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.sty-logo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: 12.5px; }
+.sty-logo-bg { display: inline-flex; align-items: center; gap: 10px; color: var(--dim); }
+.sty-logo-bg .check { margin: 0; }
+.sty-logo-bg input[type=color] { width: 40px; height: 26px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: transparent; cursor: pointer; }
+.sty-logo-bg input[type=color]:disabled { opacity: .35; }
+.sty-h { font-size: 13px; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); margin: 26px 0 12px; }
+.sty-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.sty-card { text-align: left; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; overflow: hidden; transition: border-color .15s, transform .15s; }
+.sty-card:hover { border-color: #3a4757; transform: translateY(-1px); }
+.sty-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.sty-card-img { position: relative; aspect-ratio: 16 / 9; background: var(--panel-2); }
+.sty-card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sty-card-meta { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 13px; }
+.sty-card-meta .badge { margin-left: auto; }
+.sty-active { background: rgba(55, 224, 160, .14); color: var(--accent); }
+.sty-swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); flex: none; }
+.sty-detail { margin-top: 18px; }
+.sty-detail-head { display: flex; align-items: flex-start; gap: 10px; }
+.sty-detail-head h2 { font-size: 16px; margin: 0 0 3px; }
+.sty-detail-head p { margin: 0; }
+.sty-detail-head .grow { flex: 1; }
+.sty-previews { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+.sty-previews figure { margin: 0; }
+.sty-previews figcaption { font-size: 11.5px; color: var(--faint); margin-top: 6px; }
+.sty-shot { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--border-soft); }
+.sty-shot img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .2s; }
+.sty-shot img:not([src]) { visibility: hidden; }
+.sty-shot.loading img { opacity: .55; }
+.sty-spin { display: none; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); border-top-color: var(--accent); animation: sty-spin .8s linear infinite; }
+.sty-shot.loading .sty-spin, .sty-card-img .sty-spin { display: block; }
+@keyframes sty-spin { to { transform: rotate(360deg); } }
+.sty-shot { cursor: zoom-in; }
+.sty-zoom { position: fixed; inset: 0; z-index: 50; background: rgba(5, 7, 10, .88); display: grid; place-items: center; cursor: zoom-out; padding: 32px; }
+.sty-zoom img { max-width: 100%; max-height: 100%; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.sty-editor { margin-top: 18px; border-top: 1px solid var(--border-soft); padding-top: 6px; }
+.sty-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 28px; }
+.sty-editor fieldset { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+.sty-editor legend { font-size: 13px; font-weight: 700; padding: 0; }
+.sty-editor .field > span b { color: var(--text); font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.sty-editor input[type=range] { accent-color: var(--accent); width: 100%; }
+.sty-colors { display: flex; gap: 16px; margin-top: 12px; }
+.sty-colors label { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11.5px; color: var(--dim); cursor: pointer; }
+.sty-editor input[type=color] { width: 54px; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: transparent; cursor: pointer; }
+.sty-editor input[type=color]:disabled { opacity: .35; cursor: default; }
+.sty-step { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 8px; align-items: center; margin-top: 10px; }
+.sty-step .input { height: 36px; }
+.sty-step-color { display: flex; align-items: center; gap: 6px; }
+.sty-step-color input[type=color] { width: 40px; }
+#sty-step-add { display: inline-block; margin-top: 10px; font-size: 12.5px; }
+.sty-save { display: flex; align-items: center; gap: 10px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+.sty-save .input { max-width: 280px; height: 36px; }
+.sty-save .grow { flex: 1; }
+@media (max-width: 900px) {
+  .sty-previews, .sty-cols, .sty-row { grid-template-columns: 1fr; }
+}

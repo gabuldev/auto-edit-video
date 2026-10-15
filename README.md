@@ -47,6 +47,7 @@ Quem planeja, revisa e avalia os cortes é um agente de linha de comando que voc
 - **Avalia antes de renderizar**: um agente revisa o corte planejado e devolve pro plano se a abertura enrola ou uma frase fica cortada — o FFmpeg só corta depois de aprovado.
 - **Legendas** estilo CapCut nos shorts e `.srt` nos longs.
 - **Título, descrição, tags, capítulos, comentário pra fixar e thumbnail**.
+- **Estilos**: escolha como ficam a thumbnail, o nome na tela (lower third) e a chamada pra se inscrever — presets prontos (Padrão, Minimal, Neon, Impacto) ou o seu, com cores, fontes, cantos, posição e velocidade. A prévia é real, num frame do seu último vídeo. Sua marca (nome, @, logo e cor de fundo da logo) entra em todos.
 - **Shorts a partir de um long**: o agente sugere trechos que se sustentam sozinhos; você assiste cada um e corta os que quiser.
 - **Publica no YouTube** (com legenda e agendamento) e mostra **onde o público saiu** na curva de retenção, com o que você estava falando naquele momento — e o planner aprende com isso nos próximos vídeos.
 
@@ -55,6 +56,8 @@ Quem planeja, revisa e avalia os cortes é um agente de linha de comando que voc
 | Revisar cortes | Shorts de um long |
 |---|---|
 | ![Revisar cortes](docs/screenshots/revisar-cortes.jpg) | ![Shorts](docs/screenshots/shorts.jpg) |
+
+![Estilos: marca, presets e prévia da thumbnail e dos overlays](docs/screenshots/estilos.jpg)
 
 ## Como funciona
 
@@ -72,7 +75,7 @@ Whisper   agente  agente   agente     FFmpeg    FFmpeg    FFmpeg    agente     P
 | **review** | Revisa o plano (cortes faltando, frases quebradas) |
 | **evaluate** | Cold open/reordenação, e julga o **corte planejado** antes de renderizar — rejeita e volta pro plan (até 3x) |
 | **execute** | Corta o vídeo via FFmpeg, com normalização de áudio |
-| **overlay** | Nome na tela (lower third) e chamada pra se inscrever, animados em React — ou os seus MP4 com fundo verde, se tiver (só long) |
+| **overlay** | Nome na tela (lower third) e chamada pra se inscrever, animados em React no estilo que você escolhe na aba **Estilos** — ou os seus MP4 com fundo verde, se tiver (só long) |
 | **caption** | Legendas estilo CapCut (só short) |
 | **metadata** | Título, descrição, tags, capítulos e comentário pra fixar |
 | **thumbnail** | Escolhe o frame (do corte limpo, sem legenda) e monta a thumbnail num layout em React (`renderer/`, sem navegador) |
@@ -430,7 +433,7 @@ pip install -e ".[test]"
 python -m pytest tests/ -v
 ```
 
-A thumbnail é um componente React em `renderer/` (Satori + resvg, sem navegador). Pra usar o layout novo rodando do código, instale o [bun](https://bun.sh) e as dependências uma vez — sem isso a thumbnail sai no layout antigo (Pillow):
+A thumbnail e os overlays são componentes React em `renderer/` (Satori + resvg, sem navegador); os layouts ficam em `renderer/src/layouts/<nome>/` e recebem os tokens do estilo ativo (`auto_edit/styles.py`). Pra rodar do código, instale o [bun](https://bun.sh) e as dependências uma vez — sem isso a thumbnail sai no layout antigo (Pillow) e os overlays só saem com os seus MP4:
 
 ```bash
 cd renderer && bun install
