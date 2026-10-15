@@ -72,7 +72,7 @@ Whisper   agente  agente   agente     FFmpeg    FFmpeg    FFmpeg    agente     P
 | **review** | Revisa o plano (cortes faltando, frases quebradas) |
 | **evaluate** | Cold open/reordenação, e julga o **corte planejado** antes de renderizar — rejeita e volta pro plan (até 3x) |
 | **execute** | Corta o vídeo via FFmpeg, com normalização de áudio |
-| **overlay** | Nome na tela (lower third) e chamada pra se inscrever, animados em React — ou os seus MP4 com fundo verde, se tiver (só long) |
+| **overlay** | Nome na tela (lower third) e chamada pra se inscrever, animados em React no estilo que você escolhe na aba **Estilos** — ou os seus MP4 com fundo verde, se tiver (só long) |
 | **caption** | Legendas estilo CapCut (só short) |
 | **metadata** | Título, descrição, tags, capítulos e comentário pra fixar |
 | **thumbnail** | Escolhe o frame (do corte limpo, sem legenda) e monta a thumbnail num layout em React (`renderer/`, sem navegador) |

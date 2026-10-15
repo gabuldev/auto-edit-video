@@ -104,7 +104,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `agents/` | Prompts para stages LLM (planner, reviewer, evaluator, metadata) |
 | `ralph.sh` | Orquestrador bash que executa o pipeline stage-by-stage |
 | `assets/` | Fontes, overlays, sons para composição de vídeo |
-| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar) e os overlays animados do long (lower third + CTA, `tools/overlayer.py`). Organizado por **estilo** (`renderer/src/styles/<nome>/`, registrado em `styles/index.ts`): estilo novo = pasta nova com os mesmos componentes. Dev: `cd renderer && bun install` |
+| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar) e os overlays animados do long (lower third + CTA, `tools/overlayer.py`). **Estilo = dados** (tokens: cores, fontes, cantos, posições, textos do CTA, velocidade), validados em `auto_edit/styles.py` (presets Padrão/Minimal/Neon/Impacto + os da pessoa em `~/.auto-edit/styles/`, ativo em `settings.style`); o layout React que aplica os tokens fica em `renderer/src/layouts/<nome>/`. Tela **Estilos** do app: marca (nome, @, logo), galeria com prévia real num frame do vídeo mais recente (`auto-edit-render preview`) e editor. Dev: `cd renderer && bun install` |
 
 ## Convenções
 
@@ -132,7 +132,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_THUMB_RENDERER` | — | `pillow` desenha a thumbnail com o layout antigo (Pillow) em vez do React (`renderer/`) |
 | `AUTO_EDIT_RENDER_BIN` | — | Caminho do `auto-edit-render`. Sem ele: o do PATH (o app traz no `bin/` do motor) ou, num checkout, `bun run renderer/src/cli.tsx` |
 | `AUTO_EDIT_ASSETS_OVERLAYS` | — | Pasta com os MP4s de overlay próprios, com fundo verde (`ctas.mp4`, `lowerthid_gabul.mp4`). Opcionais: sem eles o React desenha. Tem prioridade sobre `assets/overlays/`. Também via `--overlays-dir` no `long`/`apply-overlays` |
-| `AUTO_EDIT_OVERLAY_SOURCE` | `auto` | `auto`: MP4 próprio se existir, senão React. `react`: sempre React. `mp4`: só MP4 (comportamento antigo). Nome/@/cor do lower third vêm de `brand` no settings (app → Configurações → Marca); sem nome, usa o do canal do YouTube conectado |
+| `AUTO_EDIT_OVERLAY_SOURCE` | `auto` | `auto`: MP4 próprio se existir, senão React. `react`: sempre React. `mp4`: só MP4 (comportamento antigo). Nome/@/logo do lower third vêm de `brand` no settings (app → Estilos); sem nome, usa o do canal do YouTube conectado. Cores/fontes/posições vêm do estilo ativo |
 | `AUTO_EDIT_OVERLAYS_STRICT` | — | `1` faz o stage `overlay` falhar quando um overlay planejado não sai (sem MP4 e sem React). Por padrão ele só avisa e renderiza sem |
 | `AUTO_EDIT_SEGMENT_THRESHOLD` | `12` | Acima de N segmentos, o `execute` corta um-a-um + concat (evita OOM do FFmpeg em vídeo longo/4K) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
@@ -193,6 +193,12 @@ GET  /api/videos/<id>/publish     # defaults do metadata + histórico (publish.j
 POST /api/videos/<id>/publish/youtube  # {title, description, tags, privacy, publish_at, force}
 POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder
 GET  /api/videos/<id>/retention   # análise salva (POST busca a curva no YouTube)
+GET  /api/styles                  # estilos (presets + seus), o ativo, fontes, marca
+PUT  /api/styles/active           # {id}
+POST /api/styles                  # {name, tokens, id?, activate?} salva um estilo seu
+DELETE /api/styles/<id>
+POST /api/styles/preview/<kind>   # {tokens} → PNG (thumbnail | lower_third | cta)
+PUT|DELETE|GET /api/brand/logo    # {data: "data:image/png;base64,…"}
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/progress/done/error)
 GET  /api/videos/<id>/events      # SSE do job atual daquele vídeo
 ```

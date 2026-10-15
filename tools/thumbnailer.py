@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, render  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, render, styles  # noqa: E402  -- needs the repo root on sys.path
 
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
@@ -249,6 +249,12 @@ def _render_react(spec: dict, output: Path) -> bool:
     can't — the caller then draws it with Pillow."""
     cmd = _renderer_cmd()
     font = _render_font()
+    try:  # the active style: its title font, and its color unless it follows the topic
+        tokens = styles.active()["tokens"]
+        spec = {**spec, "accent": styles.thumbnail_accent(tokens, spec.get("accent"))}
+        font = styles.title_font(tokens) or font
+    except Exception as exc:  # a broken style never costs the thumbnail
+        print(f"[thumbnailer] style ignored ({exc})")
     if cmd is None or font is None:
         why = "no renderer (auto-edit-render)" if cmd is None else f"no static font ({', '.join(RENDER_FONTS)})"
         print(f"[thumbnailer] React layout unavailable: {why} — using Pillow")

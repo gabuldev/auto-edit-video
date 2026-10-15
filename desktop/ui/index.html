@@ -20,6 +20,7 @@
       <nav class="nav">
         <a class="nav-item" href="#/" data-route="/"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Biblioteca</a>
         <a class="nav-item" href="#/novo" data-route="/novo"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo edit</a>
+        <a class="nav-item" href="#/estilos" data-route="/estilos"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.5-1.1-.3-.3-.5-.7-.5-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.5 17 3 12 3z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg>Estilos</a>
         <a class="nav-item" href="#/config" data-route="/config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Configurações</a>
       </nav>
       <div class="sidebar-foot">
@@ -484,6 +485,109 @@
     </main>
 
     <!-- Configurações -->
+    <!-- Estilos: a marca, a galeria de estilos com prévia e o editor -->
+    <main class="main" data-screen="styles" hidden>
+      <header class="topbar">
+        <div class="titles">
+          <div class="page-title">Estilos</div>
+          <div class="page-sub">como ficam a thumbnail e os overlays dos seus vídeos</div>
+        </div>
+      </header>
+      <div class="content sty">
+        <div id="sty-error" class="banner err" hidden></div>
+
+        <section class="card sty-brand">
+          <button class="sty-logo" id="sty-logo" title="Trocar a logo"><span id="sty-logo-initial">?</span><img id="sty-logo-img" alt="" hidden /></button>
+          <input type="file" id="sty-logo-file" accept="image/png,image/jpeg,image/webp" hidden />
+          <div class="sty-brand-fields">
+            <div class="card-head"><div><h2>Sua marca</h2><p>aparece no nome na tela (lower third). A logo substitui a inicial no círculo.</p></div></div>
+            <div class="sty-row">
+              <label class="field"><span>Nome</span><input class="input" id="sty-name" maxlength="40" placeholder="padrão: o nome do canal no YouTube" /></label>
+              <label class="field"><span>@ do canal</span><input class="input mono" id="sty-handle" maxlength="40" placeholder="@seucanal" /></label>
+            </div>
+            <div class="sty-logo-actions">
+              <a href="#" id="sty-logo-pick">enviar logo</a><a href="#" id="sty-logo-remove" hidden>remover logo</a>
+              <span class="sty-logo-bg" id="sty-logo-bg-wrap" hidden>
+                <span>fundo da logo</span>
+                <label class="check"><input type="checkbox" id="sty-logo-bg-own" /><span>cor própria</span></label>
+                <input type="color" id="sty-logo-bg" value="#ffffff" disabled />
+              </span>
+              <span class="dim" id="sty-brand-saved"></span>
+            </div>
+          </div>
+        </section>
+
+        <h3 class="sty-h">Escolha um estilo</h3>
+        <div class="sty-gallery" id="sty-gallery"></div>
+
+        <section class="card sty-detail">
+          <div class="sty-detail-head">
+            <div>
+              <h2 id="sty-detail-name">—</h2>
+              <p class="dim" id="sty-detail-desc"></p>
+            </div>
+            <span class="grow"></span>
+            <button class="btn btn-sm" id="btn-sty-delete" hidden>Excluir</button>
+            <button class="btn btn-sm" id="btn-sty-edit">Personalizar</button>
+            <button class="btn btn-primary btn-sm" id="btn-sty-use">Usar este estilo</button>
+          </div>
+          <div class="sty-previews">
+            <figure><div class="sty-shot" data-kind="thumbnail"><img alt="" /><div class="sty-spin"></div></div><figcaption>Thumbnail</figcaption></figure>
+            <figure><div class="sty-shot" data-kind="lower_third"><img alt="" /><div class="sty-spin"></div></div><figcaption>Nome na tela</figcaption></figure>
+            <figure><div class="sty-shot" data-kind="cta"><img alt="" /><div class="sty-spin"></div></div><figcaption>Chamada pra se inscrever</figcaption></figure>
+          </div>
+
+          <div class="sty-editor" id="sty-editor" hidden>
+            <div class="sty-cols">
+              <fieldset>
+                <legend>Cores</legend>
+                <div class="sty-colors">
+                  <label><input type="color" data-tok="colors.accent" /><span>Destaque</span></label>
+                  <label><input type="color" data-tok="colors.panel" /><span>Painel</span></label>
+                  <label><input type="color" data-tok="colors.text" /><span>Texto</span></label>
+                </div>
+                <label class="field"><span>Opacidade do painel <b data-out="panel_opacity"></b></span><input type="range" min="0.3" max="1" step="0.05" data-tok="panel_opacity" data-num /></label>
+                <label class="field"><span>Cor da thumbnail</span>
+                  <select class="input" data-tok="thumbnail.accent_from"><option value="topic">muda conforme o assunto do vídeo</option><option value="style">sempre a cor de destaque</option></select></label>
+              </fieldset>
+              <fieldset>
+                <legend>Forma</legend>
+                <label class="field"><span>Fonte do título (thumbnail)</span><select class="input" data-tok="fonts.title" data-fonts></select></label>
+                <label class="field"><span>Fonte dos overlays</span><select class="input" data-tok="fonts.text" data-fonts></select></label>
+                <label class="field"><span>Cantos <b data-out="radius"></b></span><input type="range" min="0" max="60" step="1" data-tok="radius" data-num /></label>
+                <label class="field"><span>Velocidade da animação <b data-out="speed"></b></span><input type="range" min="0.5" max="2" step="0.05" data-tok="speed" data-num /></label>
+              </fieldset>
+              <fieldset>
+                <legend>Nome na tela</legend>
+                <label class="field"><span>Posição</span><select class="input" data-tok="lower_third.position">
+                  <option value="bottom-left">embaixo, à esquerda</option><option value="bottom-right">embaixo, à direita</option><option value="top-left">em cima, à esquerda</option></select></label>
+                <label class="check"><input type="checkbox" data-tok="lower_third.avatar" /><span>Mostrar logo / inicial</span></label>
+              </fieldset>
+              <fieldset>
+                <legend>Chamada pra se inscrever</legend>
+                <label class="field"><span>Posição</span><select class="input" data-tok="cta.position">
+                  <option value="bottom-center">embaixo, no centro</option><option value="bottom-right">embaixo, à direita</option><option value="top-right">em cima, à direita</option></select></label>
+                <div id="sty-steps"></div>
+                <a href="#" id="sty-step-add">+ adicionar passo</a>
+              </fieldset>
+            </div>
+            <div class="sty-save">
+              <input class="input" id="sty-save-name" maxlength="40" placeholder="nome do estilo" />
+              <span class="grow"></span>
+              <button class="btn btn-sm" id="btn-sty-cancel">Descartar</button>
+              <button class="btn btn-sm" id="btn-sty-save-new">Salvar como novo</button>
+              <button class="btn btn-primary btn-sm" id="btn-sty-save">Salvar e usar</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Overlays em MP4 (opcional)</h2><p>se você tem os seus com fundo verde (<code>lowerthid_gabul.mp4</code>, <code>ctas.mp4</code>), eles entram no lugar dos do estilo.</p></div></div>
+          <label class="field"><span>Pasta</span><input class="input mono" id="sty-overlays" placeholder="padrão: assets/overlays/" /></label>
+        </section>
+      </div>
+    </main>
+
     <main class="main" data-screen="config" hidden>
       <header class="topbar">
         <div class="titles">
@@ -535,20 +639,6 @@
           <div class="card-head"><div><h2>Pastas</h2></div></div>
           <label class="field"><span>Pasta de entrada (onde ficam as gravações)</span>
             <input class="input mono" id="cfg-inbox" placeholder="padrão: upload/ do repo" /></label>
-          <label class="field"><span>Pasta dos seus overlays em MP4 (opcional — sem eles, o app desenha os dele)</span>
-            <input class="input mono" id="cfg-overlays" placeholder="padrão: assets/overlays/" /></label>
-        </section>
-
-        <section class="card">
-          <div class="card-head"><div><h2>Marca</h2><p>o que aparece nos overlays do vídeo longo (nome na tela e chamada pra se inscrever).</p></div></div>
-          <div class="grid">
-            <label class="field"><span>Nome</span>
-              <input class="input" id="cfg-brand-name" maxlength="40" placeholder="padrão: o nome do canal no YouTube" /></label>
-            <label class="field"><span>@ do canal</span>
-              <input class="input mono" id="cfg-brand-handle" maxlength="40" placeholder="@seucanal" /></label>
-          </div>
-          <label class="field cfg-color"><span>Cor de destaque</span>
-            <input type="color" id="cfg-brand-accent" value="#00d6ff" /></label>
         </section>
 
         <section class="card">

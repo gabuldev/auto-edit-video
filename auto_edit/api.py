@@ -25,6 +25,12 @@ Endpoints
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
     POST /api/videos/<id>/shorts       {max_dur}  roda o clipper (job, SSE)
     POST /api/videos/<id>/shorts/cut   {pick: [1, 3], max_dur}  corta em fila
+    GET  /api/styles                  (estilos, o ativo, fontes, marca)
+    PUT  /api/styles/active           {id}
+    POST /api/styles                  {name, tokens, id?, activate?}  salva um estilo seu
+    DELETE /api/styles/<id>
+    POST /api/styles/preview/<kind>   {tokens} → PNG (thumbnail | lower_third | cta)
+    PUT|DELETE|GET /api/brand/logo    {data: "data:image/png;base64,…"}
     GET  /api/publish/youtube                 (conta conectada?)
     POST /api/publish/youtube/connect         abre o OAuth no navegador
     POST /api/publish/youtube/disconnect
@@ -81,7 +87,7 @@ def create_app(jobs: engine.JobManager | None = None):
     def _cors(resp):
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         return resp
 
     @app.get("/api/health")
@@ -337,6 +343,90 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify(settings.save(request.get_json(silent=True) or {}))
         except settings.SettingsError as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.get("/api/styles")
+    def list_styles():
+        from auto_edit import render, styles
+
+        return jsonify({
+            "active": styles.active_id(),
+            "styles": styles.list_styles(),
+            "fonts": [{"id": k, "label": v["label"]} for k, v in styles.FONTS.items()],
+            "icons": list(styles.ICONS),
+            "positions": {"lower_third": list(styles.POSITIONS_LT), "cta": list(styles.POSITIONS_CTA)},
+            "brand": render.brand(),
+        })
+
+    @app.put("/api/styles/active")
+    def set_active_style():
+        from auto_edit import styles
+
+        try:
+            return jsonify({"active": styles.set_active((request.get_json(silent=True) or {}).get("id") or "")})
+        except styles.StyleError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/styles")
+    def save_style():
+        from auto_edit import styles
+
+        body = request.get_json(silent=True) or {}
+        try:
+            saved = styles.save(body.get("name") or "", body.get("tokens"), body.get("id"), body.get("description") or "")
+            if body.get("activate"):
+                styles.set_active(saved["id"])
+            return jsonify(saved)
+        except styles.StyleError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.delete("/api/styles/<style_id>")
+    def delete_style(style_id: str):
+        from auto_edit import styles
+
+        try:
+            styles.delete(style_id)
+        except styles.StyleError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"active": styles.active_id()})
+
+    @app.post("/api/styles/preview/<kind>")
+    def preview_style(kind: str):
+        import io
+
+        from auto_edit import styles
+
+        tokens = (request.get_json(silent=True) or {}).get("tokens")
+        try:
+            png = styles.preview(tokens, kind)
+        except styles.StyleError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return send_file(io.BytesIO(png), mimetype="image/png", max_age=0)
+
+    @app.put("/api/brand/logo")
+    def upload_logo():
+        from auto_edit import render
+
+        try:
+            render.save_logo((request.get_json(silent=True) or {}).get("data") or "")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(render.brand())
+
+    @app.delete("/api/brand/logo")
+    def delete_logo():
+        from auto_edit import render
+
+        render.save_logo(None)
+        return jsonify(render.brand())
+
+    @app.get("/api/brand/logo")
+    def get_logo():
+        from auto_edit import render
+
+        logo = render.brand().get("logo")
+        if not logo:
+            return jsonify({"error": "sem logo"}), 404
+        return send_file(logo, max_age=0)
 
     @app.get("/api/agents")
     def list_agents():

@@ -126,6 +126,13 @@ def main(engine: Path) -> None:
             {**env, "AUTO_EDIT_OVERLAY_SOURCE": "react"}, "React overlay renders", timeout=180)
         if not (Path(d) / "overlaid_video.mp4").is_file():
             raise SystemExit("FAIL overlay: no overlaid_video.mp4")
+        # The Estilos screen: every preset's previews (fonts present, renderer ok).
+        run([str(python), "-c",
+             "from auto_edit import styles\n"
+             "for sid, p in styles.PRESETS.items():\n"
+             "    for kind in styles.PREVIEW_KINDS:\n"
+             "        assert styles.preview(p['tokens'], kind).startswith(b'\\x89PNG'), (sid, kind)"],
+            {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "style previews render", timeout=300)
 
     port = "8799"
     proc = subprocess.Popen([str(python), "-m", "auto_edit.cli", "serve", "--port", port],

@@ -67,26 +67,49 @@ class TestSettings:
 
 
 class TestBrand:
-    def test_saved_and_normalized(self, home):
-        saved = settings.save({"brand": {"name": "  Gabul ", "handle": "gabul.dev", "accent": "00D6FF"}})
-        assert saved["brand"] == {"name": "Gabul", "handle": "gabul.dev", "accent": "#00d6ff"}
+    def test_saved_and_normalized(self, home, tmp_path):
+        logo = tmp_path / "logo.png"
+        logo.write_bytes(b"x")
+        saved = settings.save({"brand": {"name": "  Gabul ", "handle": "gabul.dev", "logo": str(logo)}})
+        assert saved["brand"] == {"name": "Gabul", "handle": "gabul.dev", "logo": str(logo), "logo_bg": None}
 
-    @pytest.mark.parametrize("brand", [{"accent": "azul"}, {"name": "x" * 41}])
-    def test_rejects(self, home, brand):
+    def test_logo_background(self, home):
+        assert settings.save({"brand": {"logo_bg": "FFFFFF"}})["brand"]["logo_bg"] == "#ffffff"
         with pytest.raises(settings.SettingsError):
-            settings.validate({"brand": brand})
+            settings.validate({"brand": {"logo_bg": "branco"}})
+
+    def test_a_logo_that_is_gone_is_dropped(self, home):
+        assert settings.save({"brand": {"logo": "/nao/existe.png"}})["brand"]["logo"] is None
+
+    def test_rejects_a_long_name(self, home):
+        with pytest.raises(settings.SettingsError):
+            settings.validate({"brand": {"name": "x" * 41}})
 
     def test_overlays_get_the_brand(self, home):
         from auto_edit import render
-        settings.save({"brand": {"name": "Gabul", "handle": "gabul.dev", "accent": "#ff0000"}})
-        assert render.brand() == {"name": "Gabul", "handle": "@gabul.dev", "accent": [255, 0, 0]}
+        settings.save({"brand": {"name": "Gabul", "handle": "gabul.dev"}})
+        assert render.brand() == {"name": "Gabul", "handle": "@gabul.dev", "logo": None, "logo_bg": None}
 
     def test_name_falls_back_to_the_youtube_channel(self, home, monkeypatch):
         from auto_edit import render, youtube_auth
         monkeypatch.setattr(youtube_auth, "channel_title", lambda: "Canal X")
         b = render.brand()
         assert b["name"] == "Canal X" and b["handle"] is None
-        assert b["accent"] == list(render.DEFAULT_ACCENT)
+
+    def test_logo_upload(self, home):
+        import base64
+        from auto_edit import render
+        path = render.save_logo("data:image/png;base64," + base64.b64encode(b"\x89PNGfake").decode())
+        assert path.endswith("logo.png") and settings.load()["brand"]["logo"] == path
+        assert render.brand()["logo"] == path
+        render.save_logo(None)
+        assert settings.load()["brand"]["logo"] is None
+
+    @pytest.mark.parametrize("bad", ["data:text/plain;base64,aGk=", "nao e imagem"])
+    def test_logo_rejects_non_images(self, home, bad):
+        from auto_edit import render
+        with pytest.raises(ValueError):
+            render.save_logo(bad)
 
 
 class TestApi:

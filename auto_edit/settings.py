@@ -33,7 +33,10 @@ DEFAULTS: dict = {
     "cold_open": True,
     "reorder": True,
     # What the overlays show (lower third). No name → the YouTube channel's.
-    "brand": {"name": None, "handle": None, "accent": None},
+    # The logo is set through the API (it copies the image under the home).
+    "brand": {"name": None, "handle": None, "logo": None, "logo_bg": None},
+    # The visual style (auto_edit.styles): a preset or one of the person's.
+    "style": "padrao",
     # The agent that last passed "Testar" — what tells the app it can edit.
     "verified_agent": None,
 }
@@ -110,6 +113,8 @@ def validate(data: dict) -> dict:
     merged["reorder"] = bool(merged["reorder"])
     merged["language"] = (merged.get("language") or "pt").strip() or "pt"
     merged["brand"] = _validate_brand(merged.get("brand"))
+    style = merged.get("style")
+    merged["style"] = style if isinstance(style, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,40}", style) else "padrao"
     return merged
 
 
@@ -122,11 +127,14 @@ def _validate_brand(brand) -> dict:
         if len(value) > limit:
             raise SettingsError(f"{key} da marca passa de {limit} caracteres")
         out[key] = value or None
-    accent = brand.get("accent")
-    accent = accent.strip() if isinstance(accent, str) else ""
-    if accent and not re.fullmatch(r"#?[0-9a-fA-F]{6}", accent):
-        raise SettingsError(f"cor da marca inválida: {accent!r} (use #RRGGBB)")
-    out["accent"] = ("#" + accent.lstrip("#").lower()) if accent else None
+    logo = brand.get("logo")
+    out["logo"] = logo if isinstance(logo, str) and logo and Path(logo).is_file() else None
+    # Behind the logo (a transparent one shows it). None → the style's accent.
+    bg = brand.get("logo_bg")
+    bg = bg.strip() if isinstance(bg, str) else ""
+    if bg and not re.fullmatch(r"#?[0-9a-fA-F]{6}", bg):
+        raise SettingsError(f"cor de fundo da logo inválida: {bg!r} (use #RRGGBB)")
+    out["logo_bg"] = ("#" + bg.lstrip("#").lower()) if bg else None
     return out
 
 

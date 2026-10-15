@@ -9,6 +9,7 @@ import cuts from "./cuts.js";
 import result from "./result.js";
 import shorts from "./shorts.js";
 import config from "./settings.js";
+import stylesScreen from "./styles.js";
 import welcome, { checkSetup } from "./welcome.js";
 
 route("/", library);
@@ -17,6 +18,7 @@ route("/video/:id", pipeline);
 route("/video/:id/cortes", cuts);
 route("/video/:id/resultado", result);
 route("/video/:id/shorts", shorts);
+route("/estilos", stylesScreen);
 route("/config", config);
 route("/bemvindo", welcome);
 
