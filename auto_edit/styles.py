@@ -301,6 +301,67 @@ def set_active(style_id: str) -> str:
     return style_id
 
 
+# ── AI ────────────────────────────────────────────────────────────────────────
+
+AI_TIMEOUT = 120
+
+
+def _first_json(text: str) -> dict | None:
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text or ""):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(text, i)
+            except ValueError:
+                continue
+            if isinstance(obj, dict):
+                return obj
+    return None
+
+
+def _stylist_prompt(description: str, colors: list[str]) -> str:
+    from auto_edit import render
+
+    base = (overlay_assets.default_repo_root() / "agents" / "stylist.md").read_text(encoding="utf-8")
+    name = render.brand().get("name") or "(sem nome ainda)"
+    return (
+        f"{base}\n\n---\n\n"
+        f"# OPÇÕES\nFONTE: {', '.join(FONTS)}\nPOSICAO_LT: {', '.join(POSITIONS_LT)}\n"
+        f"POSICAO_CTA: {', '.join(POSITIONS_CTA)}\nICONE: {', '.join(ICONS)}\n\n"
+        f"# CANAL\n{name}\n\n"
+        f"# PEDIDO\n{description or '(sem descrição: baseie-se nas cores da imagem)'}\n\n"
+        + (f"# CORES DA IMAGEM (da mais presente pra menos)\n{', '.join(colors)}\n" if colors else "")
+    )
+
+
+def generate(description: str, image: bytes | None = None, *, complete=None) -> dict:
+    """A draft style from a description and/or a reference image (its colors,
+    as text). Never saved here; the answer goes through validate()."""
+    from auto_edit import agents, palette
+
+    description = (description or "").strip()[:500]
+    if not description and not image:
+        raise StyleError("descreva o estilo ou mande uma imagem")
+    colors: list[str] = []
+    if image:
+        try:
+            colors = palette.extract(image)
+        except palette.PaletteError as exc:
+            raise StyleError(str(exc)) from exc
+    run = complete or (lambda p: agents.complete(p, timeout=AI_TIMEOUT))
+    try:
+        answer = run(_stylist_prompt(description, colors))
+    except agents.AgentError as exc:
+        raise StyleError(f"a IA falhou: {exc}") from exc
+    data = _first_json(answer)
+    if data is None:
+        raise StyleError("a IA não devolveu um estilo")
+    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else data
+    name = data.get("name") if isinstance(data.get("name"), str) else ""
+    desc = data.get("description") if isinstance(data.get("description"), str) else ""
+    return {"name": name.strip()[:40] or "Estilo IA", "description": desc.strip()[:200], "tokens": validate(tokens)}
+
+
 # ── Preview ───────────────────────────────────────────────────────────────────
 
 PREVIEW_W, PREVIEW_H = 1280, 720

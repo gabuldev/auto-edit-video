@@ -157,3 +157,64 @@ class TestApi:
         assert c.get("/api/brand/logo").data == b"\x89PNGfake"
         assert c.delete("/api/brand/logo").get_json()["logo"] is None
         assert c.put("/api/brand/logo", json={"data": "oi"}).status_code == 400
+
+
+class TestGenerate:
+    """Estilos → Criar com IA: the agent fills tokens; validate keeps them safe."""
+
+    GOOD = json.dumps({"name": "Neon Roxo", "description": "tech escuro", "tokens": {
+        "colors": {"accent": "#a855f7", "panel": "#120a1f", "text": "#ffffff"},
+        "radius": 8, "speed": 1.6, "fonts": {"title": "bebas", "text": "poppins"},
+        "cta": {"steps": [{"icon": "like", "text": "CURTE AÍ"}]},
+    }})
+
+    def test_good_answer_becomes_a_draft(self, home):
+        prompts = []
+        out = styles.generate("tech escuro, neon roxo", complete=lambda p: prompts.append(p) or self.GOOD)
+        assert out["name"] == "Neon Roxo" and out["description"] == "tech escuro"
+        assert out["tokens"]["colors"]["accent"] == "#a855f7" and out["tokens"]["fonts"]["title"] == "bebas"
+        assert out["tokens"] == styles.validate(out["tokens"])
+        assert not [s for s in styles.list_styles() if not s["builtin"]]  # nothing saved
+        assert "tech escuro, neon roxo" in prompts[0] and "bebas" in prompts[0] and "bottom-left" in prompts[0]
+
+    def test_json_inside_text_and_fences(self, home):
+        out = styles.generate("x", complete=lambda p: f"Claro! Aqui:\n```json\n{self.GOOD}\n```\nabraço")
+        assert out["name"] == "Neon Roxo"
+
+    def test_bare_tokens_and_junk_fall_back(self, home):
+        out = styles.generate("x", complete=lambda p: '{"colors": {"accent": "roxo"}, "radius": 900}')
+        assert out["name"] == "Estilo IA"
+        assert out["tokens"]["colors"]["accent"] == styles.DEFAULT_TOKENS["colors"]["accent"]
+        assert out["tokens"]["radius"] == 60
+
+    def test_no_json_is_an_error(self, home):
+        with pytest.raises(styles.StyleError, match="não devolveu um estilo"):
+            styles.generate("x", complete=lambda p: "desculpa, não posso")
+
+    def test_agent_failure_is_a_style_error(self, home):
+        from auto_edit import agents
+
+        def boom(p):
+            raise agents.AgentError("claude: não encontrado")
+
+        with pytest.raises(styles.StyleError, match="a IA falhou"):
+            styles.generate("x", complete=boom)
+
+    def test_needs_description_or_image(self, home):
+        with pytest.raises(styles.StyleError, match="descreva"):
+            styles.generate("   ", complete=lambda p: self.GOOD)
+
+    def test_image_colors_go_in_the_prompt(self, home):
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (32, 32), (230, 30, 40)).save(buf, "PNG")
+        prompts = []
+        styles.generate("", buf.getvalue(), complete=lambda p: prompts.append(p) or self.GOOD)
+        assert "CORES DA IMAGEM" in prompts[0] and "#e" in prompts[0].split("CORES DA IMAGEM")[1].lower()
+
+    def test_unreadable_image_is_a_style_error(self, home):
+        with pytest.raises(styles.StyleError, match="imagem"):
+            styles.generate("x", b"lixo", complete=lambda p: self.GOOD)
