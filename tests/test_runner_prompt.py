@@ -288,3 +288,20 @@ class TestPerformanceSection:
         section = runner._performance_section("short")
         assert "retenção" in section
         assert "Vid0" in section
+
+
+def test_overlay_reads_the_edited_timeline(tmp_path):
+    """Cold open and reordered blocks move everything: the overlay agent gets
+    the post-cut transcript and answers in `start`, on the edit."""
+    ws = _workspace(tmp_path, "long")
+    (ws / "post_cut_transcription.json").write_text(
+        json.dumps({"duration": 60.0, "segments": [], "words": [{"word": "inscreve", "start": 42.0, "end": 42.5}]}),
+        encoding="utf-8",
+    )
+    prompt = runner.build_prompt("overlay", ws, AGENTS_DIR / "overlayer.md")
+    assert "EDITED video" in prompt and '"start":42.0' in prompt.replace(" ", "")
+
+
+def test_overlay_without_post_cut_falls_back_to_original(tmp_path):
+    prompt = runner.build_prompt("overlay", _workspace(tmp_path, "long"), AGENTS_DIR / "overlayer.md")
+    assert "ORIGINAL video" in prompt and "original_start" in prompt

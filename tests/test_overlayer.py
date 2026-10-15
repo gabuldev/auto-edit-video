@@ -110,7 +110,8 @@ class TestResolveOverlays:
         assert missing == ["gone.mp4"]
         assert removed == ["ctas.mp4"]
         assert len(found) == 1
-        ov, asset, post_cut_start = found[0]
+        ov, kind, asset, post_cut_start = found[0]
+        assert kind == "cta"
         assert asset == tmp_path / "ctas.mp4"
         assert post_cut_start == pytest.approx(5.0)
 
@@ -120,13 +121,145 @@ class TestResolveOverlays:
         found, missing, removed = _resolve_overlays(overlays, [tmp_path], KEPT)
         assert not missing and not removed
         # 25s sits in the second kept block; first block (10s) is prepended.
-        assert found[0][2] == pytest.approx(15.0)
+        assert found[0][3] == pytest.approx(15.0)
 
     def test_all_found(self, tmp_path):
         (tmp_path / "a.mp4").write_bytes(b"x")
         overlays = [{"file": "a.mp4", "original_start": 1.0}]
         found, missing, removed = _resolve_overlays(overlays, [tmp_path], KEPT)
         assert len(found) == 1 and not missing and not removed
+
+
+class TestKindsAndSources:
+    def test_legacy_file_names_map_to_kinds(self):
+        assert overlayer._kind({"file": "ctas.mp4"}) == "cta"
+        assert overlayer._kind({"file": "lowerthid_gabul.mp4"}) == "lower_third"
+        assert overlayer._kind({"overlay": "lower_third"}) == "lower_third"
+        assert overlayer._kind({"file": "custom.mp4"}) is None
+
+    def test_start_is_already_on_the_edit(self, tmp_path):
+        """The agent reads the post-cut transcript (cold open, reordered blocks
+        included), so `start` is used as is — no remap, no kept segments."""
+        found, missing, removed = _resolve_overlays(
+            [{"overlay": "cta", "start": 15.0}], [tmp_path], None)
+        assert not missing and not removed
+        assert found[0][3] == pytest.approx(15.0)
+
+    def test_no_mp4_means_react(self, tmp_path):
+        found, missing, _ = _resolve_overlays(
+            [{"overlay": "lower_third", "start": 3.0}], [tmp_path], None)
+        assert not missing
+        _, kind, asset, _ = found[0]
+        assert kind == "lower_third" and asset is None
+
+    def test_own_mp4_wins_by_default(self, tmp_path):
+        (tmp_path / "ctas.mp4").write_bytes(b"x")
+        found, _, _ = _resolve_overlays([{"overlay": "cta", "start": 1.0}], [tmp_path], None)
+        assert found[0][2] == tmp_path / "ctas.mp4"
+
+    def test_source_react_ignores_the_mp4(self, tmp_path):
+        (tmp_path / "ctas.mp4").write_bytes(b"x")
+        found, _, _ = _resolve_overlays([{"overlay": "cta", "start": 1.0}], [tmp_path], None, "react")
+        assert found[0][2] is None
+
+    def test_source_mp4_without_the_file_is_missing(self, tmp_path):
+        found, missing, _ = _resolve_overlays([{"overlay": "cta", "start": 1.0}], [tmp_path], None, "mp4")
+        assert not found and missing == ["ctas.mp4"]
+
+    def test_custom_file_without_mp4_is_missing(self, tmp_path):
+        """React only stands in for the kinds it knows how to draw."""
+        found, missing, _ = _resolve_overlays([{"file": "intro.mp4", "start": 1.0}], [tmp_path], None)
+        assert not found and missing == ["intro.mp4"]
+
+    def test_bad_source_env_is_auto(self, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_OVERLAY_SOURCE", "whatever")
+        assert overlayer._source() == "auto"
+
+
+class TestFfmpegPlacement:
+    def test_mp4_is_shifted_to_its_start(self, monkeypatch):
+        """Regression: without setpts the MP4's clock started at 0, so an
+        overlay placed past its own length only showed its last (empty) frame."""
+        filters = (cmd := _capture_cmd(monkeypatch))[cmd.index("-filter_complex") + 1]
+        assert "setpts=PTS-STARTPTS+2.000/TB[ck0]" in filters
+        assert "eof_action=pass" in filters
+
+    def test_react_frames_are_a_concat_input_placed_at_x_y(self, monkeypatch):
+        captured = {}
+
+        class Result:
+            returncode = 0
+
+        monkeypatch.setattr(overlayer, "_video_size", lambda p: (3840, 2160))
+        monkeypatch.setattr(overlayer, "_video_fps", lambda p: "30000/1001")
+        monkeypatch.setattr(overlayer, "_has_audio_stream", lambda p: True)
+        monkeypatch.setattr(overlayer, "_get_video_codec", lambda: ("libx264", []))
+        monkeypatch.setattr(overlayer.subprocess, "run", lambda cmd, *a, **k: captured.setdefault("cmd", cmd) and Result())
+        overlayer._run_ffmpeg_overlay(
+            Path("edit.mp4"),
+            [{"frames": Path("lt/frames.txt"), "x": 120, "y": 1620, "start": 30.0, "end": 36.0},
+             {"asset": Path("ctas.mp4"), "start": 90.0, "end": 98.0}],
+            Path("out.mp4"),
+        )
+        cmd = captured["cmd"]
+        i = cmd.index(str(Path("lt/frames.txt")))
+        assert cmd[i - 5:i] == ["-f", "concat", "-safe", "0", "-i"]
+        filters = cmd[cmd.index("-filter_complex") + 1]
+        assert "[1:v]format=rgba,setpts=PTS-STARTPTS+30.000/TB[ck0]" in filters
+        assert "overlay=x=120:y=1620:eof_action=pass" in filters
+        assert "[ovchain0][ck1]overlay=x=0:y=0" in filters  # the MP4 is still chroma-keyed after it
+
+
+FAKE_RENDERER = """#!/bin/sh
+# fake auto-edit-render: overlay <spec> <dir>
+echo "$2" > "$3/spec_seen"
+cp "$2" "$3/spec_copy.json"
+printf 'ffconcat version 1.0\nfile f00000.png\n' > "$3/frames.txt"
+echo '{"x":10,"y":20,"width":100,"height":50,"duration":6,"frames":180,"unique":3}' > "$3/overlay.json"
+"""
+
+
+class TestRenderReact:
+    @pytest.fixture
+    def fake_bin(self, tmp_path, monkeypatch):
+        exe = tmp_path / "auto-edit-render"
+        exe.write_text(FAKE_RENDERER)
+        exe.chmod(0o755)
+        monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+        monkeypatch.setattr(overlayer, "_video_size", lambda p: (1920, 1080))
+        monkeypatch.setattr(overlayer, "_video_fps", lambda p: "30000/1001")
+        return exe
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shell script renderer")
+    def test_renders_with_the_brand_and_the_video_size(self, fake_bin, tmp_path, monkeypatch):
+        import json
+        monkeypatch.setattr(overlayer.render, "brand", lambda: {"name": "Gabul", "handle": "@gabul.dev", "accent": [1, 2, 3]})
+        r = overlayer._render_react("lower_third", Path("v.mp4"), tmp_path / "lt")
+        assert r["x"] == 10 and r["duration"] == 6
+        assert r["frames_file"] == tmp_path / "lt" / "frames.txt"
+        spec = json.loads((tmp_path / "lt" / "spec_copy.json").read_text())
+        assert spec["kind"] == "lower_third" and spec["name"] == "Gabul"
+        assert (spec["video_width"], spec["video_height"]) == (1920, 1080)
+        assert spec["fps"] == pytest.approx(29.97, abs=0.01)
+
+    def test_lower_third_without_a_name_is_skipped(self, fake_bin, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(overlayer.render, "brand", lambda: {"name": None, "handle": None, "accent": [1, 2, 3]})
+        assert overlayer._render_react("lower_third", Path("v.mp4"), tmp_path / "lt") is None
+        assert "no name" in capsys.readouterr().out
+
+    def test_no_renderer(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(overlayer.render, "command", lambda: None)
+        assert overlayer._render_react("cta", Path("v.mp4"), tmp_path / "c") is None
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shell script renderer")
+    def test_renderer_failure(self, tmp_path, monkeypatch):
+        exe = tmp_path / "bad"
+        exe.write_text("#!/bin/sh\necho boom >&2\nexit 1\n")
+        exe.chmod(0o755)
+        monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+        monkeypatch.setattr(overlayer, "_video_size", lambda p: (1920, 1080))
+        monkeypatch.setattr(overlayer, "_video_fps", lambda p: None)
+        assert overlayer._render_react("cta", Path("v.mp4"), tmp_path / "c") is None
 
 
 class TestCheckAssetsPresent:

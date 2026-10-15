@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,7 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, render  # noqa: E402  -- needs the repo root on sys.path
 
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
@@ -238,21 +237,11 @@ def _render_font() -> Path | None:
 
 
 def _renderer_cmd() -> list[str] | None:
-    """`auto-edit-render` (shipped in the app's bin/, on PATH), or the source
-    run with bun in a dev checkout. None → draw with Pillow."""
+    """The React renderer (auto_edit.render.command), unless
+    AUTO_EDIT_THUMB_RENDERER=pillow. None → draw with Pillow."""
     if os.environ.get("AUTO_EDIT_THUMB_RENDERER", "").strip().lower() == "pillow":
         return None
-    explicit = os.environ.get("AUTO_EDIT_RENDER_BIN")
-    if explicit:
-        return [explicit]
-    found = shutil.which("auto-edit-render")
-    if found:
-        return [found]
-    src = _repo_root() / "renderer"
-    bun = shutil.which("bun") or str(Path.home() / ".bun" / "bin" / "bun")
-    if Path(bun).is_file() and (src / "node_modules").is_dir():
-        return [bun, "run", str(src / "src" / "cli.tsx")]
-    return None
+    return render.command()
 
 
 def _render_react(spec: dict, output: Path) -> bool:

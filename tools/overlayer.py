@@ -1,7 +1,9 @@
 """
 OVERLAYER stage
-Reads overlay_plan.json, remaps original timestamps to post-cut timeline,
-applies chroma key + overlay using FFmpeg.
+Reads overlay_plan.json and draws each overlay on the edited video:
+- the person's own MP4 (green screen, chroma key) when they have one;
+- otherwise the animated React overlay (`auto-edit-render overlay`), drawn
+  at the video's resolution, only in the overlay's box.
 Input:  workspace/edited_video.mp4
 Output: workspace/overlaid_video.mp4 (or skips if no overlays planned)
 """
@@ -11,10 +13,12 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from fractions import Fraction
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import overlay_assets, probe  # noqa: E402  -- needs repo root on sys.path
+from auto_edit import overlay_assets, probe, render  # noqa: E402  -- needs repo root on sys.path
 
 
 def _overlay_search_dirs() -> list[Path]:
@@ -25,6 +29,26 @@ def _overlay_search_dirs() -> list[Path]:
     3) <repo>/overlays — optional flat folder at repo root (same filenames)
     """
     return overlay_assets.overlay_search_dirs()
+
+
+# Overlay kind → the person's own MP4 for it (green screen), if they have one.
+KIND_FILES = {"lower_third": "lowerthid_gabul.mp4", "cta": "ctas.mp4"}
+SOURCES = ("auto", "react", "mp4")
+
+
+def _kind(ov: dict) -> str | None:
+    """`overlay` from the plan, or the kind an older plan's `file` stands for."""
+    kind = ov.get("overlay")
+    if kind in KIND_FILES:
+        return kind
+    return {f: k for k, f in KIND_FILES.items()}.get(ov.get("file"))
+
+
+def _source() -> str:
+    """AUTO_EDIT_OVERLAY_SOURCE: `auto` (own MP4 if there is one, else React),
+    `react` (always React) or `mp4` (only MP4s, the old behaviour)."""
+    value = os.environ.get("AUTO_EDIT_OVERLAY_SOURCE", "").strip().lower()
+    return value if value in SOURCES else "auto"
 
 
 def _find_overlay_file(name: str, dirs: list[Path]) -> Path | None:
@@ -62,31 +86,50 @@ def _missing_assets_message(missing: list[str], search_dirs: list[Path]) -> str:
     )
 
 
+def _post_cut_start(ov: dict, kept: "list[tuple[float, float]] | None") -> float | None:
+    """Where the overlay starts on the edit. `start` is already on it (the
+    agent read the post-cut transcript); an older plan's `original_start` is
+    remapped through the kept segments. None → removed by the cuts."""
+    if ov.get("start") is not None:
+        try:
+            start = float(ov["start"])
+        except (TypeError, ValueError):
+            return None
+        return start if start >= 0 else None
+    if ov.get("original_start") is None or kept is None:
+        return None
+    return _remap(float(ov["original_start"]), kept)
+
+
 def _resolve_overlays(
     overlays: list[dict],
     search_dirs: list[Path],
-    kept: list[tuple[float, float]],
-) -> tuple[list[tuple[dict, Path, float]], list[str], list[str]]:
-    """Split planned overlays into (found, missing_asset, removed_by_cut).
+    kept: "list[tuple[float, float]] | None",
+    source: str = "auto",
+) -> tuple[list[tuple[dict, str | None, Path | None, float]], list[str], list[str]]:
+    """Split planned overlays into (found, missing, removed_by_cut).
 
-    - found: ``(overlay, asset_path, post_cut_start)`` tuples ready to place.
-    - missing_asset: file names not present in any search dir (a setup error).
-    - removed_by_cut: trigger timestamps that fell inside a removed section.
+    - found: ``(overlay, kind, asset, post_cut_start)``; ``asset`` None means
+      draw it with React.
+    - missing: overlays with no MP4 where React can't stand in (a custom
+      `file`, or AUTO_EDIT_OVERLAY_SOURCE=mp4).
+    - removed_by_cut: overlays whose moment isn't in the edit.
     """
-    found: list[tuple[dict, Path, float]] = []
+    found: list[tuple[dict, str | None, Path | None, float]] = []
     missing: list[str] = []
     removed: list[str] = []
     for ov in overlays:
-        name = ov["file"]
-        asset = _find_overlay_file(name, search_dirs)
-        if asset is None:
+        kind = _kind(ov)
+        name = ov.get("file") or KIND_FILES.get(kind or "") or str(ov.get("overlay"))
+        asset = None if source == "react" or name is None else _find_overlay_file(name, search_dirs)
+        if asset is None and (kind is None or source == "mp4"):
             missing.append(name)
             continue
-        post_cut_start = _remap(float(ov["original_start"]), kept)
+        post_cut_start = _post_cut_start(ov, kept)
         if post_cut_start is None:
             removed.append(name)
             continue
-        found.append((ov, asset, post_cut_start))
+        found.append((ov, kind, asset, post_cut_start))
     return found, missing, removed
 
 
@@ -133,41 +176,104 @@ def overlay(workspace: Path) -> None:
         print("[overlayer] No overlays planned — skipping.")
         return
 
+    source = _source()
     search_dirs = _overlay_search_dirs()
-    print(f"[overlayer] Overlay search dirs: {', '.join(str(d) for d in search_dirs)}")
+    print(f"[overlayer] Overlay search dirs: {', '.join(str(d) for d in search_dirs)} (source: {source})")
 
-    pipeline = json.loads((workspace / "pipeline.json").read_text())
-    reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
-    kept = _build_kept_intervals(reviewed_plan, pipeline)
+    kept = None
+    if any(ov.get("start") is None for ov in overlays):  # an older plan, on the original timeline
+        pipeline = json.loads((workspace / "pipeline.json").read_text())
+        reviewed_plan = json.loads((workspace / "reviewed_plan.json").read_text())
+        kept = _build_kept_intervals(reviewed_plan, pipeline)
 
-    found, missing, removed = _resolve_overlays(overlays, search_dirs, kept)
-
-    # A missing asset is a setup problem, but not a fatal one: the overlays live
-    # outside the repo and a fresh install has none. Warn and render without it.
-    # (AUTO_EDIT_OVERLAYS_STRICT=1 turns this back into a hard failure.)
-    _check_assets_present(missing, search_dirs)
+    found, missing, removed = _resolve_overlays(overlays, search_dirs, kept, source)
 
     for name in removed:
         print(
-            f"[overlayer] WARNING: {name}: its trigger timestamp was removed by "
-            "cuts — overlay skipped (pick a moment inside a kept segment)."
+            f"[overlayer] WARNING: {name}: its moment is not in the edit — overlay "
+            "skipped (pick a moment inside a kept segment)."
         )
-
-    placed = []
-    for ov, asset, post_cut_start in found:
-        duration = _get_duration(asset)
-        placed.append({"asset": asset, "start": post_cut_start, "end": post_cut_start + duration})
-        print(f"[overlayer] '{ov['file']}' -> post-cut {post_cut_start:.2f}s-{post_cut_start + duration:.2f}s")
 
     input_video = workspace / "edited_video.mp4"
     output_video = workspace / "overlaid_video.mp4"
-    if placed:
-        _run_ffmpeg_overlay(input_video, placed, output_video)
-    else:
-        import shutil
-        shutil.copy2(input_video, output_video)
-        print("[overlayer] No overlays applied — copied edited video as-is")
+    with tempfile.TemporaryDirectory(prefix="auto-edit-overlay-") as tmp:
+        rendered: dict[str, dict | None] = {}
+        placed = []
+        for ov, kind, asset, post_cut_start in found:
+            label = ov.get("file") or kind
+            if asset is not None:
+                duration = _get_duration(asset)
+                placed.append({"asset": asset, "start": post_cut_start, "end": post_cut_start + duration})
+            else:
+                if kind not in rendered:  # every CTA is the same animation: draw it once
+                    rendered[kind] = _render_react(kind, input_video, Path(tmp) / kind)
+                r = rendered[kind]
+                if r is None:
+                    missing.append(label)
+                    continue
+                duration = r["duration"]
+                placed.append({
+                    "frames": r["frames_file"], "x": r["x"], "y": r["y"],
+                    "start": post_cut_start, "end": post_cut_start + duration,
+                })
+            via = "MP4" if asset is not None else "React"
+            print(f"[overlayer] '{label}' ({via}) -> {post_cut_start:.2f}s-{post_cut_start + duration:.2f}s")
+
+        # A missing overlay is a setup problem, but not a fatal one: warn and
+        # render without it (AUTO_EDIT_OVERLAYS_STRICT=1 makes it fail).
+        _check_assets_present(missing, search_dirs)
+
+        if placed:
+            _run_ffmpeg_overlay(input_video, placed, output_video)
+        else:
+            import shutil
+            shutil.copy2(input_video, output_video)
+            print("[overlayer] No overlays applied — copied edited video as-is")
     print(f"[overlayer] Done -> {output_video}")
+
+
+def _fps_number(fps: str | None) -> float:
+    try:
+        return float(Fraction(fps)) if fps else 30.0
+    except (ValueError, ZeroDivisionError):
+        return 30.0
+
+
+def _render_react(kind: str, video: Path, out_dir: Path) -> dict | None:
+    """Draw one overlay animation with the React renderer, at the video's
+    resolution. None (and why) when it can't."""
+    cmd = render.command()
+    if cmd is None:
+        print(f"[overlayer] {kind}: no renderer (auto-edit-render) to draw it")
+        return None
+    brand = render.brand()
+    if kind == "lower_third" and not brand["name"]:
+        print("[overlayer] lower_third: no name to show — set it in Settings (Marca) or connect YouTube")
+        return None
+    vw, vh = _video_size(video)
+    spec = {
+        "kind": kind, "video_width": vw, "video_height": vh,
+        "fps": _fps_number(_video_fps(video)), "fonts_dir": str(render.fonts_dir()), **brand,
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    spec_file = out_dir / "spec.json"
+    spec_file.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+    try:
+        res = subprocess.run([*cmd, "overlay", str(spec_file), str(out_dir)],
+                             capture_output=True, text=True, timeout=render.TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"[overlayer] {kind}: renderer failed ({exc})")
+        return None
+    frames_file = out_dir / "frames.txt"
+    if res.returncode != 0 or not frames_file.is_file():
+        print(f"[overlayer] {kind}: renderer failed: {(res.stderr or res.stdout).strip()[-300:]}")
+        return None
+    try:
+        result = json.loads((out_dir / "overlay.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"[overlayer] {kind}: renderer gave no placement ({exc})")
+        return None
+    return {**result, "frames_file": frames_file}
 
 
 # ── Interval helpers ──────────────────────────────────────────────────────────
@@ -223,19 +329,25 @@ def _run_ffmpeg_overlay(
     placed: list[dict],
     output: Path,
 ) -> None:
-    # Build input args: main video + one input per unique asset
-    assets = list({p["asset"] for p in placed})
-    asset_index = {a: i + 1 for i, a in enumerate(assets)}
+    """Composite every placed overlay. Each is its own input, shifted to its
+    start (setpts) — without the shift the overlay's own clock starts at 0, so
+    anything placed past its length only ever showed its last (empty) frame.
 
+    - ``{"asset", "start", "end"}``: a green-screen MP4, scaled to the frame
+      and chroma-keyed.
+    - ``{"frames", "x", "y", "start", "end"}``: React frames (an ffmpeg concat
+      list of transparent PNGs), placed at x, y.
+    """
     input_args = ["-i", str(video)]
-    for asset in assets:
-        input_args += ["-i", str(asset)]
+    for p in placed:
+        if "frames" in p:
+            input_args += ["-f", "concat", "-safe", "0", "-i", str(p["frames"])]
+        else:
+            input_args += ["-i", str(p["asset"])]
 
     vw, vh = _video_size(video)
-    print(f"[overlayer] Main video {vw}x{vh} — scaling each overlay to fit frame before chromakey")
+    print(f"[overlayer] Main video {vw}x{vh}")
 
-    # Scale each overlay to the main video frame (letterbox pad), then chromakey, then overlay.
-    # Plain overlay=0:0 without scaling hides 1080p assets in a corner of a 4K edit.
     # The concat'd edit is slightly VFR, so `overlay` resolves the output to a
     # doubled timebase and the encoder emits every frame as if it were 60fps --
     # video runs at 2x while audio stays put. Pin both sides to the edit's own
@@ -247,19 +359,27 @@ def _run_ffmpeg_overlay(
         filter_parts.append(f"[0:v]fps={fps}[base]")
         prev = "base"
     for i, p in enumerate(placed):
-        idx = asset_index[p["asset"]]
+        idx = i + 1
         out_label = "outv" if i == len(placed) - 1 else f"ovchain{i}"
+        shift = f"setpts=PTS-STARTPTS+{p['start']:.3f}/TB"
         enable = f"between(t,{p['start']:.3f},{p['end']:.3f})"
+        if "frames" in p:
+            filter_parts.append(f"[{idx}:v]format=rgba,{shift}[ck{i}]")
+            pos = f"x={p['x']}:y={p['y']}"
+        else:
+            # Scale to the main frame first (letterbox pad): plain overlay=0:0
+            # hides a 1080p asset in a corner of a 4K edit.
+            filter_parts.append(
+                f"[{idx}:v]" + (f"fps={fps}," if fps else "")
+                + f"scale=w={vw}:h={vh}:force_original_aspect_ratio=decrease,"
+                f"pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2,setsar=1[ov_s{i}]"
+            )
+            filter_parts.append(
+                f"[ov_s{i}]chromakey=color={CHROMA_COLOR}:similarity={CHROMA_SIMILARITY}:blend={CHROMA_BLEND},{shift}[ck{i}]"
+            )
+            pos = "x=0:y=0"
         filter_parts.append(
-            f"[{idx}:v]" + (f"fps={fps}," if fps else "")
-            + f"scale=w={vw}:h={vh}:force_original_aspect_ratio=decrease,"
-            f"pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2,setsar=1[ov_s{i}]"
-        )
-        filter_parts.append(
-            f"[ov_s{i}]chromakey=color={CHROMA_COLOR}:similarity={CHROMA_SIMILARITY}:blend={CHROMA_BLEND}[ck{i}]"
-        )
-        filter_parts.append(
-            f"[{prev}][ck{i}]overlay=x=0:y=0:enable='{enable}'[{out_label}]"
+            f"[{prev}][ck{i}]overlay={pos}:eof_action=pass:enable='{enable}'[{out_label}]"
         )
         prev = out_label
 

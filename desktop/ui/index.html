@@ -535,8 +535,20 @@
           <div class="card-head"><div><h2>Pastas</h2></div></div>
           <label class="field"><span>Pasta de entrada (onde ficam as gravações)</span>
             <input class="input mono" id="cfg-inbox" placeholder="padrão: upload/ do repo" /></label>
-          <label class="field"><span>Pasta dos overlays (ctas.mp4, lowerthird…)</span>
+          <label class="field"><span>Pasta dos seus overlays em MP4 (opcional — sem eles, o app desenha os dele)</span>
             <input class="input mono" id="cfg-overlays" placeholder="padrão: assets/overlays/" /></label>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Marca</h2><p>o que aparece nos overlays do vídeo longo (nome na tela e chamada pra se inscrever).</p></div></div>
+          <div class="grid">
+            <label class="field"><span>Nome</span>
+              <input class="input" id="cfg-brand-name" maxlength="40" placeholder="padrão: o nome do canal no YouTube" /></label>
+            <label class="field"><span>@ do canal</span>
+              <input class="input mono" id="cfg-brand-handle" maxlength="40" placeholder="@seucanal" /></label>
+          </div>
+          <label class="field cfg-color"><span>Cor de destaque</span>
+            <input type="color" id="cfg-brand-accent" value="#00d6ff" /></label>
         </section>
 
         <section class="card">

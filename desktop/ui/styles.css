@@ -328,6 +328,7 @@ textarea.input { resize: vertical; }
 .cfg-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .cfg-row .input { max-width: 260px; height: 36px; }
 .cfg-row .grow { flex: 1; }
+.cfg-color input[type=color] { width: 64px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: transparent; cursor: pointer; }
 .cfg-models { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 
 /* ── Primeira execução ─────────────────────────────────────────────────────── */

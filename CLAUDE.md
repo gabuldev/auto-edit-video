@@ -53,7 +53,7 @@ Whisper   Claude  Claude   Claude     FFmpeg    FFmpeg    FFmpeg    Claude
 ```
 
 - **short**: pula overlay, faz caption (legendas estilo CapCut) — planner = `agents/planner.md` (limpeza)
-- **long**: faz overlay, pula caption — planner = `agents/planner_long.md` (curadoria editorial: descarta blocos temáticos, define duração pela densidade do conteúdo, reporta `dropped_blocks`)
+- **long**: faz overlay (lower third + CTA; o agente lê a transcrição pós-corte e responde no tempo do vídeo editado), pula caption — planner = `agents/planner_long.md` (curadoria editorial: descarta blocos temáticos, define duração pela densidade do conteúdo, reporta `dropped_blocks`)
 
 O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
 
@@ -104,7 +104,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `agents/` | Prompts para stages LLM (planner, reviewer, evaluator, metadata) |
 | `ralph.sh` | Orquestrador bash que executa o pipeline stage-by-stage |
 | `assets/` | Fontes, overlays, sons para composição de vídeo |
-| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar). Dev: `cd renderer && bun install` |
+| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar) e os overlays animados do long (lower third + CTA, `tools/overlayer.py`). Organizado por **estilo** (`renderer/src/styles/<nome>/`, registrado em `styles/index.ts`): estilo novo = pasta nova com os mesmos componentes. Dev: `cd renderer && bun install` |
 
 ## Convenções
 
@@ -131,8 +131,9 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
 | `AUTO_EDIT_THUMB_RENDERER` | — | `pillow` desenha a thumbnail com o layout antigo (Pillow) em vez do React (`renderer/`) |
 | `AUTO_EDIT_RENDER_BIN` | — | Caminho do `auto-edit-render`. Sem ele: o do PATH (o app traz no `bin/` do motor) ou, num checkout, `bun run renderer/src/cli.tsx` |
-| `AUTO_EDIT_ASSETS_OVERLAYS` | — | Pasta com os MP4s de overlay (`ctas.mp4`, `lowerthid_gabul.mp4`). Tem prioridade sobre `assets/overlays/`. Também via `--overlays-dir` no `long`/`apply-overlays` |
-| `AUTO_EDIT_OVERLAYS_STRICT` | — | `1` faz o stage `overlay` falhar quando um overlay planejado não é encontrado. Por padrão ele só avisa e renderiza sem — os MP4s são de cada pessoa e ficam fora do repo |
+| `AUTO_EDIT_ASSETS_OVERLAYS` | — | Pasta com os MP4s de overlay próprios, com fundo verde (`ctas.mp4`, `lowerthid_gabul.mp4`). Opcionais: sem eles o React desenha. Tem prioridade sobre `assets/overlays/`. Também via `--overlays-dir` no `long`/`apply-overlays` |
+| `AUTO_EDIT_OVERLAY_SOURCE` | `auto` | `auto`: MP4 próprio se existir, senão React. `react`: sempre React. `mp4`: só MP4 (comportamento antigo). Nome/@/cor do lower third vêm de `brand` no settings (app → Configurações → Marca); sem nome, usa o do canal do YouTube conectado |
+| `AUTO_EDIT_OVERLAYS_STRICT` | — | `1` faz o stage `overlay` falhar quando um overlay planejado não sai (sem MP4 e sem React). Por padrão ele só avisa e renderiza sem |
 | `AUTO_EDIT_SEGMENT_THRESHOLD` | `12` | Acima de N segmentos, o `execute` corta um-a-um + concat (evita OOM do FFmpeg em vídeo longo/4K) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
 | `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` e `auto-edit publish auth youtube`. Sem ele, reaproveita o client de um token já salvo. Publish e insights usam **uma conexão só** (`auto_edit/youtube_auth.py`, `tokens/youtube.json`). App OAuth em modo "Testing" expira o token em 7 dias: publique o app ("In production") pra não expirar |
