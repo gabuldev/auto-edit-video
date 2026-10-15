@@ -259,3 +259,82 @@ class TestShare:
         b = styles.export_file("neon", tmp_path)
         assert a.name == "neon.autoedit-style.json" and b.name == "neon-2.autoedit-style.json"
         assert json.loads(a.read_text(encoding="utf-8"))["format"] == 1
+
+
+class TestStyleApi:
+    @pytest.fixture
+    def client(self, home):
+        return api.create_app(engine.JobManager()).test_client()
+
+    @staticmethod
+    def _data_url(rgb=(230, 30, 40)) -> str:
+        import base64
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (16, 16), rgb).save(buf, "PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    def test_generate(self, client, monkeypatch):
+        monkeypatch.setattr(styles, "generate", lambda d, image=None: {"name": "X", "description": d, "tokens": styles.validate({}), "img": bool(image)})
+        r = client.post("/api/styles/generate", json={"description": "neon", "image": self._data_url()})
+        assert r.status_code == 200 and r.get_json()["description"] == "neon" and r.get_json()["img"] is True
+
+    def test_generate_error_is_400(self, client, monkeypatch):
+        def boom(d, image=None):
+            raise styles.StyleError("a IA falhou: x")
+
+        monkeypatch.setattr(styles, "generate", boom)
+        r = client.post("/api/styles/generate", json={"description": "neon"})
+        assert r.status_code == 400 and "a IA falhou" in r.get_json()["error"]
+
+    def test_generate_bad_data_url_is_400(self, client):
+        r = client.post("/api/styles/generate", json={"description": "x", "image": "data:text/plain;base64,aGk="})
+        assert r.status_code == 400
+
+    def test_palette_from_image(self, client):
+        r = client.post("/api/styles/palette", json={"image": self._data_url()})
+        body = r.get_json()
+        assert r.status_code == 200 and body["colors"] and body["suggested"]["accent"] == body["colors"][0]
+
+    def test_palette_from_saved_logo(self, client):
+        from auto_edit import render
+
+        render.save_logo(self._data_url((0, 200, 120)))
+        body = client.post("/api/styles/palette", json={}).get_json()
+        assert body["colors"]
+
+    def test_palette_without_logo_or_image_is_400(self, client):
+        assert client.post("/api/styles/palette", json={}).status_code == 400
+
+    def test_palette_gray_has_no_suggestion(self, client):
+        body = client.post("/api/styles/palette", json={"image": self._data_url((128, 128, 128))}).get_json()
+        assert body == {"colors": [], "suggested": None}
+
+    def test_palette_bad_image_is_400(self, client):
+        import base64
+
+        r = client.post("/api/styles/palette", json={"image": "data:image/png;base64," + base64.b64encode(b"nope").decode()})
+        assert r.status_code == 400
+
+    def test_export_writes_and_reveals(self, client, monkeypatch, tmp_path):
+        opened = []
+        monkeypatch.setattr(engine, "downloads_dir", lambda: tmp_path)
+        monkeypatch.setattr(engine, "os_open", lambda path, reveal=False, run=None: opened.append((path, reveal)))
+        r = client.post("/api/styles/neon/export")
+        path = r.get_json()["path"]
+        assert r.status_code == 200 and json.loads(open(path, encoding="utf-8").read())["format"] == 1
+        assert opened and opened[0][1] is True
+
+    def test_export_unknown_is_404(self, client):
+        assert client.post("/api/styles/nada/export").status_code == 404
+
+    def test_import(self, client):
+        r = client.post("/api/styles/import", json={"file": styles.export("neon")})
+        assert r.status_code == 200 and r.get_json()["builtin"] is False
+
+    def test_import_bad_file_is_400(self, client):
+        r = client.post("/api/styles/import", json={"file": {"nope": 1}})
+        assert r.status_code == 400 and "não é um estilo" in r.get_json()["error"]

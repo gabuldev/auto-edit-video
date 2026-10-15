@@ -30,6 +30,10 @@ Endpoints
     POST /api/styles                  {name, tokens, id?, activate?}  salva um estilo seu
     DELETE /api/styles/<id>
     POST /api/styles/preview/<kind>   {tokens} → PNG (thumbnail | lower_third | cta)
+    POST /api/styles/generate         {description, image?} → rascunho {name, description, tokens} (IA)
+    POST /api/styles/palette          {image?} → {colors, suggested} (sem imagem: o logo salvo)
+    POST /api/styles/<id>/export      grava em Downloads e mostra no Finder → {path}
+    POST /api/styles/import           {file} → estilo salvo (nunca sobrescreve)
     PUT|DELETE|GET /api/brand/logo    {data: "data:image/png;base64,…"}
     GET  /api/publish/youtube                 (conta conectada?)
     POST /api/publish/youtube/connect         abre o OAuth no navegador
@@ -401,6 +405,64 @@ def create_app(jobs: engine.JobManager | None = None):
         except styles.StyleError as exc:
             return jsonify({"error": str(exc)}), 400
         return send_file(io.BytesIO(png), mimetype="image/png", max_age=0)
+
+    def _image_bytes(data_url) -> bytes | None:
+        """A data: URL from the app → bytes; None when absent. ValueError when wrong."""
+        import base64
+        import re
+
+        if not data_url:
+            return None
+        m = re.fullmatch(r"data:image/[a-z+.-]+;base64,([A-Za-z0-9+/=\s]+)", str(data_url).strip())
+        if not m:
+            raise ValueError("envie uma imagem PNG, JPG ou WebP")
+        data = base64.b64decode(m.group(1))
+        if len(data) > 5 * 1024 * 1024:
+            raise ValueError("imagem grande demais (máx. 5 MB)")
+        return data
+
+    @app.post("/api/styles/generate")
+    def generate_style():
+        from auto_edit import styles
+
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(styles.generate(body.get("description") or "", image=_image_bytes(body.get("image"))))
+        except (ValueError, styles.StyleError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/styles/palette")
+    def style_palette():
+        from auto_edit import palette, render
+
+        body = request.get_json(silent=True) or {}
+        try:
+            image = _image_bytes(body.get("image")) or render.brand().get("logo")
+            if not image:
+                return jsonify({"error": "sem logo salva nem imagem"}), 400
+            colors = palette.extract(image)
+        except ValueError as exc:  # PaletteError is one
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"colors": colors, "suggested": palette.suggest(colors)})
+
+    @app.post("/api/styles/<style_id>/export")
+    def export_style(style_id: str):
+        from auto_edit import styles
+
+        if not styles.get(style_id):
+            return jsonify({"error": f"estilo não encontrado: {style_id}"}), 404
+        path = styles.export_file(style_id, engine.downloads_dir())
+        engine.os_open(path, reveal=True)
+        return jsonify({"path": str(path)})
+
+    @app.post("/api/styles/import")
+    def import_style():
+        from auto_edit import styles
+
+        try:
+            return jsonify(styles.import_((request.get_json(silent=True) or {}).get("file")))
+        except styles.StyleError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.put("/api/brand/logo")
     def upload_logo():

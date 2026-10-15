@@ -321,6 +321,13 @@ def open_artifact(
     path = artifact_path(video_id, kind)
     if path is None:
         return None
+    os_open(path, reveal, run)
+    return path
+
+
+def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subprocess.Popen) -> None:
+    """Open a file with the OS (its default app), or show it selected in the
+    file manager (`reveal`)."""
     if sys.platform == "darwin":
         cmd = ["open", "-R", str(path)] if reveal else ["open", str(path)]
     elif sys.platform == "win32":
@@ -328,7 +335,12 @@ def open_artifact(
     else:  # no portable "select in folder" on Linux: open the folder instead
         cmd = ["xdg-open", str(path.parent if reveal else path)]
     run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return path
+
+
+def downloads_dir() -> Path:
+    """Where an exported file goes: ~/Downloads, or the home without one."""
+    d = Path.home() / "Downloads"
+    return d if d.is_dir() else Path.home()
 
 
 # Links the frontend may ask the OS to open — only the platforms we publish to.
