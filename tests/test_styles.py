@@ -218,3 +218,44 @@ class TestGenerate:
     def test_unreadable_image_is_a_style_error(self, home):
         with pytest.raises(styles.StyleError, match="imagem"):
             styles.generate("x", b"lixo", complete=lambda p: self.GOOD)
+
+
+class TestShare:
+    """Export a style to a file and import it elsewhere — never the brand."""
+
+    def test_round_trip(self, home):
+        mine = styles.save("Meu Neon", {"colors": {"accent": "#ff00aa"}, "radius": 4}, description="rosa")
+        data = styles.export(mine["id"])
+        assert data == {"format": 1, "name": "Meu Neon", "description": "rosa", "tokens": mine["tokens"]}
+        assert "brand" not in json.dumps(data) and "logo" not in json.dumps(data)
+        styles.delete(mine["id"])
+        back = styles.import_(json.loads(json.dumps(data)))
+        assert back["name"] == "Meu Neon" and back["tokens"] == mine["tokens"] and not back["builtin"]
+
+    def test_presets_export_too(self, home):
+        assert styles.export("neon")["tokens"] == styles.get("neon")["tokens"]
+
+    def test_unknown_style(self, home):
+        with pytest.raises(styles.StyleError):
+            styles.export("nao-existe")
+
+    @pytest.mark.parametrize("data", [None, [], {"tokens": {}}, {"format": 2, "tokens": {}}, {"format": 1, "tokens": "x"}])
+    def test_not_a_style_file(self, home, data):
+        with pytest.raises(styles.StyleError, match="arquivo não é um estilo do Auto-Edit"):
+            styles.import_(data)
+
+    def test_import_never_overwrites(self, home):
+        first = styles.save("Neon", {"colors": {"accent": "#111111"}})
+        imported = styles.import_({"format": 1, "name": "Neon", "tokens": {"colors": {"accent": "#222222"}}})
+        assert imported["id"] != first["id"] and imported["name"] == "Neon (2)"
+        assert styles.get(first["id"])["tokens"]["colors"]["accent"] == "#111111"
+
+    def test_import_junk_tokens_are_validated(self, home):
+        s = styles.import_({"format": 1, "name": "", "tokens": {"radius": 9999}})
+        assert s["name"] == "Estilo importado" and s["tokens"]["radius"] == 60
+
+    def test_export_file_is_unique_in_the_folder(self, home, tmp_path):
+        a = styles.export_file("neon", tmp_path)
+        b = styles.export_file("neon", tmp_path)
+        assert a.name == "neon.autoedit-style.json" and b.name == "neon-2.autoedit-style.json"
+        assert json.loads(a.read_text(encoding="utf-8"))["format"] == 1

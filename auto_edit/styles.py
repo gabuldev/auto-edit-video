@@ -301,6 +301,45 @@ def set_active(style_id: str) -> str:
     return style_id
 
 
+FILE_FORMAT = 1
+FILE_SUFFIX = ".autoedit-style.json"
+NOT_A_STYLE = "arquivo não é um estilo do Auto-Edit"
+
+
+def export(style_id: str) -> dict:
+    """The shareable file of a style: its look only, never the brand."""
+    s = get(style_id)
+    if not s:
+        raise StyleError(f"estilo não encontrado: {style_id}")
+    return {"format": FILE_FORMAT, "name": s["name"], "description": s["description"], "tokens": s["tokens"]}
+
+
+def export_file(style_id: str, folder: Path) -> Path:
+    data = export(style_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    path, n = folder / f"{style_id}{FILE_SUFFIX}", 2
+    while path.exists():
+        path, n = folder / f"{style_id}-{n}{FILE_SUFFIX}", n + 1
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _unique_name(name: str) -> str:
+    taken = {s["name"] for s in list_styles()}
+    out, n = name, 2
+    while out in taken:
+        out, n = f"{name[:34]} ({n})", n + 1
+    return out
+
+
+def import_(data) -> dict:
+    """Save a shared style as a new one of the person's (never overwrites)."""
+    if not isinstance(data, dict) or data.get("format") != FILE_FORMAT or not isinstance(data.get("tokens"), dict):
+        raise StyleError(NOT_A_STYLE)
+    name = str(data.get("name") or "").strip()[:40] or "Estilo importado"
+    return save(_unique_name(name), data["tokens"], None, str(data.get("description") or ""))
+
+
 # ── AI ────────────────────────────────────────────────────────────────────────
 
 AI_TIMEOUT = 120
