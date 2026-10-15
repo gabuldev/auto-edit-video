@@ -338,3 +338,47 @@ class TestStyleApi:
     def test_import_bad_file_is_400(self, client):
         r = client.post("/api/styles/import", json={"file": {"nope": 1}})
         assert r.status_code == 400 and "não é um estilo" in r.get_json()["error"]
+
+
+class TestStyleCli:
+    @pytest.fixture
+    def run(self, home):
+        from typer.testing import CliRunner
+
+        from auto_edit.cli import app
+
+        return lambda *args: CliRunner().invoke(app, ["style", *args])
+
+    def test_generate_prints_and_saves(self, run, monkeypatch):
+        monkeypatch.setattr(styles, "generate", lambda d, image=None: {"name": "Roxo", "description": d, "tokens": styles.validate({})})
+        r = run("generate", "tech roxo", "--save", "--activate")
+        assert r.exit_code == 0, r.output
+        saved = [s for s in styles.list_styles() if not s["builtin"]]
+        assert saved and saved[0]["name"] == "Roxo" and styles.active_id() == saved[0]["id"]
+
+    def test_generate_without_save_saves_nothing(self, run, monkeypatch):
+        monkeypatch.setattr(styles, "generate", lambda d, image=None: {"name": "Roxo", "description": d, "tokens": styles.validate({})})
+        r = run("generate", "tech roxo")
+        assert r.exit_code == 0 and '"accent"' in r.output
+        assert not [s for s in styles.list_styles() if not s["builtin"]]
+
+    def test_generate_error_exits_1(self, run, monkeypatch):
+        def boom(d, image=None):
+            raise styles.StyleError("a IA falhou: x")
+
+        monkeypatch.setattr(styles, "generate", boom)
+        r = run("generate", "x")
+        assert r.exit_code == 1 and "a IA falhou" in r.output
+
+    def test_export_then_import(self, run, tmp_path):
+        out = tmp_path / "neon.autoedit-style.json"
+        assert run("export", "neon", "-o", str(out)).exit_code == 0
+        r = run("import", str(out))
+        assert r.exit_code == 0, r.output
+        assert any(s["name"] == "Neon (2)" for s in styles.list_styles())
+
+    def test_import_bad_file_exits_1(self, run, tmp_path):
+        bad = tmp_path / "x.json"
+        bad.write_text("{nope", encoding="utf-8")
+        r = run("import", str(bad))
+        assert r.exit_code == 1 and "não é um estilo" in r.output
