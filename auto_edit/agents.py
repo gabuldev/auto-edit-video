@@ -363,6 +363,51 @@ def invoke(name: str, prompt_file: Path, output_file: Path, timeout: float | Non
     return 0
 
 
+def _complete_one(name: str, prompt: str, timeout: float, env: dict) -> str:
+    agent = AGENTS[name]
+    model = env.get(agent.model_env) or None
+    if name in ("claude", "cursor"):
+        binary = find_binary(agent)
+        if binary is None:
+            raise AgentError(f"{agent.label} não encontrado")
+    if name == "claude":
+        return _run([binary, *(["--model", model] if model else []), "-p"], prompt, timeout, env=env)
+    if name == "cursor":
+        from auto_edit import runner
+
+        with tempfile.TemporaryDirectory(prefix="auto-edit-agent-") as td:
+            prompt_path, out_path = Path(td) / "prompt.txt", Path(td) / "out.txt"
+            prompt_path.write_text(prompt, encoding="utf-8")
+            rc = runner.invoke_cursor(prompt_path, out_path, Path(__file__).resolve().parent.parent)
+            text = out_path.read_text(encoding="utf-8") if out_path.is_file() else ""
+            if rc != 0:
+                raise AgentError(f"cursor saiu com {rc}: {text.strip()[-300:]}")
+            return text
+    if name in AGENTIC:
+        prompt = TEXT_ONLY + prompt
+    return RUNNERS[name](prompt, model=model, timeout=timeout)
+
+
+def complete(prompt: str, *, timeout: float = 120) -> str:
+    """One text answer outside the pipeline (no workspace, no ralph.sh): the
+    agent chosen in Settings, then the fallback. AgentError lists what each
+    one said when none answers."""
+    from auto_edit import settings
+
+    env = settings.env_from_settings()
+    names = [normalize(env.get("AUTO_EDIT_LLM") or "claude") or "claude"]
+    fallback = normalize(env.get("AUTO_EDIT_LLM_FALLBACK") or "")
+    if fallback and fallback not in names:
+        names.append(fallback)
+    errors = []
+    for name in names:
+        try:
+            return _complete_one(name, prompt, timeout, env)
+        except AgentError as exc:
+            errors.append(f"{name}: {exc}")
+    raise AgentError("; ".join(errors))
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 5 and sys.argv[1] == "invoke" and sys.argv[2] in RUNNERS:
         sys.exit(invoke(sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])))

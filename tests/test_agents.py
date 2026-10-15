@@ -172,3 +172,63 @@ def test_model_comes_from_the_env(tmp_path, monkeypatch):
     agents.invoke("ollama", prompt, tmp_path / "o.txt")
     assert seen["model"] == "llama3.1:8b"
     assert os.environ["AUTO_EDIT_OLLAMA_MODEL"] == "llama3.1:8b"
+
+
+class TestComplete:
+    """One text call outside the pipeline (Estilos → Criar com IA): the agent
+    from Settings, then the fallback."""
+
+    @pytest.fixture
+    def env(self, monkeypatch):
+        from auto_edit import settings
+
+        e: dict = {}
+        monkeypatch.setattr(settings, "env_from_settings", lambda base=None: e)
+        return e
+
+    def test_primary_answers(self, env, monkeypatch):
+        env["AUTO_EDIT_LLM"] = "ollama"
+        monkeypatch.setitem(agents.RUNNERS, "ollama", lambda prompt, model=None, timeout=None: f"ok:{prompt}")
+        assert agents.complete("oi") == "ok:oi"
+
+    def test_falls_back_when_primary_fails(self, env, monkeypatch):
+        env.update(AUTO_EDIT_LLM="ollama", AUTO_EDIT_LLM_FALLBACK="openrouter")
+
+        def boom(prompt, model=None, timeout=None):
+            raise agents.AgentError("caiu")
+
+        monkeypatch.setitem(agents.RUNNERS, "ollama", boom)
+        monkeypatch.setitem(agents.RUNNERS, "openrouter", lambda prompt, model=None, timeout=None: "do fallback")
+        assert agents.complete("oi") == "do fallback"
+
+    def test_both_fail_lists_both(self, env, monkeypatch):
+        env.update(AUTO_EDIT_LLM="ollama", AUTO_EDIT_LLM_FALLBACK="openrouter")
+
+        def boom(prompt, model=None, timeout=None):
+            raise agents.AgentError("caiu")
+
+        monkeypatch.setitem(agents.RUNNERS, "ollama", boom)
+        monkeypatch.setitem(agents.RUNNERS, "openrouter", boom)
+        with pytest.raises(agents.AgentError, match="ollama.*openrouter"):
+            agents.complete("oi")
+
+    def test_agentic_cli_gets_the_text_only_preamble(self, env, monkeypatch):
+        env["AUTO_EDIT_LLM"] = "opencode"
+        seen = {}
+        monkeypatch.setitem(agents.RUNNERS, "opencode", lambda prompt, model=None, timeout=None: seen.setdefault("p", prompt))
+        agents.complete("tarefa")
+        assert seen["p"].startswith(agents.TEXT_ONLY) and seen["p"].endswith("tarefa")
+
+    def test_claude_gets_the_prompt_on_stdin(self, env, monkeypatch):
+        env.update(AUTO_EDIT_LLM="claude", AUTO_EDIT_CLAUDE_MODEL="sonnet")
+        calls = []
+        monkeypatch.setattr(agents, "find_binary", lambda agent: "/bin/claude")
+        monkeypatch.setattr(agents, "_run", lambda cmd, stdin, timeout, env=None, cwd=None: calls.append((cmd, stdin)) or "resposta")
+        assert agents.complete("p") == "resposta"
+        assert calls == [(["/bin/claude", "--model", "sonnet", "-p"], "p")]
+
+    def test_missing_cli_is_an_agent_error(self, env, monkeypatch):
+        env["AUTO_EDIT_LLM"] = "claude"
+        monkeypatch.setattr(agents, "find_binary", lambda agent: None)
+        with pytest.raises(agents.AgentError, match="Claude"):
+            agents.complete("p")
