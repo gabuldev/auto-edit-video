@@ -20,6 +20,7 @@ const state = {
   timers: {},
 };
 
+const NO_VISION = "seu agente de IA não enxerga imagens — troque nas Configurações (Claude, Codex, OpenRouter ou um modelo de visão no Ollama)";
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const styleOf = (id) => state.data?.styles.find((s) => s.id === id);
 const shown = () => state.draft || styleOf(state.selected)?.tokens;
@@ -221,6 +222,8 @@ function renderEditor() {
   });
   document.querySelectorAll("#sty-editor [data-out]").forEach((o) => (o.textContent = fmt(o.dataset.out, getTok(t, o.dataset.out))));
   renderSteps();
+  if (document.activeElement !== el("sty-html")) el("sty-html").value = t.thumbnail.html || "";
+  el("sty-html-reset").hidden = !t.thumbnail.html;
   const s = styleOf(state.selected);
   if (!el("sty-save-name").value) el("sty-save-name").value = s.builtin ? `Meu ${s.name}` : s.name;
   el("btn-sty-save-new").hidden = s.builtin || state.fresh; // a preset or an AI draft is always saved as new
@@ -280,15 +283,16 @@ async function saveDraft(asNew) {
 async function generateAi() {
   const description = el("sty-ai-desc").value.trim();
   if (!description && !state.aiImage) return setError("descreva o estilo ou anexe uma imagem");
+  if (state.aiImage && !state.data.ai_vision) return setError(NO_VISION);
   if (state.draft && !confirmDiscard()) {
     el("sty-ai-status").textContent = "você tem edições abertas: clique de novo pra descartar";
     return;
   }
   setGenerating(true);
-  el("sty-ai-status").textContent = "gerando… (até 2 min)";
+  el("sty-ai-status").textContent = "começando… (1 a 3 min)";
   setError("");
   try {
-    const draft = await api.generateStyle(description, state.aiImage);
+    const draft = await api.generateStyle(description, state.aiImage, (msg) => (el("sty-ai-status").textContent = `${msg}…`));
     state.draft = draft.tokens;
     state.fresh = true;
     el("sty-save-name").value = draft.name;
@@ -305,26 +309,50 @@ async function generateAi() {
   }
 }
 
+// The AI adjusts the open draft's layout ("título maior, tira o círculo").
+async function adjustAi() {
+  const request = el("sty-adjust-req").value.trim();
+  if (!request) return el("sty-adjust-req").focus();
+  setGenerating(true);
+  el("sty-adjust-status").textContent = "começando…";
+  setError("");
+  try {
+    const draft = await api.adjustStyle(state.draft, request, (msg) => (el("sty-adjust-status").textContent = `${msg}…`));
+    state.draft = draft.tokens;
+    el("sty-adjust-req").value = "";
+    renderEditor();
+    refreshPreviews();
+  } catch (err) {
+    setError(String(err.message || err));
+  } finally {
+    setGenerating(false);
+    el("sty-adjust-status").textContent = "";
+  }
+}
+
 // While the AI works, nothing else can start a draft that its answer would replace.
 function setGenerating(on) {
   state.generating = on;
   el("btn-sty-ai-go").disabled = on;
   el("btn-sty-edit").disabled = on;
+  el("btn-sty-adjust").disabled = on;
+  el("btn-sty-save").disabled = on;
+  el("btn-sty-save-new").disabled = on;
   el("sty-gallery").classList.toggle("busy", on);
 }
 
-// Only its colors matter: shrink to ≤512px here, so a full-screen retina
-// screenshot never hits the engine's 5 MB limit.
+// The AI looks at it: keep up to 1280px (enough to read the layout), JPEG
+// so a full-screen retina screenshot stays far below the engine's 5 MB limit.
 async function takeAiImage(file, name) {
   if (!file) return;
   try {
     const img = await createImageBitmap(file);
-    const k = Math.min(1, 512 / Math.max(img.width, img.height));
+    const k = Math.min(1, 1280 / Math.max(img.width, img.height));
     const c = document.createElement("canvas");
     c.width = Math.max(1, Math.round(img.width * k));
     c.height = Math.max(1, Math.round(img.height * k));
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    setAiImage(c.toDataURL("image/png"), name || "imagem");
+    setAiImage(c.toDataURL("image/jpeg", 0.9), name || "imagem");
   } catch {
     setError("não consegui ler a imagem");
   }
@@ -516,6 +544,22 @@ function wire() {
       renderSteps();
       changed();
     }
+  });
+  el("btn-sty-adjust").addEventListener("click", adjustAi);
+  el("sty-adjust-req").addEventListener("keydown", (e) => { if (e.key === "Enter") adjustAi(); });
+  el("sty-html").addEventListener("input", () => {
+    const html = el("sty-html").value;
+    if (html.trim()) state.draft.thumbnail.html = html;
+    else delete state.draft.thumbnail.html;
+    el("sty-html-reset").hidden = !html.trim();
+    debounce("preview", () => refreshPreviews(), 600);
+  });
+  el("sty-html-reset").addEventListener("click", (e) => {
+    e.preventDefault();
+    delete state.draft.thumbnail.html;
+    el("sty-html").value = "";
+    el("sty-html-reset").hidden = true;
+    refreshPreviews();
   });
   el("sty-step-add").addEventListener("click", (e) => {
     e.preventDefault();

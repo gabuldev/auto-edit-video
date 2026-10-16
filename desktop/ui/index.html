@@ -526,7 +526,7 @@
         <div class="sty-gallery" id="sty-gallery"></div>
 
         <section class="card sty-ai" id="sty-ai" hidden>
-          <div class="card-head"><div><h2>✨ Criar com IA</h2><p>descreva o clima do canal; uma imagem de referência é opcional (a IA usa as cores dela).</p></div></div>
+          <div class="card-head"><div><h2>✨ Criar com IA</h2><p>descreva o clima do canal e/ou mande uma thumbnail de referência: a IA reproduz o layout dela (título, fontes, elementos) com o seu conteúdo.</p></div></div>
           <textarea class="input" id="sty-ai-desc" rows="3" maxlength="500" placeholder="ex.: tech escuro, neon roxo, bem agressivo"></textarea>
           <div class="sty-ai-row">
             <a href="#" id="sty-ai-pick">anexar imagem</a><span class="dim">ou cole um print (⌘V / Ctrl+V)</span>
@@ -559,6 +559,19 @@
           </div>
 
           <div class="sty-editor" id="sty-editor" hidden>
+            <fieldset class="sty-layout">
+              <legend>Layout da thumbnail</legend>
+              <div class="sty-ai-row">
+                <input class="input grow" id="sty-adjust-req" maxlength="300" placeholder="ajuste com IA: título maior, tira o círculo, contorno mais grosso…" />
+                <span class="dim" id="sty-adjust-status"></span>
+                <button class="btn btn-sm" id="btn-sty-adjust">Ajustar com IA</button>
+              </div>
+              <details id="sty-adv">
+                <summary>Avançado: editar o HTML</summary>
+                <textarea class="input mono sty-html" id="sty-html" spellcheck="false" placeholder="sem layout próprio: a thumbnail usa o layout padrão"></textarea>
+                <a href="#" id="sty-html-reset">voltar pro layout padrão</a>
+              </details>
+            </fieldset>
             <div class="sty-cols">
               <fieldset>
                 <legend>Cores</legend>

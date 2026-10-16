@@ -144,7 +144,23 @@ export const deleteStyle = (id) => json(`/api/styles/${encodeURIComponent(id)}`,
 export const uploadLogo = (data) => json("/api/brand/logo", sendJson("PUT", { data }));
 export const deleteLogo = () => json("/api/brand/logo", { method: "DELETE" });
 export const logoUrl = () => `${API}/api/brand/logo?t=${Date.now()}`;
-export const generateStyle = (description, image) => json("/api/styles/generate", sendJson("POST", { description, image }));
+/** The AI creating (or adjusting) a style runs as a job: progress over SSE,
+ * resolves with the draft {name, description, tokens}. */
+async function styleAiJob(path, body, onProgress) {
+  const { job_id } = await json(path, sendJson("POST", body));
+  return new Promise((resolve, reject) => {
+    const es = new EventSource(`${API}/api/jobs/${encodeURIComponent(job_id)}/events`);
+    es.onmessage = (m) => {
+      const ev = JSON.parse(m.data);
+      if (ev.type === "progress") onProgress?.(ev.message);
+      else if (ev.type === "done") { es.close(); ev.result ? resolve(ev.result) : reject(new Error("a IA não terminou")); }
+      else if (ev.type === "error") { es.close(); reject(new Error(ev.message || "a IA falhou")); }
+    };
+    es.onerror = () => { es.close(); reject(new Error("perdi a conexão com o motor")); };
+  });
+}
+export const generateStyle = (description, image, onProgress) => styleAiJob("/api/styles/generate", { description, image }, onProgress);
+export const adjustStyle = (tokens, request, onProgress) => styleAiJob("/api/styles/adjust", { tokens, request }, onProgress);
 export const stylePalette = (image) => json("/api/styles/palette", sendJson("POST", image ? { image } : {}));
 export const exportStyle = (id) => json(`/api/styles/${encodeURIComponent(id)}/export`, { method: "POST" });
 export const importStyle = (file) => json("/api/styles/import", sendJson("POST", { file }));
