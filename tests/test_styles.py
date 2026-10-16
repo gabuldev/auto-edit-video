@@ -464,20 +464,51 @@ class TestStyleCli:
         return lambda *args: CliRunner().invoke(app, ["style", *args])
 
     def test_generate_prints_and_saves(self, run, monkeypatch):
-        monkeypatch.setattr(styles, "generate", lambda d, image=None: {"name": "Roxo", "description": d, "tokens": styles.validate({})})
+        monkeypatch.setattr(styles, "generate", lambda d, image=None, **kw: {"name": "Roxo", "description": d, "tokens": styles.validate({})})
         r = run("generate", "tech roxo", "--save", "--activate")
         assert r.exit_code == 0, r.output
         saved = [s for s in styles.list_styles() if not s["builtin"]]
         assert saved and saved[0]["name"] == "Roxo" and styles.active_id() == saved[0]["id"]
 
     def test_generate_without_save_saves_nothing(self, run, monkeypatch):
-        monkeypatch.setattr(styles, "generate", lambda d, image=None: {"name": "Roxo", "description": d, "tokens": styles.validate({})})
+        monkeypatch.setattr(styles, "generate", lambda d, image=None, **kw: {"name": "Roxo", "description": d, "tokens": styles.validate({})})
         r = run("generate", "tech roxo")
         assert r.exit_code == 0 and '"accent"' in r.output
         assert not [s for s in styles.list_styles() if not s["builtin"]]
 
+    def test_generate_passes_rounds_and_shows_progress(self, run, monkeypatch):
+        seen = {}
+
+        def gen(d, image=None, *, rounds=3, on_progress=None, base=None):
+            seen.update(rounds=rounds)
+            on_progress("desenhando o layout")
+            return {"name": "Roxo", "description": d, "tokens": styles.validate({})}
+
+        monkeypatch.setattr(styles, "generate", gen)
+        r = run("generate", "x", "--rounds", "1")
+        assert r.exit_code == 0 and seen["rounds"] == 1 and "desenhando o layout" in r.output
+
+    def test_adjust_saves_a_new_style_from_the_old_one(self, run, monkeypatch):
+        old = styles.save("Meu", {"radius": 3})
+        seen = {}
+
+        def gen(d, image=None, *, base=None, rounds=3, on_progress=None):
+            seen.update(d=d, base=base)
+            return {"name": "Outro", "description": "", "tokens": {**base, "radius": 9}}
+
+        monkeypatch.setattr(styles, "generate", gen)
+        r = run("adjust", old["id"], "título maior", "--activate")
+        assert r.exit_code == 0, r.output
+        assert seen == {"d": "título maior", "base": old["tokens"]}
+        new = next(s for s in styles.list_styles() if s["name"] == "Meu (ajustado)")
+        assert new["tokens"]["radius"] == 9 and styles.active_id() == new["id"]
+        assert styles.get(old["id"])["tokens"]["radius"] == 3
+
+    def test_adjust_unknown_style_exits_1(self, run):
+        assert run("adjust", "nao-existe", "x").exit_code == 1
+
     def test_generate_error_exits_1(self, run, monkeypatch):
-        def boom(d, image=None):
+        def boom(d, image=None, **kw):
             raise styles.StyleError("a IA falhou: x")
 
         monkeypatch.setattr(styles, "generate", boom)

@@ -19,16 +19,21 @@ def _fail(msg: str) -> None:
     raise typer.Exit(1)
 
 
+def _progress(msg: str) -> None:
+    typer.echo(f"· {msg}", err=True)
+
+
 @style_app.command("generate")
 def generate(
     description: str = typer.Argument("", help="Como o estilo deve ser (ex.: 'tech escuro, neon roxo')"),
-    image: Optional[Path] = typer.Option(None, "--image", "-i", help="Imagem de referência (usa as cores dela)"),
+    image: Optional[Path] = typer.Option(None, "--image", "-i", help="Thumbnail de referência (a IA reproduz o layout)"),
+    rounds: int = typer.Option(styles.AI_ROUNDS, "--rounds", min=1, max=5, help="Respostas da IA no total (1 = sem conferir)"),
     save: bool = typer.Option(False, "--save", help="Salva como um estilo seu"),
     activate: bool = typer.Option(False, "--activate", help="Salva e passa a usar"),
 ):
     """Cria um estilo com a IA (rascunho; --save grava)."""
     try:
-        draft = styles.generate(description, image.read_bytes() if image else None)
+        draft = styles.generate(description, image.read_bytes() if image else None, rounds=rounds, on_progress=_progress)
     except (OSError, styles.StyleError) as exc:
         _fail(str(exc))
     if save or activate:
@@ -38,6 +43,29 @@ def generate(
         console.print(f"[green]salvo:[/green] {saved['name']} ({saved['id']})")
     else:
         typer.echo(json.dumps(draft, indent=2, ensure_ascii=False))
+
+
+@style_app.command("adjust")
+def adjust(
+    style_id: str = typer.Argument(..., help="Id do estilo de partida"),
+    request: str = typer.Argument(..., help="O que mudar (ex.: 'título maior, tira o círculo')"),
+    image: Optional[Path] = typer.Option(None, "--image", "-i", help="Thumbnail de referência"),
+    rounds: int = typer.Option(styles.AI_ROUNDS, "--rounds", min=1, max=5, help="Respostas da IA no total"),
+    activate: bool = typer.Option(False, "--activate", help="Passa a usar"),
+):
+    """Ajusta um estilo com a IA e salva como um estilo novo (o original fica)."""
+    base = styles.get(style_id)
+    if not base:
+        _fail(f"estilo não encontrado: {style_id}")
+    try:
+        draft = styles.generate(request, image.read_bytes() if image else None, base=base["tokens"],
+                                rounds=rounds, on_progress=_progress)
+    except (OSError, styles.StyleError) as exc:
+        _fail(str(exc))
+    saved = styles.save(f"{base['name'][:28]} (ajustado)", draft["tokens"], None, base["description"])
+    if activate:
+        styles.set_active(saved["id"])
+    console.print(f"[green]salvo:[/green] {saved['name']} ({saved['id']})")
 
 
 @style_app.command("export")

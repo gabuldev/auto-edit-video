@@ -54,7 +54,13 @@ export function htmlTree(
     return fonts.has(fam) ? fam : defaultFont;
   };
 
-  function conv(n: any, inherited: string): any {
+  const transform = (t: string, how: string) =>
+    how === "uppercase" ? t.toUpperCase() : how === "lowercase" ? t.toLowerCase()
+      : how === "capitalize" ? t.replace(/(^|\s)(\S)/g, (_, a, b) => a + b.toUpperCase()) : t;
+
+  // `inherited` / `tt`: the font and text-transform from the parents — the
+  // text is measured as it will be drawn.
+  function conv(n: any, inherited: string, tt = ""): any {
     if (n.type === TEXT_NODE) {
       const raw = unescape(String(n.value));
       const t = fill(raw).replace(/\s+/g, " ").trim();
@@ -65,12 +71,16 @@ export function htmlTree(
     const style = a.style ? css(fill(unescape(a.style))) : {};
     if (style.fontFamily) style.fontFamily = fontOf(style);
     const font = style.fontFamily || inherited;
+    const how = String(style.textTransform || tt);
     if (n.name === "img") {
       const m = String(a.src || "").match(/\{\{\s*([a-z0-9]+)\s*\}\}/);
       const src = m ? images[m[1]] : null;
       return src ? { type: "img", props: { src, style } } : null;
     }
-    const raw = (n.children || []).map((c: any) => conv(c, font)).filter((c: any) => c !== null);
+    const raw = (n.children || [])
+      .map((c: any) => conv(c, font, how))
+      .filter((c: any) => c !== null)
+      .map((c: any) => (typeof c === "string" ? transform(c, how) : c));
     const kids = raw.filter((c: any) => !(c && c.empty));
     if (!kids.length && raw.length) return null; // only empty placeholders: the element goes away
     if (a["data-fit"] && kids.length === 1 && typeof kids[0] === "string") {

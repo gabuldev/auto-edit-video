@@ -59,3 +59,12 @@ test("entities in text come out as characters", () => {
   const t = htmlTree("<div>A &amp; B</div>", V, {}, { Anton: m }, "Anton", 1280, 720);
   expect(t.props.children).toBe("A & B");
 });
+
+test("text-transform is applied before fitting (uppercase is wider)", () => {
+  const wide = (t: string, s: number) => [...t].reduce((w, c) => w + (c === c.toUpperCase() && c !== " " ? 1 : 0.5), 0) * s * 0.5;
+  const html = (tt: string) => `<div><span data-fit="linhas:1;min:10;max:300" style="width:600px;${tt}">{{titulo}}</span></div>`;
+  const plain = find(htmlTree(html(""), V, {}, { Anton: wide }, "Anton", 1280, 720), (n) => n.type === "span");
+  const upper = find(htmlTree(html("text-transform:uppercase"), V, {}, { Anton: wide }, "Anton", 1280, 720), (n) => n.type === "span");
+  expect(upper.props.children).toBe(V.titulo.toUpperCase());
+  expect(upper.props.style.fontSize).toBeLessThan(plain.props.style.fontSize);
+});
