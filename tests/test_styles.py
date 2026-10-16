@@ -568,7 +568,7 @@ class TestHtmlSpec:
         assert spec["values"]["destaque"] == "#ff0000" and spec["values"]["cor.panel"] == t["colors"]["panel"]
         assert spec["fonts"][0]["name"] == "Bangers"
         assert {f["name"] for f in spec["fonts"]} >= {"Anton", "Luckiest Guy", "Montserrat"}
-        assert spec["images"] == {"frame": "/f.jpg", "frame2": None, "rosto": None, "logo": None}
+        assert spec["images"] == {"frame": "/f.jpg", "frame2": None, "rosto": None, "rosto_contorno": None, "logo": None}
 
     def test_preview_reports_invalid_layout(self, home):
         with pytest.raises(styles.StyleError, match="layout"):

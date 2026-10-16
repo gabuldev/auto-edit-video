@@ -626,3 +626,73 @@ class TestHtmlLayout:
         path = thumbnailer._pick_second_frame("v.mp4", 100.0, tmp_path, 30.0)
         assert path is not None and path.exists()
         assert taken and all(abs(ts - 30.0) >= 15.0 for ts in taken)
+
+
+class TestFaceCutout:
+    """Layouts with {{rosto}}/{{rosto_contorno}} get the person cut out of the
+    main frame — unless there's a face photo; never at the thumbnail's cost."""
+
+    def _long(self, monkeypatch, tmp_path, html, face_asset=None):
+        frame = tmp_path / "frame.jpg"
+        Image.new("RGB", (1920, 1080), (40, 40, 40)).save(frame)
+        monkeypatch.setattr(thumbnailer, "_generate_imagen_bg", lambda *a, **kw: None)
+        monkeypatch.setattr(thumbnailer, "_frame_source", lambda ws, p: ("v.mp4", {"duration": 100.0}))
+        monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, with_ts=False, **kw: (frame, 30.0) if with_ts else frame)
+        monkeypatch.setattr(thumbnailer, "_style_html", lambda: html)
+        monkeypatch.setattr(thumbnailer, "_find_face_asset", lambda: face_asset)
+        seen = {}
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: seen.update(spec) or output.write_bytes(b"PNG") or True)
+        return frame, seen
+
+    def test_layout_with_face_gets_the_cutout(self, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        frame, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto_contorno}}"/></div>')
+        calls = []
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda frames, folder: calls.append(frames) or {"rosto": tmp_path / "r.png", "rosto_contorno": tmp_path / "c.png"})
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert calls == [[frame]]
+        assert seen["face"] == str(tmp_path / "r.png") and seen["face_outline"] == str(tmp_path / "c.png")
+
+    def test_face_photo_wins_and_no_cutout(self, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        photo = tmp_path / "eu.png"
+        _, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto}}"/></div>', face_asset=photo)
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda *a: pytest.fail("cut out despite the photo"))
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert seen["face"] == str(photo)
+
+    def test_layout_without_face_does_not_cut(self, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        self._long(monkeypatch, tmp_path, "<div><span>{{titulo}}</span></div>")
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda *a: pytest.fail("cut out for nothing"))
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+
+    def test_cutout_failure_means_no_face(self, monkeypatch, tmp_path, capsys):
+        from auto_edit import face_cutout
+
+        _, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto}}"/></div>')
+
+        def boom(*a):
+            raise face_cutout.CutoutError("sem internet")
+
+        monkeypatch.setattr(face_cutout, "cutout_files", boom)
+        out = thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert out.read_bytes() == b"PNG" and seen.get("face") is None
+        assert "sem internet" in capsys.readouterr().out
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_outlined_cutout_reaches_the_html_spec(self, tmp_path, monkeypatch):
+        tokens = styles_mod.validate({"thumbnail": {"html": '<div><img src="{{rosto_contorno}}"/></div>'}})
+        monkeypatch.setattr(styles_mod, "active", lambda: {"id": "x", "tokens": tokens})
+        log = tmp_path / "spec.json"
+        exe = tmp_path / "auto-edit-render"
+        exe.write_text(f"#!{sys.executable}\nimport sys, shutil\nshutil.copy(sys.argv[2], {str(log)!r})\nopen(sys.argv[3], 'wb').write(b'PNG')\n")
+        exe.chmod(0o755)
+        monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+        monkeypatch.delenv("AUTO_EDIT_THUMB_RENDERER", raising=False)
+        thumbnailer._render_react({"kind": "long", "main_text": "x", "accent": [1, 2, 3], "face": "/r.png", "face_outline": "/c.png"}, tmp_path / "t.png")
+        images = json.loads(log.read_text())["images"]
+        assert images["rosto"] == "/r.png" and images["rosto_contorno"] == "/c.png"

@@ -55,3 +55,7 @@ def test_placeholder_hidden_inside_url_is_removed():
 def test_only_color_placeholders_in_css():
     out = th.sanitize('<div style="width:{{titulo}}px;color:{{cor.accent}}">a</div>')
     assert "titulo" not in out and "{{cor.accent}}" in out
+
+
+def test_outlined_face_slot_is_an_image():
+    assert "{{rosto_contorno}}" in th.sanitize('<div><img src="{{rosto_contorno}}"/></div>')

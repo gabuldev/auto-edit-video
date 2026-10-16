@@ -267,6 +267,24 @@ def _style_html() -> str | None:
         return None
 
 
+def _face_cutout(frame: Path, workspace: Path) -> dict | None:
+    """The person cut out of the frame, only when the style's layout shows a
+    face ({{rosto}} / {{rosto_contorno}}). Downloads the model the first time;
+    any failure means a thumbnail without the face."""
+    html = _style_html()
+    if not html or not {"rosto", "rosto_contorno"} & thumb_html.placeholders(html):
+        return None
+    from auto_edit import face_cutout
+
+    try:
+        cut = face_cutout.cutout_files([frame], workspace / "_face")
+    except face_cutout.CutoutError as exc:
+        print(f"[thumbnailer] Face cut-out unavailable: {exc}")
+        return None
+    print("[thumbnailer] Face cut out of the frame" if cut else "[thumbnailer] No person in the frame to cut out")
+    return cut
+
+
 def _render_react(spec: dict, output: Path) -> bool:
     """Render the thumbnail with the active style's HTML layout (long only),
     else the React layout. False (and why) when it can't — the caller then
@@ -286,6 +304,7 @@ def _render_react(spec: dict, output: Path) -> bool:
                 tokens, title=spec.get("main_text") or "", sub=spec.get("sub_text"), accent=spec["accent"],
                 width=spec.get("width", LONG_SIZE[0]), height=spec.get("height", LONG_SIZE[1]),
                 images={"frame": spec.get("background"), "frame2": spec.get("frame2"), "rosto": spec.get("face"),
+                        "rosto_contorno": spec.get("face_outline") or spec.get("face"),
                         "logo": (spec.get("logos") or [None])[0]},
             )
             why = _run_renderer(cmd, {"kind": "long", **hspec}, output)
@@ -1170,6 +1189,12 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
         except Exception:
             print("[thumbnailer] Frame extraction failed — using gradient fallback")
 
+    face_outline: str | None = None
+    if face_path is None and frame_path is not None:
+        cut = _face_cutout(frame_path, workspace)
+        if cut:
+            face_path, face_outline = cut["rosto"], str(cut["rosto_contorno"])
+
     with tempfile.TemporaryDirectory(prefix="auto-edit-thumb-bg-") as tmp:
         if bg is not None:
             background: Path | None = Path(tmp) / "imagen.png"
@@ -1180,6 +1205,7 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
                 "accent": list(template.get("accent", [255, 220, 0])),
                 "background": str(background) if background else None,
                 "face": str(face_path) if face_path else None,
+                "face_outline": face_outline,
                 "frame2": str(frame2_path) if frame2_path else None,
                 "logos": [str(p) for p in logo_paths]}
         rendered = _render_react(spec, output)
