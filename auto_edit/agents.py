@@ -116,6 +116,18 @@ def _run(cmd: list[str], stdin: str, timeout: float | None, env: dict | None = N
     return proc.stdout
 
 
+def _b64(path: Path) -> str:
+    import base64
+
+    return base64.b64encode(Path(path).read_bytes()).decode()
+
+
+def _data_url(path: Path) -> str:
+    ext = Path(path).suffix.lower().lstrip(".")
+    mime = {"jpg": "jpeg", "jpeg": "jpeg", "webp": "webp"}.get(ext, "png")
+    return f"data:image/{mime};base64,{_b64(path)}"
+
+
 def run_agy(prompt: str, *, model: str | None = None, timeout: float | None = None, binary: str | None = None) -> str:
     binary = binary or find_binary(AGENTS["agy"])
     if not binary:
@@ -167,7 +179,8 @@ def ollama_models() -> list[str]:
     return [m["name"] for m in _ollama("/api/tags").get("models", [])]
 
 
-def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None = None, binary: str | None = None) -> str:
+def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None = None, binary: str | None = None,
+               images: list[Path] | None = None) -> str:
     if not model:
         models = ollama_models()
         if not models:
@@ -182,9 +195,15 @@ def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None =
             f"prompt de ~{needed} tokens não cabe no contexto de {OLLAMA_CONTEXT} do modelo local "
             "(AUTO_EDIT_OLLAMA_CTX) — usando o fallback"
         )
+    message: dict = {"role": "user", "content": prompt}
+    if images:
+        caps = _ollama("/api/show", {"model": model}).get("capabilities") or []
+        if "vision" not in caps:
+            raise AgentError(f"o modelo {model} do Ollama não enxerga imagens")
+        message["images"] = [_b64(p) for p in images]
     resp = _ollama("/api/chat", {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [message],
         "stream": False,
         "format": "json",  # every LLM stage answers a JSON object
         "options": {"num_ctx": OLLAMA_CONTEXT, "temperature": 0.2},
@@ -219,13 +238,14 @@ def run_opencode(prompt: str, *, model: str | None = None, timeout: float | None
 
 
 def run_codex(prompt: str, *, model: str | None = None, timeout: float | None = None,
-              binary: str | None = None) -> str:
+              binary: str | None = None, images: list[Path] | None = None) -> str:
     binary = binary or find_binary(AGENTS["codex"])
     if not binary:
         raise AgentError("codex não encontrado")
     with tempfile.TemporaryDirectory(prefix="auto-edit-codex-") as scratch:
         last = Path(scratch) / "last_message.txt"
-        cmd = [binary, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
+        # Images right after `exec`: -i takes several values, the next option ends them.
+        cmd = [binary, "exec", *(a for p in images or [] for a in ("-i", str(p))), "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
                "--color", "never", "-C", scratch, "-o", str(last)]
         if model:
             cmd += ["-m", model]
@@ -313,13 +333,16 @@ def _openrouter(path: str, key: str, body: dict | None = None, timeout: float | 
 
 
 def run_openrouter(prompt: str, *, model: str | None = None, timeout: float | None = None,
-                   binary: str | None = None) -> str:
+                   binary: str | None = None, images: list[Path] | None = None) -> str:
     key = openrouter_key()
     if not key:
         raise AgentError("sem chave do OpenRouter — cole a sua em Configurações (openrouter.ai/settings/keys)")
     resp = _openrouter("/chat/completions", key, {
         "model": model or OPENROUTER_DEFAULT_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            *({"type": "image_url", "image_url": {"url": _data_url(p)}} for p in images),
+        ] if images else prompt}],
         "temperature": 0.2,
         # Every LLM stage answers a JSON object; models that don't support
         # this have it dropped by OpenRouter.
@@ -363,7 +386,30 @@ def invoke(name: str, prompt_file: Path, output_file: Path, timeout: float | Non
     return 0
 
 
-def _complete_one(name: str, prompt: str, timeout: float, env: dict) -> str:
+# Agents that can be handed images (complete(images=...)). Ollama only with a
+# vision model (checked when it runs).
+VISION = {"claude", "codex", "openrouter", "ollama"}
+NO_VISION = "seu agente de IA não enxerga imagens — troque nas Configurações"
+
+
+def _agent_names(env: dict) -> list[str]:
+    names = [normalize(env.get("AUTO_EDIT_LLM") or "claude") or "claude"]
+    fallback = normalize(env.get("AUTO_EDIT_LLM_FALLBACK") or "")
+    if fallback and fallback not in names:
+        names.append(fallback)
+    return names
+
+
+def vision_ready(env: dict | None = None) -> bool:
+    """Can the chosen agent (or the fallback) look at an image?"""
+    if env is None:
+        from auto_edit import settings
+
+        env = settings.env_from_settings()
+    return any(n in VISION for n in _agent_names(env))
+
+
+def _complete_one(name: str, prompt: str, timeout: float, env: dict, images: list[Path] | None = None) -> str:
     agent = AGENTS[name]
     model = env.get(agent.model_env) or None
     if name in ("claude", "cursor"):
@@ -371,6 +417,17 @@ def _complete_one(name: str, prompt: str, timeout: float, env: dict) -> str:
         if binary is None:
             raise AgentError(f"{agent.label} não encontrado")
     if name == "claude":
+        if images:
+            # Claude opens the images itself: read-only access to a folder with copies.
+            with tempfile.TemporaryDirectory(prefix="auto-edit-images-") as td:
+                paths = []
+                for p in images:
+                    dst = Path(td) / Path(p).name
+                    shutil.copyfile(p, dst)
+                    paths.append(str(dst))
+                prompt += "\n\n# IMAGENS (abra cada uma com a ferramenta Read)\n" + "\n".join(paths) + "\n"
+                cmd = [binary, *(["--model", model] if model else []), "--add-dir", td, "--allowedTools", "Read", "-p"]
+                return _run(cmd, prompt, timeout, env=env)
         return _run([binary, *(["--model", model] if model else []), "-p"], prompt, timeout, env=env)
     if name == "cursor":
         # Same flags as runner.invoke_cursor (read-only ask mode, JSON envelope),
@@ -390,24 +447,28 @@ def _complete_one(name: str, prompt: str, timeout: float, env: dict) -> str:
         return out
     if name in AGENTIC:
         prompt = TEXT_ONLY + prompt
+    if images:
+        return RUNNERS[name](prompt, model=model, timeout=timeout, images=images)
     return RUNNERS[name](prompt, model=model, timeout=timeout)
 
 
-def complete(prompt: str, *, timeout: float = 120) -> str:
+def complete(prompt: str, *, images: list[Path] | None = None, timeout: float = 120) -> str:
     """One text answer outside the pipeline (no workspace, no ralph.sh): the
-    agent chosen in Settings, then the fallback. AgentError lists what each
-    one said when none answers."""
+    agent chosen in Settings, then the fallback. With `images`, only agents
+    that can see them run. AgentError lists what each one said when none
+    answers."""
     from auto_edit import settings
 
     env = settings.env_from_settings()
-    names = [normalize(env.get("AUTO_EDIT_LLM") or "claude") or "claude"]
-    fallback = normalize(env.get("AUTO_EDIT_LLM_FALLBACK") or "")
-    if fallback and fallback not in names:
-        names.append(fallback)
+    names = _agent_names(env)
+    if images:
+        names = [n for n in names if n in VISION]
+        if not names:
+            raise AgentError(NO_VISION)
     errors = []
     for name in names:
         try:
-            return _complete_one(name, prompt, timeout, env)
+            return _complete_one(name, prompt, timeout, env, images=images)
         except AgentError as exc:
             errors.append(f"{name}: {exc}")
     raise AgentError("; ".join(errors))

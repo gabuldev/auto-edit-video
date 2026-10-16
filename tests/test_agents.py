@@ -254,3 +254,87 @@ class TestComplete:
         monkeypatch.setattr(agents, "_run", lambda cmd, stdin, timeout, env=None, cwd=None: json.dumps({"type": "result", "result": "limit", "is_error": True}))
         with pytest.raises(agents.AgentError, match="limit"):
             agents.complete("p")
+
+
+class TestImages:
+    """complete(images=...): only agents that see images get them."""
+
+    @pytest.fixture
+    def env(self, monkeypatch):
+        from auto_edit import settings
+
+        e: dict = {}
+        monkeypatch.setattr(settings, "env_from_settings", lambda base=None: e)
+        return e
+
+    @pytest.fixture
+    def img(self, tmp_path):
+        p = tmp_path / "ref.png"
+        p.write_bytes(b"\x89PNGfake")
+        return p
+
+    def test_claude_gets_read_access_to_the_images(self, env, monkeypatch, img):
+        env["AUTO_EDIT_LLM"] = "claude"
+        seen = {}
+        monkeypatch.setattr(agents, "find_binary", lambda agent: "/bin/claude")
+
+        def fake_run(cmd, stdin, timeout, env=None, cwd=None):
+            d = Path(cmd[cmd.index("--add-dir") + 1])
+            seen.update(cmd=cmd, stdin=stdin, copied=sorted(p.name for p in d.iterdir()))
+            return "ok"
+
+        monkeypatch.setattr(agents, "_run", fake_run)
+        assert agents.complete("faça", images=[img]) == "ok"
+        cmd = seen["cmd"]
+        assert cmd[cmd.index("--allowedTools") + 1] == "Read" and cmd[-1] == "-p"
+        assert seen["copied"] == ["ref.png"] and "ref.png" in seen["stdin"] and seen["stdin"].startswith("faça")
+
+    def test_codex_gets_image_flags_before_other_options(self, monkeypatch, img):
+        seen = {}
+        monkeypatch.setattr(agents, "_run", lambda cmd, stdin, timeout, env=None, cwd=None: seen.update(cmd=cmd) or "")
+        with pytest.raises(agents.AgentError):  # no last message written by the fake
+            agents.run_codex("p", binary="/bin/codex", images=[img])
+        assert seen["cmd"][1:4] == ["exec", "-i", str(img)] and seen["cmd"][-1] == "-"
+
+    def test_openrouter_sends_image_url_parts(self, monkeypatch, img):
+        seen = {}
+        monkeypatch.setattr(agents, "openrouter_key", lambda: "k")
+        monkeypatch.setattr(agents, "_openrouter", lambda path, key, body=None, timeout=None: seen.update(body=body) or {"choices": [{"message": {"content": "ok"}}]})
+        assert agents.run_openrouter("p", images=[img]) == "ok"
+        content = seen["body"]["messages"][0]["content"]
+        assert content[0] == {"type": "text", "text": "p"}
+        assert content[1]["type"] == "image_url" and content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+    def test_ollama_sends_images_only_to_a_vision_model(self, monkeypatch, img):
+        caps = {"capabilities": ["completion"]}
+        bodies = []
+
+        def fake(path, body=None, timeout=10):
+            if path == "/api/show":
+                return caps
+            bodies.append(body)
+            return {"message": {"content": "ok"}}
+
+        monkeypatch.setattr(agents, "_ollama", fake)
+        with pytest.raises(agents.AgentError, match="imagens"):
+            agents.run_ollama("p", model="qwen2.5:7b", images=[img])
+        caps["capabilities"].append("vision")
+        assert agents.run_ollama("p", model="llava", images=[img]) == "ok"
+        assert bodies[0]["messages"][0]["images"] == [__import__("base64").b64encode(img.read_bytes()).decode()]
+
+    def test_complete_skips_agents_without_vision(self, env, monkeypatch, img):
+        env.update(AUTO_EDIT_LLM="cursor", AUTO_EDIT_LLM_FALLBACK="openrouter")
+        monkeypatch.setitem(agents.RUNNERS, "openrouter", lambda prompt, model=None, timeout=None, images=None: f"viu {len(images)}")
+        monkeypatch.setattr(agents, "find_binary", lambda agent: pytest.fail("cursor ran"))
+        assert agents.complete("x", images=[img]) == "viu 1"
+
+    def test_complete_without_any_vision_agent(self, env, img):
+        env["AUTO_EDIT_LLM"] = "cursor"
+        with pytest.raises(agents.AgentError, match="não enxerga"):
+            agents.complete("x", images=[img])
+
+    def test_vision_ready(self, env):
+        env["AUTO_EDIT_LLM"] = "cursor"
+        assert agents.vision_ready() is False
+        env["AUTO_EDIT_LLM_FALLBACK"] = "codex"
+        assert agents.vision_ready() is True
