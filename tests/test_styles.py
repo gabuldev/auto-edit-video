@@ -626,3 +626,22 @@ class TestPreviewFace:
 
         monkeypatch.setattr(face_cutout, "cutout_files", boom)
         assert styles.preview_face() is None
+
+
+class TestPreviewCache:
+    def test_new_renderer_means_new_previews(self, home, monkeypatch, tmp_path):
+        """A cached preview from an older renderer is never shown after an update."""
+        from auto_edit import render
+
+        exe = tmp_path / "auto-edit-render"
+        exe.write_text(f"#!{sys.executable}\nimport sys\nopen(sys.argv[3], 'wb').write(b'PNG-1')\n")
+        exe.chmod(0o755)
+        monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+        monkeypatch.setattr(styles, "preview_frame", lambda at=0.3: None)
+        first = styles.preview({}, "thumbnail")
+        exe.write_text(f"#!{sys.executable}\nimport sys\nopen(sys.argv[3], 'wb').write(b'PNG-2')\n")
+        import os
+        st = exe.stat()
+        os.utime(exe, (st.st_atime, st.st_mtime + 10))
+        assert first == b"PNG-1" and styles.preview({}, "thumbnail") == b"PNG-2"
+        assert render.stamp()  # something that changes with the renderer

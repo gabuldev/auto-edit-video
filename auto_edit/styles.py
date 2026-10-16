@@ -719,7 +719,7 @@ def _render_preview(spec: dict, kind: str, brand: dict) -> bytes:
     cmd = render.command()
     if cmd is None:
         raise StyleError("renderizador (auto-edit-render) não encontrado")
-    mtimes = [_mtime(brand.get("logo"))] + [_mtime(p) for p in (spec.get("images") or {}).values()]
+    mtimes = [render.stamp(), _mtime(brand.get("logo"))] + [_mtime(p) for p in (spec.get("images") or {}).values()]
     key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode() + str(mtimes).encode()).hexdigest()[:20]
     cached = _cache_dir() / f"{kind}-{key}.png"
     if cached.is_file():

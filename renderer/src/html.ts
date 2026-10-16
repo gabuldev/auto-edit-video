@@ -33,6 +33,8 @@ function css(s: string): Record<string, any> {
   return out;
 }
 
+const scalePx = (v: string, k: number) => v.replace(/(-?[\d.]+)px/g, (_, n) => `${+(parseFloat(n) * k).toFixed(1)}px`);
+
 function parseFit(s: string) {
   const o: Record<string, number> = {};
   for (const part of s.split(";")) {
@@ -98,6 +100,14 @@ export function htmlTree(
       // of the line box).
       const r = fitted(kids[0], { box, maxH, max: f.max, min: Math.min(f.min, FIT_FLOOR), maxLines: f.lines, lineHeight: lh },
         measure[font] || measure[defaultFont]);
+      // Stroke and shadow were written for the declared (or the biggest)
+      // size: shrink them with the text, or a 9px stroke eats a 50px title.
+      const k = r.size / (px(style.fontSize) ?? f.max);
+      if (k < 1) {
+        for (const key of ["WebkitTextStroke", "textShadow"]) {
+          if (typeof style[key] === "string") style[key] = scalePx(style[key], k);
+        }
+      }
       style.fontSize = r.size;
       style.lineHeight ??= lh;
       if (!r.ok) {

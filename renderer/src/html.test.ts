@@ -92,3 +92,14 @@ test("a title that fits is never clipped (accents stick out of the line box)", (
   expect(span.props.style.overflow).toBeUndefined();
   expect(span.props.style.lineClamp).toBeUndefined();
 });
+
+test("stroke and shadow shrink with a fitted title (they were sized for max)", () => {
+  const t = htmlTree(
+    '<div><span data-fit="linhas:1;min:10;max:100" style="width:300px;-webkit-text-stroke:10px #000;text-shadow:8px 8px 0 #000">{{titulo}}</span></div>',
+    V, {}, { Anton: m }, "Anton", 1280, 720);
+  const s = find(t, (n) => n.type === "span").props.style;
+  const k = s.fontSize / 100;
+  expect(k).toBeLessThan(0.5);
+  expect(s.WebkitTextStroke).toBe(`${+(10 * k).toFixed(1)}px #000`);
+  expect(s.textShadow).toBe(`${+(8 * k).toFixed(1)}px ${+(8 * k).toFixed(1)}px 0 #000`);
+});
