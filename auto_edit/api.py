@@ -30,7 +30,8 @@ Endpoints
     POST /api/styles                  {name, tokens, id?, activate?}  salva um estilo seu
     DELETE /api/styles/<id>
     POST /api/styles/preview/<kind>   {tokens} → PNG (thumbnail | lower_third | cta)
-    POST /api/styles/generate         {description, image?} → rascunho {name, description, tokens} (IA)
+    POST /api/styles/generate         {description, image?} → {job_id}; SSE progress/done{result: rascunho}/error (IA)
+    POST /api/styles/adjust           {tokens, request, image?} → {job_id}, o mesmo a partir de um estilo
     POST /api/styles/palette          {image?} → {colors, suggested} (sem imagem: o logo salvo)
     POST /api/styles/<id>/export      grava em Downloads e mostra no Finder → {path}
     POST /api/styles/import           {file} → estilo salvo (nunca sobrescreve)
@@ -350,7 +351,7 @@ def create_app(jobs: engine.JobManager | None = None):
 
     @app.get("/api/styles")
     def list_styles():
-        from auto_edit import render, styles
+        from auto_edit import agents, render, styles
 
         return jsonify({
             "active": styles.active_id(),
@@ -359,6 +360,7 @@ def create_app(jobs: engine.JobManager | None = None):
             "icons": list(styles.ICONS),
             "positions": {"lower_third": list(styles.POSITIONS_LT), "cta": list(styles.POSITIONS_CTA)},
             "brand": render.brand(),
+            "ai_vision": agents.vision_ready(),
         })
 
     @app.put("/api/styles/active")
@@ -421,15 +423,42 @@ def create_app(jobs: engine.JobManager | None = None):
             raise ValueError("imagem grande demais (máx. 5 MB)")
         return data
 
-    @app.post("/api/styles/generate")
-    def generate_style():
+    def _style_job(description: str, image: bytes | None, base: dict | None):
         from auto_edit import styles
 
-        body = request.get_json(silent=True) or {}
+        def target(emit):
+            try:
+                draft = styles.generate(description, image, base=base,
+                                        on_progress=lambda msg: emit({"type": "progress", "message": msg}))
+            except styles.StyleError as exc:
+                emit({"type": "error", "message": str(exc)})
+                return
+            emit({"type": "done", "status": "done", "result": draft})
+
+        return jsonify({"job_id": jobs.run_task("style", target).id}), 202
+
+    @app.post("/api/styles/generate")
+    def generate_style():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get("description", ""), str):
+            return jsonify({"error": "envie {description, image?}"}), 400
         try:
-            return jsonify(styles.generate(body.get("description") or "", image=_image_bytes(body.get("image"))))
-        except (ValueError, styles.StyleError) as exc:
+            image = _image_bytes(body.get("image"))
+        except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        return _style_job(body.get("description") or "", image, None)
+
+    @app.post("/api/styles/adjust")
+    def adjust_style():
+        body = request.get_json(silent=True)
+        if (not isinstance(body, dict) or not isinstance(body.get("tokens"), dict)
+                or not isinstance(body.get("request"), str) or not body["request"].strip()):
+            return jsonify({"error": "envie {tokens, request}"}), 400
+        try:
+            image = _image_bytes(body.get("image"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return _style_job(body["request"], image, body["tokens"])
 
     @app.post("/api/styles/palette")
     def style_palette():

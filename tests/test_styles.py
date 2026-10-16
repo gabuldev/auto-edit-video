@@ -341,18 +341,66 @@ class TestStyleApi:
         Image.new("RGB", (16, 16), rgb).save(buf, "PNG")
         return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
-    def test_generate(self, client, monkeypatch):
-        monkeypatch.setattr(styles, "generate", lambda d, image=None: {"name": "X", "description": d, "tokens": styles.validate({}), "img": bool(image)})
-        r = client.post("/api/styles/generate", json={"description": "neon", "image": self._data_url()})
-        assert r.status_code == 200 and r.get_json()["description"] == "neon" and r.get_json()["img"] is True
+    @staticmethod
+    def _events(client, job_id) -> list[dict]:
+        body = client.get(f"/api/jobs/{job_id}/events").get_data(as_text=True)
+        return [json.loads(line[6:]) for line in body.splitlines() if line.startswith("data: ")]
 
-    def test_generate_error_is_400(self, client, monkeypatch):
-        def boom(d, image=None):
+    def test_generate_is_a_job_with_progress(self, client, monkeypatch):
+        seen = {}
+
+        def gen(d, image=None, *, base=None, on_progress=None):
+            seen.update(d=d, image=image, base=base)
+            on_progress("desenhando o layout")
+            return {"name": "X", "description": d, "tokens": styles.validate({})}
+
+        monkeypatch.setattr(styles, "generate", gen)
+        r = client.post("/api/styles/generate", json={"description": "neon", "image": self._data_url()})
+        assert r.status_code == 202
+        ev = self._events(client, r.get_json()["job_id"])
+        assert ev[0] == {"type": "progress", "message": "desenhando o layout"}
+        assert ev[-1]["type"] == "done" and ev[-1]["result"]["description"] == "neon"
+        assert seen["image"][:4] == b"\x89PNG" and seen["base"] is None
+
+    def test_generate_error_is_an_error_event(self, client, monkeypatch):
+        def boom(d, image=None, **kw):
             raise styles.StyleError("a IA falhou: x")
 
         monkeypatch.setattr(styles, "generate", boom)
         r = client.post("/api/styles/generate", json={"description": "neon"})
-        assert r.status_code == 400 and "a IA falhou" in r.get_json()["error"]
+        ev = self._events(client, r.get_json()["job_id"])
+        assert ev[-1] == {"type": "error", "message": "a IA falhou: x"}
+
+    def test_adjust_passes_the_style(self, client, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(styles, "generate", lambda d, image=None, *, base=None, on_progress=None: seen.update(d=d, base=base) or {"name": "", "description": "", "tokens": base})
+        tokens = styles.validate({"radius": 3})
+        r = client.post("/api/styles/adjust", json={"tokens": tokens, "request": "título maior"})
+        assert r.status_code == 202
+        assert self._events(client, r.get_json()["job_id"])[-1]["type"] == "done"
+        assert seen == {"d": "título maior", "base": tokens}
+
+    @pytest.mark.parametrize("path,body", [
+        ("generate", []), ("generate", {"description": 3}), ("adjust", {"tokens": [], "request": "x"}),
+        ("adjust", {"tokens": {}, "request": None}), ("adjust", {"tokens": {}, "request": "   "}),
+    ])
+    def test_bad_bodies_are_400(self, client, path, body):
+        assert client.post(f"/api/styles/{path}", json=body).status_code == 400
+
+    def test_list_says_if_the_ai_sees_images(self, client, monkeypatch):
+        from auto_edit import agents
+
+        monkeypatch.setattr(agents, "vision_ready", lambda env=None: False)
+        assert client.get("/api/styles").get_json()["ai_vision"] is False
+
+    def test_style_jobs_are_not_video_jobs(self, monkeypatch):
+        jobs = engine.JobManager()
+        job = jobs.run_task("style", lambda emit: emit({"type": "done", "status": "done"}))
+        for _ in range(100):
+            if job.status != "running":
+                break
+            __import__("time").sleep(0.01)
+        assert job.status == "done" and jobs.get(job.id) is job and not jobs.active_ids() and not jobs.failed_ids()
 
     def test_generate_bad_data_url_is_400(self, client):
         r = client.post("/api/styles/generate", json={"description": "x", "image": "data:text/plain;base64,aGk="})

@@ -974,6 +974,26 @@ class JobManager:
         threading.Thread(target=_run, name=f"job-{job.id}", daemon=True).start()
         return job
 
+    def run_task(self, kind: str, target: Callable[[Emit], None]) -> Job:
+        """A job that isn't about a video (e.g. the AI creating a style): its
+        events over /api/jobs/<id>/events, never listed as a video's job."""
+        job = Job(id=uuid.uuid4().hex[:12], video_id=f"_{kind}", kind=kind)
+        with self._lock:
+            self._jobs[job.id] = job
+
+        def _run() -> None:
+            try:
+                target(job.emit)
+            except Exception as exc:  # surface, never crash the thread silently
+                job.emit({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+            finally:
+                if job.status == "running":
+                    job.emit({"type": "done", "status": "done"})
+                job.close()
+
+        threading.Thread(target=_run, name=f"task-{job.id}", daemon=True).start()
+        return job
+
     def stop(self, video_id: str) -> dict:
         """Stop what is running on a workspace: the engine's job (ralph and
         everything it started), a ralph.sh started elsewhere, or a place in
