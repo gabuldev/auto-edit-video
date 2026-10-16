@@ -19,6 +19,7 @@ from pathlib import Path
 
 from auto_edit import config as cfg
 from auto_edit import overlay_assets
+from auto_edit import thumb_html
 
 DEFAULT_ID = "padrao"
 POSITIONS_LT = ("bottom-left", "bottom-right", "top-left")
@@ -166,8 +167,18 @@ def validate(tokens) -> dict:
             "avatar": bool(lt.get("avatar", True)),
         },
         "cta": {"position": _choice(cta.get("position"), POSITIONS_CTA, d["cta"]["position"]), "steps": steps},
-        "thumbnail": {"accent_from": _choice(thumb.get("accent_from"), ("topic", "style"), d["thumbnail"]["accent_from"])},
+        "thumbnail": _thumbnail(thumb),
     }
+
+
+def _thumbnail(thumb: dict) -> dict:
+    out = {"accent_from": _choice(thumb.get("accent_from"), ("topic", "style"), DEFAULT_TOKENS["thumbnail"]["accent_from"])}
+    if isinstance(thumb.get("html"), str) and thumb["html"].strip():
+        try:
+            out["html"] = thumb_html.sanitize(thumb["html"])
+        except thumb_html.ThumbHtmlError:
+            pass  # a broken layout: the default one draws the thumbnail
+    return out
 
 
 def _rgb(hex_color: str) -> list[int]:

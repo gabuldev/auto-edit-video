@@ -394,3 +394,17 @@ class TestDisplayFonts:
     @pytest.mark.parametrize("fid", ["luckiest", "lilita", "bangers", "archivo"])
     def test_new_display_fonts_ship_with_the_app(self, fid):
         assert styles.font_file(styles.FONTS[fid]["bold"]) is not None
+
+
+class TestThumbnailHtml:
+    def test_html_survives_validate(self):
+        t = styles.validate({"thumbnail": {"html": "<div><span>{{titulo}}</span></div>"}})
+        assert "{{titulo}}" in t["thumbnail"]["html"]
+
+    def test_bad_html_is_dropped(self):
+        assert "html" not in styles.validate({"thumbnail": {"html": "<script>x</script>"}})["thumbnail"]
+
+    def test_import_sanitizes(self, home):
+        s = styles.import_({"format": 1, "name": "X", "tokens": {"thumbnail": {
+            "html": '<div><img src="http://a/b.png"/><span>{{titulo}}</span></div>'}}})
+        assert "http" not in s["tokens"]["thumbnail"]["html"]
