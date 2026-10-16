@@ -159,65 +159,129 @@ class TestApi:
         assert c.put("/api/brand/logo", json={"data": "oi"}).status_code == 400
 
 
+def _png(color=(230, 30, 40), size=(64, 36)) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, "PNG")
+    return buf.getvalue()
+
+
 class TestGenerate:
-    """Estilos → Criar com IA: the agent fills tokens; validate keeps them safe."""
+    """Estilos → Criar com IA: the agent draws the thumbnail layout (HTML) and
+    the tokens, then corrects it comparing its render with the reference."""
 
-    GOOD = json.dumps({"name": "Neon Roxo", "description": "tech escuro", "tokens": {
-        "colors": {"accent": "#a855f7", "panel": "#120a1f", "text": "#ffffff"},
-        "radius": 8, "speed": 1.6, "fonts": {"title": "bebas", "text": "poppins"},
-        "cta": {"steps": [{"icon": "like", "text": "CURTE AÍ"}]},
-    }})
+    GOOD = {"name": "Choque", "description": "elétrico", "tokens": {
+        "colors": {"accent": "#00d6ff", "panel": "#101820", "text": "#ffffff"},
+        "fonts": {"title": "luckiest", "text": "poppins"},
+        "thumbnail": {"accent_from": "style", "html": "<div><span>{{titulo}}</span></div>"},
+    }}
+    FIX = json.dumps({"html": '<div><span style="color:red">{{titulo}}</span></div>'})
 
-    def test_good_answer_becomes_a_draft(self, home):
-        prompts = []
-        out = styles.generate("tech escuro, neon roxo", complete=lambda p: prompts.append(p) or self.GOOD)
-        assert out["name"] == "Neon Roxo" and out["description"] == "tech escuro"
-        assert out["tokens"]["colors"]["accent"] == "#a855f7" and out["tokens"]["fonts"]["title"] == "bebas"
-        assert out["tokens"] == styles.validate(out["tokens"])
+    @staticmethod
+    def fake(answers):
+        calls = []
+
+        def run(prompt, images):
+            calls.append((prompt, [p.name for p in images]))
+            return answers.pop(0)
+        return run, calls
+
+    def gen(self, answers, description="tech", image=b"", **kw):
+        run, calls = self.fake(list(answers))
+        kw.setdefault("render", lambda t: _png())
+        kw.setdefault("vision", True)
+        out = styles.generate(description, _png() if image == b"" else image, complete=run, **kw)
+        return out, calls
+
+    def test_first_answer_then_ok_stops(self, home):
+        out, calls = self.gen([json.dumps(self.GOOD), '{"ok": true}'])
+        assert out["name"] == "Choque" and "{{titulo}}" in out["tokens"]["thumbnail"]["html"]
+        assert out["tokens"]["fonts"]["title"] == "luckiest" and out["tokens"] == styles.validate(out["tokens"])
+        assert len(calls) == 2 and calls[0][1] == ["ref.png"] and calls[1][1] == ["ref.png", "render.png"]
         assert not [s for s in styles.list_styles() if not s["builtin"]]  # nothing saved
-        assert "tech escuro, neon roxo" in prompts[0] and "bebas" in prompts[0] and "bottom-left" in prompts[0]
+
+    def test_prompt_has_the_contract(self, home):
+        _, calls = self.gen([json.dumps(self.GOOD), '{"ok": true}'], description="neon roxo")
+        p = calls[0][0]
+        assert "neon roxo" in p and "{{titulo}}" in p and "Luckiest Guy" in p and "data-fit" in p
+
+    def test_corrected_html_replaces_and_max_rounds(self, home):
+        out, calls = self.gen([json.dumps(self.GOOD), self.FIX, self.FIX], rounds=3)
+        assert "color:red" in out["tokens"]["thumbnail"]["html"] and len(calls) == 3
+
+    def test_bad_round_keeps_previous(self, home):
+        out, _ = self.gen([json.dumps(self.GOOD), "não sei", '{"html": "<script>x</script>"}'])
+        assert out["tokens"]["thumbnail"]["html"] == styles.validate(self.GOOD["tokens"])["thumbnail"]["html"]
 
     def test_json_inside_text_and_fences(self, home):
-        out = styles.generate("x", complete=lambda p: f"Claro! Aqui:\n```json\n{self.GOOD}\n```\nabraço")
-        assert out["name"] == "Neon Roxo"
+        out, _ = self.gen([f"Claro! Aqui:\n```json\n{json.dumps(self.GOOD)}\n```\nabraço", '{"ok": true}'])
+        assert out["name"] == "Choque"
 
-    def test_bare_tokens_and_junk_fall_back(self, home):
-        out = styles.generate("x", complete=lambda p: '{"colors": {"accent": "roxo"}, "radius": 900}')
-        assert out["name"] == "Estilo IA"
-        assert out["tokens"]["colors"]["accent"] == styles.DEFAULT_TOKENS["colors"]["accent"]
-        assert out["tokens"]["radius"] == 60
+    def test_answer_without_layout_fails(self, home):
+        with pytest.raises(styles.StyleError, match="layout"):
+            self.gen(['{"tokens": {"colors": {"accent": "#ff0000"}}}'])
+        with pytest.raises(styles.StyleError, match="layout"):
+            self.gen(["desculpa, não posso"])
+        with pytest.raises(styles.StyleError, match="layout"):
+            self.gen(['{"type": "result", "result": "texto"}'])
 
-    def test_no_json_is_an_error(self, home):
-        with pytest.raises(styles.StyleError, match="não devolveu um estilo"):
-            styles.generate("x", complete=lambda p: "desculpa, não posso")
+    def test_render_failure_stops_rounds(self, home):
+        def boom(t):
+            raise styles.StyleError("x")
 
-    def test_agent_failure_is_a_style_error(self, home):
+        out, calls = self.gen([json.dumps(self.GOOD)], render=boom)
+        assert len(calls) == 1 and "html" in out["tokens"]["thumbnail"]
+
+    def test_agent_failure_in_a_round_keeps_the_layout(self, home):
         from auto_edit import agents
 
-        def boom(p):
+        answers = [json.dumps(self.GOOD)]
+
+        def run(prompt, images):
+            if answers:
+                return answers.pop(0)
+            raise agents.AgentError("caiu")
+
+        out = styles.generate("x", _png(), complete=run, render=lambda t: _png(), vision=True)
+        assert "html" in out["tokens"]["thumbnail"]
+
+    def test_agent_failure_first_is_a_style_error(self, home):
+        from auto_edit import agents
+
+        def boom(p, images):
             raise agents.AgentError("claude: não encontrado")
 
         with pytest.raises(styles.StyleError, match="a IA falhou"):
-            styles.generate("x", complete=boom)
+            styles.generate("x", None, complete=boom, render=lambda t: _png(), vision=True)
+
+    def test_no_vision_with_image_refuses_and_without_image_skips_rounds(self, home):
+        with pytest.raises(styles.StyleError, match="enxerga"):
+            self.gen([json.dumps(self.GOOD)], vision=False)
+        out, calls = self.gen([json.dumps(self.GOOD)], image=None, vision=False)
+        assert len(calls) == 1 and "html" in out["tokens"]["thumbnail"]
+
+    def test_without_image_rounds_see_only_the_render(self, home):
+        _, calls = self.gen([json.dumps(self.GOOD), '{"ok": true}'], image=None)
+        assert calls[0][1] == [] and calls[1][1] == ["render.png"]
+
+    def test_progress_and_base(self, home):
+        msgs = []
+        base = styles.validate({"thumbnail": {"html": "<div><span>ANTIGO {{titulo}}</span></div>"}})
+        _, calls = self.gen([json.dumps(self.GOOD), '{"ok": true}'], description="título maior", image=None,
+                            base=base, on_progress=msgs.append)
+        assert "ANTIGO" in calls[0][0] and "título maior" in calls[0][0]
+        assert msgs == ["desenhando o layout", "conferindo (volta 2/3)"]
 
     def test_needs_description_or_image(self, home):
         with pytest.raises(styles.StyleError, match="descreva"):
-            styles.generate("   ", complete=lambda p: self.GOOD)
-
-    def test_image_colors_go_in_the_prompt(self, home):
-        import io
-
-        from PIL import Image
-
-        buf = io.BytesIO()
-        Image.new("RGB", (32, 32), (230, 30, 40)).save(buf, "PNG")
-        prompts = []
-        styles.generate("", buf.getvalue(), complete=lambda p: prompts.append(p) or self.GOOD)
-        assert "CORES DA IMAGEM" in prompts[0] and "#e" in prompts[0].split("CORES DA IMAGEM")[1].lower()
+            self.gen([json.dumps(self.GOOD)], description="   ", image=None)
 
     def test_unreadable_image_is_a_style_error(self, home):
         with pytest.raises(styles.StyleError, match="imagem"):
-            styles.generate("x", b"lixo", complete=lambda p: self.GOOD)
+            self.gen([json.dumps(self.GOOD)], image=b"lixo")
 
 
 class TestShare:
@@ -382,12 +446,6 @@ class TestStyleCli:
         bad.write_text("{nope", encoding="utf-8")
         r = run("import", str(bad))
         assert r.exit_code == 1 and "não é um estilo" in r.output
-
-
-def test_generate_wrapper_json_without_style_keys_is_an_error(home):
-    """Any JSON is not a style: an agent's envelope must not turn into defaults."""
-    with pytest.raises(styles.StyleError, match="não devolveu um estilo"):
-        styles.generate("x", complete=lambda p: '{"type": "result", "result": "texto"}')
 
 
 class TestDisplayFonts:

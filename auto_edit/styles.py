@@ -375,47 +375,127 @@ def _first_json(text: str) -> dict | None:
     return None
 
 
-def _stylist_prompt(description: str, colors: list[str]) -> str:
+def _agent_prompt(name: str) -> str:
+    return (overlay_assets.default_repo_root() / "agents" / name).read_text(encoding="utf-8")
+
+
+def _stylist_prompt(description: str, has_image: bool, base: dict | None) -> str:
     from auto_edit import render
 
-    base = (overlay_assets.default_repo_root() / "agents" / "stylist.md").read_text(encoding="utf-8")
-    name = render.brand().get("name") or "(sem nome ainda)"
+    channel = render.brand().get("name") or "(sem nome ainda)"
+    fonts = "\n".join(f"- `{fid}` → font-family: {f['label']}" for fid, f in FONTS.items())
+    current = ""
+    if base:
+        current = ("# ESTILO ATUAL (ajuste a partir dele; mantenha o que o pedido não muda)\n"
+                   + json.dumps(base, ensure_ascii=False) + "\n\n")
     return (
-        f"{base}\n\n---\n\n"
-        f"# OPÇÕES\nFONTE: {', '.join(FONTS)}\nPOSICAO_LT: {', '.join(POSITIONS_LT)}\n"
-        f"POSICAO_CTA: {', '.join(POSITIONS_CTA)}\nICONE: {', '.join(ICONS)}\n\n"
-        f"# CANAL\n{name}\n\n"
-        f"# PEDIDO\n{description or '(sem descrição: baseie-se nas cores da imagem)'}\n\n"
-        + (f"# CORES DA IMAGEM (da mais presente pra menos)\n{', '.join(colors)}\n" if colors else "")
+        f"{_agent_prompt('stylist.md')}\n\n---\n\n"
+        f"# FONTES (FONTE_ID → nome no CSS)\n{fonts}\n\n"
+        f"# OPÇÕES\nPOSICAO_LT: {', '.join(POSITIONS_LT)}\nPOSICAO_CTA: {', '.join(POSITIONS_CTA)}\n"
+        f"ICONE: {', '.join(ICONS)}\n\n"
+        f"# CANAL\n{channel}\n\n{current}"
+        f"# PEDIDO\n{description or '(sem descrição: siga a imagem de referência)'}\n\n"
+        + ("# REFERÊNCIA\nA imagem anexada (ref.png) é a referência.\n" if has_image else "")
     )
 
 
-def generate(description: str, image: bytes | None = None, *, complete=None) -> dict:
-    """A draft style from a description and/or a reference image (its colors,
-    as text). Never saved here; the answer goes through validate()."""
-    from auto_edit import agents, palette
+def _review_prompt(description: str, html: str, has_image: bool) -> str:
+    images = ("ref.png = a referência; render.png = o seu desenho" if has_image
+              else "render.png = o seu desenho (sem referência: compare com o pedido)")
+    return (
+        f"{_agent_prompt('stylist_review.md')}\n\n---\n\n"
+        f"# PEDIDO\n{description or '(sem descrição)'}\n\n# IMAGENS\n{images}\n\n# SEU HTML ATUAL\n{html}\n"
+    )
+
+
+REF_MAX_SIDE = 1600
+
+
+def _reference_png(image: bytes, folder: Path) -> Path:
+    """The reference image as a PNG the agents can open (re-encoded: only
+    pixels go out, at most 1600px)."""
+    import io
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(image)) as img:
+            if img.width * img.height > 40_000_000:
+                raise StyleError("imagem grande demais")
+            img = img.convert("RGB")
+            img.thumbnail((REF_MAX_SIDE, REF_MAX_SIDE))
+            out = folder / "ref.png"
+            img.save(out, "PNG")
+            return out
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise StyleError("não consegui ler a imagem de referência") from exc
+
+
+AI_ROUNDS = 3
+NO_LAYOUT = "a IA não devolveu um layout válido"
+
+
+def generate(description: str, image: bytes | None = None, *, base: dict | None = None, complete=None,
+             render=None, on_progress=None, rounds: int = AI_ROUNDS, vision: bool | None = None) -> dict:
+    """A draft style whose thumbnail layout the AI writes (HTML), from a
+    description and/or a reference image — or, with `base`, an adjustment of
+    that style. With an agent that sees images, the layout is rendered and
+    the AI compares it with the reference and corrects it (up to `rounds`
+    answers in all). Never saved here; everything goes through validate().
+
+    complete(prompt, images: list[Path]) -> str; render(tokens) -> PNG bytes.
+    """
+    from auto_edit import agents
 
     description = (description or "").strip()[:500]
     if not description and not image:
         raise StyleError("descreva o estilo ou mande uma imagem")
-    colors: list[str] = []
-    if image:
+    if vision is None:
+        vision = agents.vision_ready()
+    if image and not vision:
+        raise StyleError(agents.NO_VISION)
+    run = complete or (lambda p, imgs: agents.complete(p, images=imgs or None, timeout=AI_TIMEOUT))
+    if render is None:
+        title, sub = sample_texts()
+        render = lambda t: render_thumbnail(t, title=title, sub=sub)  # noqa: E731
+    progress = on_progress or (lambda msg: None)
+    base = validate(base) if base else None
+
+    with tempfile.TemporaryDirectory(prefix="auto-edit-stylist-") as tmp:
+        folder = Path(tmp)
+        ref = _reference_png(image, folder) if image else None
+        refs = [ref] if ref else []
+        progress("desenhando o layout")
         try:
-            colors = palette.extract(image)
-        except palette.PaletteError as exc:
-            raise StyleError(str(exc)) from exc
-    run = complete or (lambda p: agents.complete(p, timeout=AI_TIMEOUT))
-    try:
-        answer = run(_stylist_prompt(description, colors))
-    except agents.AgentError as exc:
-        raise StyleError(f"a IA falhou: {exc}") from exc
-    data = _first_json(answer)
-    tokens = None if data is None else data.get("tokens") if isinstance(data.get("tokens"), dict) else data
-    if not tokens or not set(tokens) & set(DEFAULT_TOKENS):
-        raise StyleError("a IA não devolveu um estilo")
-    name = data.get("name") if isinstance(data.get("name"), str) else ""
-    desc = data.get("description") if isinstance(data.get("description"), str) else ""
-    return {"name": name.strip()[:40] or "Estilo IA", "description": desc.strip()[:200], "tokens": validate(tokens)}
+            answer = run(_stylist_prompt(description, bool(ref), base), refs)
+        except agents.AgentError as exc:
+            raise StyleError(f"a IA falhou: {exc}") from exc
+        data = _first_json(answer)
+        raw = None if data is None else data.get("tokens") if isinstance(data.get("tokens"), dict) else data
+        tokens = validate({**(base or {}), **raw}) if isinstance(raw, dict) else None
+        if not tokens or "html" not in tokens["thumbnail"]:
+            raise StyleError(NO_LAYOUT)
+        name = data.get("name") if isinstance(data.get("name"), str) else ""
+        desc = data.get("description") if isinstance(data.get("description"), str) else ""
+
+        for r in range(2, rounds + 1) if vision else ():
+            progress(f"conferindo (volta {r}/{rounds})")
+            try:
+                shot = folder / "render.png"
+                shot.write_bytes(render(tokens))
+                answer = run(_review_prompt(description, tokens["thumbnail"]["html"], bool(ref)), [*refs, shot])
+            except (StyleError, agents.AgentError, OSError):
+                break  # keep the last good layout
+            data = _first_json(answer) or {}
+            if data.get("ok") is True:
+                break
+            if isinstance(data.get("html"), str):
+                try:
+                    tokens["thumbnail"]["html"] = thumb_html.sanitize(data["html"])
+                except thumb_html.ThumbHtmlError:
+                    pass  # a broken correction: keep the previous layout
+
+    return {"name": name.strip()[:40] or "Estilo IA", "description": desc.strip()[:200], "tokens": tokens}
 
 
 # ── Preview ───────────────────────────────────────────────────────────────────
