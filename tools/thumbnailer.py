@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, render, styles  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, render, styles, thumb_html  # noqa: E402  -- needs the repo root on sys.path
 
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
@@ -244,32 +244,64 @@ def _renderer_cmd() -> list[str] | None:
     return render.command()
 
 
+def _run_renderer(cmd: list[str], spec: dict, output: Path) -> str | None:
+    """Run `auto-edit-render thumbnail`; None when the PNG came out, else why not."""
+    with tempfile.TemporaryDirectory(prefix="auto-edit-thumb-") as tmp:
+        spec_file = Path(tmp) / "spec.json"
+        spec_file.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+        try:
+            res = subprocess.run([*cmd, "thumbnail", str(spec_file), str(output)],
+                                 capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return str(exc)
+    if res.returncode != 0 or not output.is_file():
+        return (res.stderr or res.stdout).strip()[-300:] or f"exit {res.returncode}"
+    return None
+
+
+def _style_html() -> str | None:
+    """The active style's own thumbnail layout (auto_edit/thumb_html.py), if any."""
+    try:
+        return styles.active()["tokens"]["thumbnail"].get("html")
+    except Exception:
+        return None
+
+
 def _render_react(spec: dict, output: Path) -> bool:
-    """Render the thumbnail with the React layout. False (and why) when it
-    can't — the caller then draws it with Pillow."""
+    """Render the thumbnail with the active style's HTML layout (long only),
+    else the React layout. False (and why) when it can't — the caller then
+    draws it with Pillow."""
     cmd = _renderer_cmd()
     font = _render_font()
+    tokens = None
     try:  # the active style: its title font, and its color unless it follows the topic
         tokens = styles.active()["tokens"]
         spec = {**spec, "accent": styles.thumbnail_accent(tokens, spec.get("accent"))}
         font = styles.title_font(tokens) or font
     except Exception as exc:  # a broken style never costs the thumbnail
         print(f"[thumbnailer] style ignored ({exc})")
+    if cmd is not None and tokens is not None and spec.get("kind") == "long" and "html" in tokens["thumbnail"]:
+        try:
+            hspec = styles.html_spec(
+                tokens, title=spec.get("main_text") or "", sub=spec.get("sub_text"), accent=spec["accent"],
+                width=spec.get("width", LONG_SIZE[0]), height=spec.get("height", LONG_SIZE[1]),
+                images={"frame": spec.get("background"), "frame2": spec.get("frame2"), "rosto": spec.get("face"),
+                        "logo": (spec.get("logos") or [None])[0]},
+            )
+            why = _run_renderer(cmd, {"kind": "long", **hspec}, output)
+        except Exception as exc:
+            why = str(exc)
+        if why is None:
+            print("[thumbnailer] Rendered with the style's HTML layout")
+            return True
+        print(f"[thumbnailer] HTML layout failed: {why} — using the default layout")
     if cmd is None or font is None:
         why = "no renderer (auto-edit-render)" if cmd is None else f"no static font ({', '.join(RENDER_FONTS)})"
         print(f"[thumbnailer] React layout unavailable: {why} — using Pillow")
         return False
-    with tempfile.TemporaryDirectory(prefix="auto-edit-thumb-") as tmp:
-        spec_file = Path(tmp) / "spec.json"
-        spec_file.write_text(json.dumps({**spec, "font": str(font)}, ensure_ascii=False), encoding="utf-8")
-        try:
-            res = subprocess.run([*cmd, "thumbnail", str(spec_file), str(output)],
-                                 capture_output=True, text=True, timeout=RENDER_TIMEOUT)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            print(f"[thumbnailer] React renderer failed ({exc}) — using Pillow")
-            return False
-    if res.returncode != 0 or not output.is_file():
-        print(f"[thumbnailer] React renderer failed: {(res.stderr or res.stdout).strip()[-300:]} — using Pillow")
+    why = _run_renderer(cmd, {**spec, "font": str(font)}, output)
+    if why is not None:
+        print(f"[thumbnailer] React renderer failed: {why} — using Pillow")
         return False
     print("[thumbnailer] Rendered with the React layout")
     return True
@@ -592,15 +624,16 @@ def _frame_source(workspace: Path, pipeline: dict) -> tuple[str, dict]:
 
 def _pick_best_frame(
     video_path: str, duration: float, workspace: Path,
-    energy_peak: float | None = None,
-) -> Path:
-    """Extract multiple candidate frames, score them, and return the best one."""
+    energy_peak: float | None = None, with_ts: bool = False,
+):
+    """Extract multiple candidate frames, score them, and return the best one
+    (and its timestamp, with `with_ts`)."""
     forced = _forced_timestamp()
     if forced is not None:
         path = workspace / "_thumb_cand_forced.jpg"
         _extract_frame(video_path, forced, path)
         print(f"[thumbnailer] Forced frame at {forced:.1f}s (AUTO_EDIT_THUMB_TS)")
-        return path
+        return (path, forced) if with_ts else path
 
     # Generate candidate timestamps: regular intervals + energy peak
     margin = max(1.0, duration * 0.05)
@@ -625,7 +658,7 @@ def _pick_best_frame(
     if not candidates:
         fallback = workspace / "_thumb_cand_fallback.jpg"
         _extract_frame(video_path, duration * 0.25, fallback)
-        return fallback
+        return (fallback, duration * 0.25) if with_ts else fallback
 
     candidates.sort(key=lambda c: c[0], reverse=True)
     best_score, best_ts, best_path = candidates[0]
@@ -635,7 +668,37 @@ def _pick_best_frame(
     for _, _, path in candidates[1:]:
         path.unlink(missing_ok=True)
 
-    return best_path
+    return (best_path, best_ts) if with_ts else best_path
+
+
+SECOND_FRAME_GAP = 0.15  # of the duration, away from the main frame
+
+
+def _pick_second_frame(video_path: str, duration: float, workspace: Path, main_ts: float) -> Path | None:
+    """A second frame for layouts with {{frame2}}: another moment of the video
+    (≥ 15% of it away from the main frame), sharp and bright, preferably
+    without the face — it usually shows what the video is about."""
+    margin = max(1.0, duration * 0.05)
+    step = (duration - 2 * margin) / max(NUM_CANDIDATES - 1, 1)
+    timestamps = [margin + i * step for i in range(NUM_CANDIDATES)]
+    timestamps = [ts for ts in timestamps if abs(ts - main_ts) >= duration * SECOND_FRAME_GAP]
+    best: tuple[float, Path] | None = None
+    for i, ts in enumerate(timestamps):
+        path = workspace / f"_thumb_second_{i}.jpg"
+        try:
+            _extract_frame(video_path, ts, path)
+            s = _score_frame(Image.open(path))
+        except Exception:
+            path.unlink(missing_ok=True)
+            continue
+        score = s["sharpness"] / 500.0 + s["clarity"] / 10.0 + s["brightness"] * 5.0 - s["face"] * 50.0
+        if best is None or score > best[0]:
+            if best is not None:
+                best[1].unlink(missing_ok=True)
+            best = (score, path)
+        else:
+            path.unlink(missing_ok=True)
+    return best[1] if best else None
 
 
 def _crop_center(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
@@ -1088,12 +1151,21 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     # Background: try Imagen → frame from video → gradient (last resort)
     bg = _generate_imagen_bg(w, h, style_hint, context)
     frame_path: Path | None = None
+    frame2_path: Path | None = None
     if bg is None:
         video_path, transcription = _frame_source(workspace, pipeline)
         duration = transcription.get("duration", 30.0)
         energy_peak = _find_energy_peak(transcription)
         try:
-            frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
+            html = _style_html()
+            if html and "frame2" in thumb_html.placeholders(html):
+                frame_path, main_ts = _pick_best_frame(video_path, duration, workspace, energy_peak, with_ts=True)
+                try:
+                    frame2_path = _pick_second_frame(video_path, duration, workspace, main_ts)
+                except Exception as exc:
+                    print(f"[thumbnailer] Second frame failed ({exc})")
+            else:
+                frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
             print("[thumbnailer] Using best-scored video frame as background")
         except Exception:
             print("[thumbnailer] Frame extraction failed — using gradient fallback")
@@ -1108,8 +1180,11 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
                 "accent": list(template.get("accent", [255, 220, 0])),
                 "background": str(background) if background else None,
                 "face": str(face_path) if face_path else None,
+                "frame2": str(frame2_path) if frame2_path else None,
                 "logos": [str(p) for p in logo_paths]}
         rendered = _render_react(spec, output)
+    if frame2_path is not None:
+        frame2_path.unlink(missing_ok=True)
 
     if not rendered:
         if bg is None:
