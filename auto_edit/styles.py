@@ -431,6 +431,18 @@ def _reference_png(image: bytes, folder: Path) -> Path:
         raise StyleError("não consegui ler a imagem de referência") from exc
 
 
+def _merge(base: dict | None, changes: dict) -> dict:
+    """An adjustment on top of the style it started from: a partial answer
+    ("colors": {"accent": …} only, a thumbnail without html) keeps the rest."""
+    out = copy.deepcopy(base or {})
+    for key, value in changes.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **value}
+        else:
+            out[key] = value
+    return out
+
+
 AI_ROUNDS = 3
 NO_LAYOUT = "a IA não devolveu um layout válido"
 
@@ -472,7 +484,7 @@ def generate(description: str, image: bytes | None = None, *, base: dict | None 
             raise StyleError(f"a IA falhou: {exc}") from exc
         data = _first_json(answer)
         raw = None if data is None else data.get("tokens") if isinstance(data.get("tokens"), dict) else data
-        tokens = validate({**(base or {}), **raw}) if isinstance(raw, dict) else None
+        tokens = validate(_merge(base, raw)) if isinstance(raw, dict) else None
         if not tokens or "html" not in tokens["thumbnail"]:
             raise StyleError(NO_LAYOUT)
         name = data.get("name") if isinstance(data.get("name"), str) else ""

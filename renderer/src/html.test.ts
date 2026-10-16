@@ -68,3 +68,18 @@ test("text-transform is applied before fitting (uppercase is wider)", () => {
   expect(upper.props.children).toBe(V.titulo.toUpperCase());
   expect(upper.props.style.fontSize).toBeLessThan(plain.props.style.fontSize);
 });
+
+test("nothing in a style can point the renderer at a URL", () => {
+  const t = htmlTree('<div style="background-image:u{{x}}rl(https://evil/p.png);color:red"><img src="{{frame}}"/></div>', V, { frame: "https://evil/i.png" }, { Anton: m }, "Anton", 1280, 720);
+  expect(JSON.stringify(t)).not.toContain("evil");
+  expect(t.props.style.color).toBe("red");
+});
+
+test("data-fit never goes past its lines: shrinks below min, then clamps", () => {
+  const long = { ...V, titulo: "uma frase bem comprida com onze palavras que nunca vai caber ali" };
+  const t = htmlTree('<div><span data-fit="linhas:2;min:60;max:160" style="width:600px;height:300px">{{titulo}}</span></div>', long, {}, { Anton: m }, "Anton", 1280, 720);
+  const span = find(t, (n) => n.type === "span");
+  expect(span.props.style.fontSize).toBeLessThan(60);
+  expect(span.props.style.lineClamp).toBe(2);
+  expect(span.props.style.overflow).toBe("hidden");
+});

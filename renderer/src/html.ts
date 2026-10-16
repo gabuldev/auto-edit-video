@@ -6,6 +6,7 @@ import { parse, ELEMENT_NODE, TEXT_NODE } from "ultrahtml";
 import { fit, type Measurer } from "./text";
 
 type Values = Record<string, string>;
+const FIT_FLOOR = 24;
 const SLOTS = /\{\{\s*([a-z0-9_.]+)\s*\}\}/g;
 const HAS_SLOT = /\{\{\s*[a-z0-9_.]+\s*\}\}/;
 const ENT: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&#x27;": "'", "&nbsp;": " " };
@@ -24,7 +25,10 @@ function css(s: string): Record<string, any> {
       .toLowerCase()
       .replace(/^-webkit-/, "Webkit-")
       .replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    out[key] = unescape(d.slice(i + 1).trim());
+    const value = unescape(d.slice(i + 1).trim());
+    // Defense in depth (thumb_html.py already strips them): nothing that loads.
+    if (/url\s*\(|image-set|@import/i.test(value) || key === "src") continue;
+    out[key] = value;
   }
   return out;
 }
@@ -75,7 +79,8 @@ export function htmlTree(
     if (n.name === "img") {
       const m = String(a.src || "").match(/\{\{\s*([a-z0-9]+)\s*\}\}/);
       const src = m ? images[m[1]] : null;
-      return src ? { type: "img", props: { src, style } } : null;
+      // Only inline images (cli.tsx turns the slots' files into data: URLs).
+      return src && src.startsWith("data:") ? { type: "img", props: { src, style } } : null;
     }
     const raw = (n.children || [])
       .map((c: any) => conv(c, font, how))
@@ -88,8 +93,13 @@ export function htmlTree(
       const box = px(style.width) ?? px(style.maxWidth) ?? w * 0.9;
       const maxH = px(style.height) ?? px(style.maxHeight) ?? h;
       const lh = parseFloat(style.lineHeight) || 1.02;
-      style.fontSize = fit(kids[0], { box, maxH, max: f.max, min: f.min, maxLines: f.lines, lineHeight: lh }, measure[font] || measure[defaultFont]);
+      // Below `min` down to a floor before giving up on the line count; then
+      // clamp, so a title never spills out of its box.
+      style.fontSize = fit(kids[0], { box, maxH, max: f.max, min: Math.min(f.min, FIT_FLOOR), maxLines: f.lines, lineHeight: lh },
+        measure[font] || measure[defaultFont]);
       style.lineHeight ??= lh;
+      style.overflow = "hidden";
+      style.lineClamp = f.lines;
     }
     // Satori needs display:flex on any element with several children.
     if (kids.length > 1 && !style.display) style.display = "flex";

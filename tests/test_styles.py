@@ -277,6 +277,15 @@ class TestGenerate:
         assert "ANTIGO" in calls[0][0] and "título maior" in calls[0][0]
         assert msgs == ["desenhando o layout", "conferindo (volta 2/3)"]
 
+    def test_adjust_merges_partial_answers_into_the_base(self, home):
+        base = styles.validate({"colors": {"accent": "#ff0000", "panel": "#111111", "text": "#eeeeee"},
+                                "thumbnail": {"accent_from": "style", "html": "<div><span>BASE {{titulo}}</span></div>"}})
+        partial = json.dumps({"tokens": {"colors": {"accent": "#00ff00"}, "thumbnail": {"accent_from": "style"}}})
+        out, _ = self.gen([partial, '{"ok": true}'], description="verde", image=None, base=base)
+        t = out["tokens"]
+        assert t["colors"] == {"accent": "#00ff00", "panel": "#111111", "text": "#eeeeee"}
+        assert "BASE" in t["thumbnail"]["html"] and t["thumbnail"]["accent_from"] == "style"
+
     def test_needs_description_or_image(self, home):
         with pytest.raises(styles.StyleError, match="descreva"):
             self.gen([json.dumps(self.GOOD)], description="   ", image=None)

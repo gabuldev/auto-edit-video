@@ -418,7 +418,10 @@ def _complete_one(name: str, prompt: str, timeout: float, env: dict, images: lis
             raise AgentError(f"{agent.label} não encontrado")
     if name == "claude":
         if images:
-            # Claude opens the images itself: read-only access to a folder with copies.
+            # Claude opens the images itself, from a folder of copies that is
+            # its working directory: Read works there without a grant (a bare
+            # "Read" rule would approve any path), anything outside is denied
+            # in -p, and every tool that writes or reaches out is off.
             with tempfile.TemporaryDirectory(prefix="auto-edit-images-") as td:
                 paths = []
                 for p in images:
@@ -426,8 +429,9 @@ def _complete_one(name: str, prompt: str, timeout: float, env: dict, images: lis
                     shutil.copyfile(p, dst)
                     paths.append(str(dst))
                 prompt += "\n\n# IMAGENS (abra cada uma com a ferramenta Read)\n" + "\n".join(paths) + "\n"
-                cmd = [binary, *(["--model", model] if model else []), "--add-dir", td, "--allowedTools", "Read", "-p"]
-                return _run(cmd, prompt, timeout, env=env)
+                cmd = [binary, *(["--model", model] if model else []),
+                       "--disallowedTools", "Bash Edit Write NotebookEdit WebFetch WebSearch Task", "-p"]
+                return _run(cmd, prompt, timeout, env=env, cwd=td)
         return _run([binary, *(["--model", model] if model else []), "-p"], prompt, timeout, env=env)
     if name == "cursor":
         # Same flags as runner.invoke_cursor (read-only ask mode, JSON envelope),

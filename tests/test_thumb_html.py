@@ -45,3 +45,13 @@ def test_empty_or_huge_raises():
 
 def test_placeholders():
     assert th.placeholders(OK) == {"frame", "titulo", "destaque"}
+
+
+def test_placeholder_hidden_inside_url_is_removed():
+    out = th.sanitize('<div style="background-image:u{{x}}rl(https://evil/p.png);color:{{destaque}}">a</div>')
+    assert "evil" not in out and "color:{{destaque}}" in out
+
+
+def test_only_color_placeholders_in_css():
+    out = th.sanitize('<div style="width:{{titulo}}px;color:{{cor.accent}}">a</div>')
+    assert "titulo" not in out and "{{cor.accent}}" in out

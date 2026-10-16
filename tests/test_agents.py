@@ -273,20 +273,23 @@ class TestImages:
         p.write_bytes(b"\x89PNGfake")
         return p
 
-    def test_claude_gets_read_access_to_the_images(self, env, monkeypatch, img):
+    def test_claude_reads_only_the_images_folder(self, env, monkeypatch, img):
         env["AUTO_EDIT_LLM"] = "claude"
         seen = {}
         monkeypatch.setattr(agents, "find_binary", lambda agent: "/bin/claude")
 
         def fake_run(cmd, stdin, timeout, env=None, cwd=None):
-            d = Path(cmd[cmd.index("--add-dir") + 1])
-            seen.update(cmd=cmd, stdin=stdin, copied=sorted(p.name for p in d.iterdir()))
+            seen.update(cmd=cmd, stdin=stdin, cwd=cwd, copied=sorted(p.name for p in Path(cwd).iterdir()))
             return "ok"
 
         monkeypatch.setattr(agents, "_run", fake_run)
         assert agents.complete("faça", images=[img]) == "ok"
         cmd = seen["cmd"]
-        assert cmd[cmd.index("--allowedTools") + 1] == "Read" and cmd[-1] == "-p"
+        # No blanket "Read" grant (it would approve any path): the folder is
+        # the working directory, and every tool that writes or reaches out is off.
+        assert "--allowedTools" not in cmd and cmd[-1] == "-p"
+        denied = cmd[cmd.index("--disallowedTools") + 1]
+        assert all(t in denied for t in ("Bash", "Edit", "Write", "WebFetch", "WebSearch"))
         assert seen["copied"] == ["ref.png"] and "ref.png" in seen["stdin"] and seen["stdin"].startswith("faça")
 
     def test_codex_gets_image_flags_before_other_options(self, monkeypatch, img):

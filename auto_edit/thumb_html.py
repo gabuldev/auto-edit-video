@@ -28,12 +28,17 @@ class ThumbHtmlError(ValueError):
 
 
 def _clean_style(css: str) -> str:
+    """Only plain declarations: nothing that loads anything, and no placeholder
+    but colors (a `u{{x}}rl(` would turn into `url(` once filled)."""
     keep = []
     for d in css.split(";"):
         d = d.strip()
         low = d.lower()
-        if d and ":" in d and "url(" not in low and "expression" not in low and "@import" not in low:
-            keep.append(d)
+        if not d or ":" not in d or any(k in low for k in ("url(", "expression", "@import", "image-set")):
+            continue
+        if any(slot not in COLOR_SLOTS for slot in _SLOT.findall(d)) or "{{" in _SLOT.sub("", d):
+            continue
+        keep.append(d)
     return ";".join(keep)
 
 
