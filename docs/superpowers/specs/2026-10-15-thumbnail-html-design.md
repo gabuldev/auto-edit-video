@@ -206,3 +206,32 @@ on_progress=None, rounds=3) -> draft`
 - Lower third e CTA em HTML (depois que esse motor estiver pronto).
 - Shorts 9:16 com layout próprio.
 - Biblioteca/loja de layouts da comunidade (o arquivo exportado já serve).
+
+## 9. Recorte automático do rosto (`{{rosto}}`, `{{rosto_contorno}}`)
+
+Adicionado em 2026-10-16. Thumbnails de referência quase sempre têm a pessoa
+recortada grande; sem uma foto sem fundo, o `{{rosto}}` sumia.
+
+- **Modelo:** U²-Net de pessoas (`u2net_human_seg.onnx`, Apache-2.0, 176 MB),
+  rodando com `onnxruntime` (dependência nova). Baixado na primeira vez que
+  precisa, de `github.com/danielgatis/rembg/releases/download/v0.0.0/`, para
+  `~/.auto-edit/models/`, conferido por SHA-256
+  (`01eb6a29a5c4d8edb30b56adad9bb3a2a0535338e480724a213e0acfd2d1c73c`);
+  download em `.part` e renomeado só se o hash bater. Testado: recorte bom
+  (cabelo, óculos, braço, roupa escura) em ~0,4 s num frame 4K.
+- **`auto_edit/face_cutout.py`:** `cutout(frame) -> RGBA | None` (máscara do
+  modelo, `None` se a pessoa ocupa < 3% do frame, corta na caixa da pessoa),
+  `outlined(cut, px)` (contorno branco grosso assado no PNG),
+  `cutout_files(frames, folder) -> {"rosto", "rosto_contorno"} | None`
+  (escolhe o frame com mais pessoa; cache pelo conteúdo do frame).
+- **Pipeline:** o thumbnailer só recorta se o layout usa `{{rosto}}` ou
+  `{{rosto_contorno}}` e não há foto da pessoa em `assets/thumbnails/faces/`
+  (essa tem prioridade). Usa o frame principal (já pontuado por rosto) e
+  baixa o modelo se faltar (o stage tem tempo).
+- **Prévia de Estilos e voltas da IA:** recorte de alguns frames do último
+  vídeo, com cache. Se o modelo ainda não foi baixado, o download começa em
+  segundo plano e a prévia sai sem rosto (a próxima já tem).
+- **Falhas** (sem internet, hash errado, `onnxruntime` ausente, ninguém no
+  frame): o elemento some, a thumbnail sai normal, o motivo vai pro log.
+- **IA:** `stylist.md` explica `{{rosto}}` (recorte automático da pessoa, PNG
+  transparente) e `{{rosto_contorno}}` (o mesmo com contorno branco).
