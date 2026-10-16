@@ -408,3 +408,36 @@ class TestThumbnailHtml:
         s = styles.import_({"format": 1, "name": "X", "tokens": {"thumbnail": {
             "html": '<div><img src="http://a/b.png"/><span>{{titulo}}</span></div>'}}})
         assert "http" not in s["tokens"]["thumbnail"]["html"]
+
+
+class TestHtmlSpec:
+    def test_values_images_and_fonts(self):
+        t = styles.validate({"fonts": {"title": "bangers"}, "thumbnail": {"html": "<div><span>{{titulo}}</span></div>"}})
+        spec = styles.html_spec(t, title="Montei uma impressora", sub="DIY", accent=[255, 0, 0], images={"frame": "/f.jpg"})
+        assert spec["html"] == t["thumbnail"]["html"]
+        assert spec["values"]["titulo_fim"] == "impressora" and spec["values"]["titulo_inicio"] == "Montei uma"
+        assert spec["values"]["etiqueta"] == "DIY"
+        assert spec["values"]["destaque"] == "#ff0000" and spec["values"]["cor.panel"] == t["colors"]["panel"]
+        assert spec["fonts"][0]["name"] == "Bangers"
+        assert {f["name"] for f in spec["fonts"]} >= {"Anton", "Luckiest Guy", "Montserrat"}
+        assert spec["images"] == {"frame": "/f.jpg", "frame2": None, "rosto": None, "logo": None}
+
+    def test_preview_reports_invalid_layout(self, home):
+        with pytest.raises(styles.StyleError, match="layout"):
+            styles.preview({"thumbnail": {"html": "<script>x</script>"}}, "thumbnail")
+
+    def test_sample_texts_without_videos(self, home, monkeypatch):
+        monkeypatch.setattr(engine, "library_root", lambda: home / "nada")
+        assert styles.sample_texts() == ("SEU TÍTULO AQUI", None)
+
+    def test_sample_texts_from_the_newest_video(self, home, monkeypatch, tmp_path):
+        ws = tmp_path / "lib" / "v1"
+        ws.mkdir(parents=True)
+        (ws / "metadata.json").write_text(json.dumps({"thumbnail": {"main_text": "Meu título", "sub_text": "Novo"}}))
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path / "lib")
+        assert styles.sample_texts() == ("Meu título", "Novo")
+
+    @pytest.mark.skipif(__import__("auto_edit.render", fromlist=["x"]).command() is None, reason="renderer not available")
+    def test_renders_html_png(self, home):
+        t = styles.validate({"thumbnail": {"html": '<div style="background:{{cor.panel}}"><span data-fit="linhas:2;min:40;max:150" style="width:1000px;color:#fff">{{titulo}}</span></div>'}})
+        assert styles.render_thumbnail(t)[:4] == b"\x89PNG"

@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -428,7 +429,7 @@ def _cache_dir() -> Path:
     return cfg.home_dir() / "cache" / "styles"
 
 
-def preview_frame() -> Path | None:
+def preview_frame(at: float = 0.3) -> Path | None:
     """A frame from the newest edited video in the library (the previews show
     the style on the person's own footage); None → a neutral background."""
     from auto_edit import engine
@@ -441,7 +442,7 @@ def preview_frame() -> Path | None:
     if not videos:
         return None
     src = max(videos, key=lambda p: p.stat().st_mtime)
-    key = hashlib.sha1(f"{src}:{src.stat().st_mtime}".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"{src}:{src.stat().st_mtime}:{at}".encode()).hexdigest()[:16]
     out = _cache_dir() / f"frame-{key}.jpg"
     if out.is_file():
         return out
@@ -454,7 +455,7 @@ def preview_frame() -> Path | None:
     except (OSError, ValueError, subprocess.TimeoutExpired):
         duration = 0.0
     res = subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(0.0, duration * 0.3):.2f}", "-i", str(src),
+        ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(0.0, duration * at):.2f}", "-i", str(src),
          "-frames:v", "1", "-vf", f"scale={PREVIEW_W}:{PREVIEW_H}:force_original_aspect_ratio=increase,crop={PREVIEW_W}:{PREVIEW_H}",
          "-q:v", "3", str(out)],
         capture_output=True, text=True, timeout=60,
@@ -462,39 +463,148 @@ def preview_frame() -> Path | None:
     return out if res.returncode == 0 and out.is_file() else None
 
 
-def preview(tokens, kind: str) -> bytes:
-    """PNG of one part of a style (cached by everything that changes it)."""
+def _hex(rgb) -> str:
+    return "#%02x%02x%02x" % tuple(max(0, min(255, int(c))) for c in list(rgb)[:3])
+
+
+def html_fonts(tokens: dict) -> list[dict]:
+    """Every bundled font for an HTML layout, the style's title font first (the
+    renderer's default). Bold files at weight 700, regular (or bold) at 400."""
+    title = tokens["fonts"]["title"]
+    out = []
+    for fid in [title, *(f for f in FONTS if f != title)]:
+        spec = FONTS[fid]
+        bold = font_file(spec["bold"])
+        if bold is None:
+            continue
+        regular = font_file(spec["regular"]) if spec.get("regular") else None
+        out.append({"name": spec["label"], "path": str(bold), "weight": 700})
+        out.append({"name": spec["label"], "path": str(regular or bold), "weight": 400})
+    return out
+
+
+def html_spec(tokens: dict, *, title: str, sub: str | None, accent, images: dict,
+              width: int = PREVIEW_W, height: int = PREVIEW_H) -> dict:
+    """The renderer spec for a style's HTML thumbnail layout."""
+    words = (title or "").split()
+    values = {
+        "titulo": title or "",
+        "titulo_inicio": " ".join(words[:-1]),
+        "titulo_fim": words[-1] if words else "",
+        "etiqueta": sub or "",
+        "destaque": _hex(accent),
+        **{f"cor.{k}": v for k, v in tokens["colors"].items()},
+    }
+    return {
+        "html": tokens["thumbnail"]["html"], "values": values, "width": width, "height": height,
+        "images": {k: images.get(k) for k in thumb_html.IMAGE_SLOTS},
+        "fonts": html_fonts(tokens),
+    }
+
+
+def face_asset() -> str | None:
+    """The person's face cut-out (transparent PNG), as the thumbnailer finds it."""
+    dirs = [Path(os.environ["AUTO_EDIT_ASSETS_FACES"])] if os.environ.get("AUTO_EDIT_ASSETS_FACES") else []
+    dirs.append(overlay_assets.default_repo_root() / "assets" / "thumbnails" / "faces")
+    for d in dirs:
+        for f in sorted(d.glob("*.png")) if d.is_dir() else []:
+            return str(f)
+    return None
+
+
+SAMPLE_FALLBACK = "SEU TÍTULO AQUI"
+
+
+def sample_texts() -> tuple[str, str | None]:
+    """Title and tag of the newest edited video (the AI checks its layout on
+    a real title), or a placeholder."""
+    from auto_edit import engine
+
+    try:
+        root = engine.library_root()
+        metas = [p for p in root.glob("*/metadata.json") if p.is_file()] if root.is_dir() else []
+        if metas:
+            meta = json.loads(max(metas, key=lambda p: p.stat().st_mtime).read_text(encoding="utf-8"))
+            thumb = meta.get("thumbnail") if isinstance(meta.get("thumbnail"), dict) else {}
+            title = thumb.get("main_text") or meta.get("youtube_title")
+            if isinstance(title, str) and title.strip():
+                sub = thumb.get("sub_text")
+                return title.strip(), sub.strip() if isinstance(sub, str) and sub.strip() else None
+    except Exception:
+        pass
+    return SAMPLE_FALLBACK, None
+
+
+def _check_layout(tokens) -> None:
+    thumb = tokens.get("thumbnail") if isinstance(tokens, dict) else None
+    raw = thumb.get("html") if isinstance(thumb, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            thumb_html.sanitize(raw)
+        except thumb_html.ThumbHtmlError as exc:
+            raise StyleError(f"layout inválido: {exc}") from exc
+
+
+def _brand_for_preview() -> dict:
     from auto_edit import render
 
-    if kind not in PREVIEW_KINDS:
-        raise StyleError(f"prévia desconhecida: {kind}")
-    tokens = validate(tokens)
-    cmd = render.command()
-    if cmd is None:
-        raise StyleError("renderizador (auto-edit-render) não encontrado")
     brand = render.brand()
     if not brand.get("name"):  # show the shape even before the brand is set
         brand = {**brand, "name": "Seu nome", "handle": brand.get("handle") or "@seucanal"}
-    frame = preview_frame()
+    return brand
 
-    if kind == "thumbnail":
+
+def render_thumbnail(tokens, *, title: str = SAMPLE_TITLE, sub: str | None = SAMPLE_SUB) -> bytes:
+    """PNG of a style's thumbnail on the person's own footage: its HTML layout
+    when it has one, else the default React layout."""
+    _check_layout(tokens)
+    tokens = validate(tokens)
+    frame = preview_frame()
+    brand = _brand_for_preview()
+    accent = thumbnail_accent(tokens, [55, 224, 160])
+    if "html" in tokens["thumbnail"]:
+        second = preview_frame(0.7) or frame
+        spec = {"kind": "thumbnail", **html_spec(tokens, title=title, sub=sub, accent=accent, images={
+            "frame": str(frame) if frame else None, "frame2": str(second) if second else None,
+            "rosto": face_asset(), "logo": brand.get("logo"),
+        })}
+    else:
         font = title_font(tokens)
         if font is None:
             raise StyleError("fonte do título não encontrada")
         spec = {
             "kind": "thumbnail", "thumbnail_kind": "long", "width": PREVIEW_W, "height": PREVIEW_H,
-            "main_text": SAMPLE_TITLE, "sub_text": SAMPLE_SUB,
-            "accent": thumbnail_accent(tokens, [55, 224, 160]),
+            "main_text": title, "sub_text": sub, "accent": accent,
             "background": str(frame) if frame else None, "font": str(font),
         }
-    else:
-        spec = {
-            "kind": kind, "width": PREVIEW_W, "height": PREVIEW_H,
-            "background": str(frame) if frame else None,
-            "style": tokens, "brand": brand, "fonts": overlay_fonts(tokens),
-        }
+    return _render_preview(spec, "thumbnail", brand)
 
-    key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode() + str(_mtime(brand.get("logo"))).encode()).hexdigest()[:20]
+
+def preview(tokens, kind: str) -> bytes:
+    """PNG of one part of a style (cached by everything that changes it)."""
+    if kind not in PREVIEW_KINDS:
+        raise StyleError(f"prévia desconhecida: {kind}")
+    if kind == "thumbnail":
+        return render_thumbnail(tokens)
+    tokens = validate(tokens)
+    frame = preview_frame()
+    brand = _brand_for_preview()
+    spec = {
+        "kind": kind, "width": PREVIEW_W, "height": PREVIEW_H,
+        "background": str(frame) if frame else None,
+        "style": tokens, "brand": brand, "fonts": overlay_fonts(tokens),
+    }
+    return _render_preview(spec, kind, brand)
+
+
+def _render_preview(spec: dict, kind: str, brand: dict) -> bytes:
+    from auto_edit import render
+
+    cmd = render.command()
+    if cmd is None:
+        raise StyleError("renderizador (auto-edit-render) não encontrado")
+    mtimes = [_mtime(brand.get("logo"))] + [_mtime(p) for p in (spec.get("images") or {}).values()]
+    key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode() + str(mtimes).encode()).hexdigest()[:20]
     cached = _cache_dir() / f"{kind}-{key}.png"
     if cached.is_file():
         return cached.read_bytes()
