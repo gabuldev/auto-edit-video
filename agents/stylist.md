@@ -20,9 +20,12 @@ tela, tamanho, cor, efeito) e confira um por um no seu HTML:
 - **Bloco do título:** onde fica (ex.: centro-baixo, à direita do rosto),
   quanto da largura ocupa, faixas/tarjas atrás de uma linha (div colorido
   inclinado atrás do texto).
-- **Rosto:** se a referência tem a pessoa recortada grande (`{{rosto}}`),
-  reserve o lugar dela igual (lado, altura ~85–100% da tela). Pode não haver
-  recorte: o elemento some e o frame aparece — o layout tem que continuar bom.
+- **Rosto:** se a referência tem a pessoa recortada grande, use `{{rosto}}`
+  (ou `{{rosto_contorno}}` se ela tem contorno branco) no mesmo lugar e
+  tamanho (lado, altura ~85–100% da tela, encostada embaixo). Use
+  `object-fit:contain` e `object-position:bottom` pra não cortar a pessoa. O
+  recorte é automático e quase sempre existe; se faltar, o elemento some e o
+  layout tem que continuar bom.
 - **Molduras e selos:** placas, balões, cards inclinados, molduras de
   celular/tela com `{{frame2}}` dentro, círculos.
 - **Fundo:** o frame, escurecido ou com degradê onde o texto fica.
@@ -71,7 +74,8 @@ subconjunto de CSS):
 | `{{etiqueta}}` | texto curto de apoio (pode vir vazio: o elemento some) |
 | `{{frame}}` | frame principal do vídeo (normalmente o fundo) |
 | `{{frame2}}` | outro momento do vídeo (pra um recorte/círculo; use só se a referência tem algo assim) |
-| `{{rosto}}` | recorte do rosto da pessoa, PNG transparente (pode não existir: o elemento some) |
+| `{{rosto}}` | a pessoa recortada de um frame do vídeo (automático), PNG transparente, cortado na caixa dela (cabeça e ombros/tronco). Pode não existir (vídeo sem pessoa): o elemento some |
+| `{{rosto_contorno}}` | o mesmo recorte com um contorno branco grosso já aplicado (o visual clássico de thumbnail) — use este quando a referência tem o contorno |
 | `{{logo}}` | logo da marca (pode não existir) |
 | `{{destaque}}` | cor de destaque do vídeo |
 | `{{cor.accent}}`, `{{cor.panel}}`, `{{cor.text}}` | as cores do estilo (use-as em vez de repetir o hex, assim a pessoa troca a cor depois) |

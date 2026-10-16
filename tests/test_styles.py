@@ -589,3 +589,40 @@ class TestHtmlSpec:
     def test_renders_html_png(self, home):
         t = styles.validate({"thumbnail": {"html": '<div style="background:{{cor.panel}}"><span data-fit="linhas:2;min:40;max:150" style="width:1000px;color:#fff">{{titulo}}</span></div>'}})
         assert styles.render_thumbnail(t)[:4] == b"\x89PNG"
+
+
+class TestPreviewFace:
+    """The Estilos preview cuts the person out of the newest video's frames;
+    while the model downloads, it shows the layout without the face."""
+
+    def test_model_missing_starts_the_download_and_skips(self, home, monkeypatch):
+        from auto_edit import face_cutout
+
+        started = []
+        monkeypatch.setattr(face_cutout, "model_ready", lambda: False)
+        monkeypatch.setattr(face_cutout, "download_in_background", lambda: started.append(1))
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda *a: pytest.fail("cut without the model"))
+        assert styles.preview_face() is None and started == [1]
+
+    def test_cuts_from_several_frames(self, home, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        frames = {a: tmp_path / f"{a}.jpg" for a in (0.2, 0.4, 0.6, 0.8)}
+        monkeypatch.setattr(styles, "preview_frame", lambda at=0.3: frames.get(at))
+        monkeypatch.setattr(face_cutout, "model_ready", lambda: True)
+        seen = {}
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda fs, folder: seen.update(fs=fs) or {"rosto": "r", "rosto_contorno": "c"})
+        assert styles.preview_face() == {"rosto": "r", "rosto_contorno": "c"}
+        assert seen["fs"] == list(frames.values())
+
+    def test_cutout_error_is_no_face(self, home, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        monkeypatch.setattr(styles, "preview_frame", lambda at=0.3: tmp_path / "f.jpg")
+        monkeypatch.setattr(face_cutout, "model_ready", lambda: True)
+
+        def boom(*a):
+            raise face_cutout.CutoutError("x")
+
+        monkeypatch.setattr(face_cutout, "cutout_files", boom)
+        assert styles.preview_face() is None

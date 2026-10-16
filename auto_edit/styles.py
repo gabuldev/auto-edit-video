@@ -605,6 +605,23 @@ def face_asset() -> str | None:
     return None
 
 
+def preview_face() -> dict | None:
+    """{"rosto", "rosto_contorno"} cut out of the newest video's frames for the
+    previews. Without the model yet, its download starts in the background and
+    this preview goes without the face (the next one has it)."""
+    from auto_edit import face_cutout
+
+    if not face_cutout.model_ready():
+        face_cutout.download_in_background()
+        return None
+    frames = [f for f in (preview_frame(at) for at in (0.2, 0.4, 0.6, 0.8)) if f]
+    try:
+        return face_cutout.cutout_files(frames, _cache_dir() / "faces")
+    except face_cutout.CutoutError as exc:
+        print(f"[styles] face cut-out: {exc}")
+        return None
+
+
 SAMPLE_FALLBACK = "SEU TÍTULO AQUI"
 
 
@@ -657,9 +674,15 @@ def render_thumbnail(tokens, *, title: str = SAMPLE_TITLE, sub: str | None = SAM
     accent = thumbnail_accent(tokens, [55, 224, 160])
     if "html" in tokens["thumbnail"]:
         second = preview_frame(0.7) or frame
+        face = face_asset()
+        outline = face
+        if face is None and {"rosto", "rosto_contorno"} & thumb_html.placeholders(tokens["thumbnail"]["html"]):
+            cut = preview_face()
+            if cut:
+                face, outline = str(cut["rosto"]), str(cut["rosto_contorno"])
         spec = {"kind": "thumbnail", **html_spec(tokens, title=title, sub=sub, accent=accent, images={
             "frame": str(frame) if frame else None, "frame2": str(second) if second else None,
-            "rosto": face_asset(), "logo": brand.get("logo"),
+            "rosto": face, "rosto_contorno": outline, "logo": brand.get("logo"),
         })}
     else:
         font = title_font(tokens)
