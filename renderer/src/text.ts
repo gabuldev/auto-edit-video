@@ -39,20 +39,23 @@ export function wrap(text: string, size: number, box: number, width: Measurer): 
   return out;
 }
 
+type FitBox = { box: number; maxH: number; max: number; min: number; maxLines: number; lineHeight?: number };
+
 /** Biggest size in [min, max] where `text` wraps into ≤ maxLines lines no
- * wider than `box` and no taller than `maxH`. */
-export function fit(
-  text: string,
-  o: { box: number; maxH: number; max: number; min: number; maxLines: number; lineHeight?: number },
-  width: Measurer,
-): number {
+ * wider than `box` and no taller than `maxH`; `ok` is false when even `min`
+ * doesn't fit (the size is then `min`). */
+export function fitted(text: string, o: FitBox, width: Measurer): { size: number; ok: boolean } {
   const lh = o.lineHeight ?? 1.02;
   const box = o.box * 0.98;
   for (let size = Math.floor(o.max); size > o.min; size -= 2) {
     const lines = wrap(text, size, box, width);
     if (lines.length <= o.maxLines && lines.every((l) => width(l, size) <= box) && lines.length * size * lh <= o.maxH) {
-      return size;
+      return { size, ok: true };
     }
   }
-  return Math.floor(o.min);
+  return { size: Math.floor(o.min), ok: false };
+}
+
+export function fit(text: string, o: FitBox, width: Measurer): number {
+  return fitted(text, o, width).size;
 }

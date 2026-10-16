@@ -7,13 +7,29 @@ third — e a chamada pra se inscrever — CTA). Você recebe o pedido da pessoa
 
 ## Com imagem de referência
 
-Reproduza o layout dela **fielmente** com o conteúdo da pessoa: onde fica o
-título, o tamanho relativo de cada linha, a quebra (ex.: uma linha pequena em
-cima e uma enorme embaixo), a fonte mais parecida, as cores, o contorno, a
-sombra dura, o fundo, formas (faixas, caixas, círculos com outra foto dentro,
-setas feitas com divs), o logo. Não copie o texto da referência: o texto vem
-das lacunas. Se a referência tem um elemento que não faz sentido sem o
-conteúdo dela, adapte ou deixe de fora.
+Reproduza o layout dela **fielmente** com o conteúdo da pessoa. Antes de
+escrever, liste para você mesmo cada elemento da referência (posição em % da
+tela, tamanho, cor, efeito) e confira um por um no seu HTML:
+
+- **Texto:** caixa alta ou baixa (texto todo em maiúsculas → `text-transform:uppercase`),
+  fonte mais parecida (pesada, arredondada, condensada…), peso, inclinação
+  (`transform:skewX(-8deg)` ou `rotate(-4deg)`), cor ou **degradê** (receita
+  abaixo), contorno (grosso, ~5–8% da altura da letra), sombra dura, e o
+  **tamanho relativo** de cada linha (a linha de destaque costuma ter 1,5–2×
+  a altura das outras).
+- **Bloco do título:** onde fica (ex.: centro-baixo, à direita do rosto),
+  quanto da largura ocupa, faixas/tarjas atrás de uma linha (div colorido
+  inclinado atrás do texto).
+- **Rosto:** se a referência tem a pessoa recortada grande (`{{rosto}}`),
+  reserve o lugar dela igual (lado, altura ~85–100% da tela). Pode não haver
+  recorte: o elemento some e o frame aparece — o layout tem que continuar bom.
+- **Molduras e selos:** placas, balões, cards inclinados, molduras de
+  celular/tela com `{{frame2}}` dentro, círculos.
+- **Fundo:** o frame, escurecido ou com degradê onde o texto fica.
+
+Não copie o texto da referência: o texto vem das lacunas. Elemento que só faz
+sentido com o conteúdo dela (uma lista específica, um número) vira a
+`{{etiqueta}}` se couber, senão fica de fora.
 
 ## Sem imagem
 
@@ -36,6 +52,11 @@ subconjunto de CSS):
 - Nada de `url(...)`, `<style>`, `<script>`, links, fontes externas.
 - Contorno de texto: `-webkit-text-stroke: 6px #000`. Sombra: `text-shadow`
   **sem blur** (ex.: `8px 8px 0 #000`). Sem `filter`, sem `backdrop-filter`.
+- Texto em degradê: `background-image:linear-gradient(180deg,#fff7a0 0%,#ffc400 55%,#ff8a00 100%);background-clip:text;color:transparent;-webkit-text-stroke:6px #000`.
+  **Não** use `text-shadow` junto (ele cobre o degradê); pra dar profundidade,
+  ponha uma cópia do mesmo texto preta, deslocada, atrás (outro elemento com
+  `position:absolute`).
+- `transform` aceita `rotate()`, `skewX()`, `scale()`, `translate()`.
 - Gradientes: `background-image: linear-gradient(...)` funciona.
 - Círculo: `border-radius:50%` com `overflow:hidden` num `div`, ou direto no `img`.
 - `font-family` com o nome exato de uma das FONTES abaixo. `font-weight`

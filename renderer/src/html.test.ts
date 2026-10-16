@@ -77,9 +77,18 @@ test("nothing in a style can point the renderer at a URL", () => {
 
 test("data-fit never goes past its lines: shrinks below min, then clamps", () => {
   const long = { ...V, titulo: "uma frase bem comprida com onze palavras que nunca vai caber ali" };
-  const t = htmlTree('<div><span data-fit="linhas:2;min:60;max:160" style="width:600px;height:300px">{{titulo}}</span></div>', long, {}, { Anton: m }, "Anton", 1280, 720);
+  const box = (w: number) => `<div><span data-fit="linhas:2;min:60;max:160" style="width:${w}px;height:300px">{{titulo}}</span></div>`;
+  const shrunk = find(htmlTree(box(600), long, {}, { Anton: m }, "Anton", 1280, 720), (n) => n.type === "span");
+  expect(shrunk.props.style.fontSize).toBeLessThan(60);
+  expect(shrunk.props.style.lineClamp).toBeUndefined();
+  const hopeless = find(htmlTree(box(150), long, {}, { Anton: m }, "Anton", 1280, 720), (n) => n.type === "span");
+  expect(hopeless.props.style.lineClamp).toBe(2);
+  expect(hopeless.props.style.overflow).toBe("hidden");
+});
+
+test("a title that fits is never clipped (accents stick out of the line box)", () => {
+  const t = htmlTree('<div><span data-fit="linhas:2;min:20;max:100" style="width:1200px;height:400px">{{titulo_fim}}</span></div>', V, {}, { Anton: m }, "Anton", 1280, 720);
   const span = find(t, (n) => n.type === "span");
-  expect(span.props.style.fontSize).toBeLessThan(60);
-  expect(span.props.style.lineClamp).toBe(2);
-  expect(span.props.style.overflow).toBe("hidden");
+  expect(span.props.style.overflow).toBeUndefined();
+  expect(span.props.style.lineClamp).toBeUndefined();
 });

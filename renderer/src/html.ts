@@ -3,7 +3,7 @@
 // without a value removed, the title fitted with the real font. Values are
 // put into text nodes after parsing, so they are never read as HTML.
 import { parse, ELEMENT_NODE, TEXT_NODE } from "ultrahtml";
-import { fit, type Measurer } from "./text";
+import { fitted, type Measurer } from "./text";
 
 type Values = Record<string, string>;
 const FIT_FLOOR = 24;
@@ -93,13 +93,17 @@ export function htmlTree(
       const box = px(style.width) ?? px(style.maxWidth) ?? w * 0.9;
       const maxH = px(style.height) ?? px(style.maxHeight) ?? h;
       const lh = parseFloat(style.lineHeight) || 1.02;
-      // Below `min` down to a floor before giving up on the line count; then
-      // clamp, so a title never spills out of its box.
-      style.fontSize = fit(kids[0], { box, maxH, max: f.max, min: Math.min(f.min, FIT_FLOOR), maxLines: f.lines, lineHeight: lh },
+      // Below `min` down to a floor before giving up on the line count; only
+      // then clamp (clipping always would cut the accents off: Á, Ã stick out
+      // of the line box).
+      const r = fitted(kids[0], { box, maxH, max: f.max, min: Math.min(f.min, FIT_FLOOR), maxLines: f.lines, lineHeight: lh },
         measure[font] || measure[defaultFont]);
+      style.fontSize = r.size;
       style.lineHeight ??= lh;
-      style.overflow = "hidden";
-      style.lineClamp = f.lines;
+      if (!r.ok) {
+        style.overflow = "hidden";
+        style.lineClamp = f.lines;
+      }
     }
     // Satori needs display:flex on any element with several children.
     if (kids.length > 1 && !style.display) style.display = "flex";

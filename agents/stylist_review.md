@@ -17,10 +17,20 @@ As regras do layout são as mesmas de antes (tags `div span p img`, CSS
 inline, `display:flex` em todo elemento com 2+ filhos, imagens e textos só
 pelas lacunas, `data-fit` no título, sem `url()`, sombras sem blur).
 
+Seja exigente: a pessoa mandou a referência porque quer **aquele** visual.
+Confira, nesta ordem, e anote cada diferença:
+
+1. Caixa alta/baixa do texto, fonte (peso, formato), inclinação.
+2. Cor/degradê do texto, grossura do contorno, sombra.
+3. Tamanho relativo das linhas e quanto da tela o título ocupa.
+4. Posição de cada bloco (título, rosto, selos, molduras, logo).
+5. Elementos da referência que faltam no desenho (e que dava pra fazer).
+6. Defeitos: texto cortado/saindo da tela, ilegível, cobrindo o rosto.
+
 ## Saída
 
 Responda **só** com um objeto JSON:
 
-- Ficou bom (fiel à referência / ao pedido e sem defeitos): `{"ok": true}`
-- Precisa corrigir: `{"html": "<div ...>...</div>"}` com o HTML **completo**
-  corrigido.
+- Sem diferença que valha corrigir: `{"diferencas": [], "ok": true}`
+- Senão: `{"diferencas": ["título em minúsculas, a referência é caixa alta", "..."], "html": "<div ...>...</div>"}`
+  com o HTML **completo**, corrigindo **todas** as diferenças listadas.
