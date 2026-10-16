@@ -72,7 +72,7 @@ def main(engine: Path) -> None:
     exe = ".exe" if WIN else ""
     ffmpeg = str(engine / "bin" / f"ffmpeg{exe}")
 
-    run([str(python), "-c", "import auto_edit, whisper, torch, flask, numpy, pysubs2"], env, "python imports")
+    run([str(python), "-c", "import auto_edit, whisper, torch, flask, numpy, pysubs2, onnxruntime"], env, "python imports")
 
     filters = run([ffmpeg, "-hide_banner", "-filters"], env, "ffmpeg")
     if " subtitles " not in filters:
