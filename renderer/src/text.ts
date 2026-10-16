@@ -6,7 +6,21 @@ export type Measurer = (text: string, size: number) => number;
 
 export function measurer(font: ArrayBuffer): Measurer {
   const f = opentype.parse(font);
-  return (text, size) => f.getAdvanceWidth(text, size);
+  let shaping = true;
+  // Some fonts (Bangers) have GSUB lookups opentype.js can't apply: then sum
+  // the glyph advances without shaping (ligatures barely change a width).
+  const plain = (text: string, size: number) =>
+    [...text].reduce((w, ch) => w + (f.charToGlyph(ch).advanceWidth || 0), 0) * (size / f.unitsPerEm);
+  return (text, size) => {
+    if (shaping) {
+      try {
+        return f.getAdvanceWidth(text, size);
+      } catch {
+        shaping = false;
+      }
+    }
+    return plain(text, size);
+  };
 }
 
 export function wrap(text: string, size: number, box: number, width: Measurer): string[] {

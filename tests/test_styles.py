@@ -232,8 +232,10 @@ class TestGenerate:
         def boom(t):
             raise styles.StyleError("x")
 
-        out, calls = self.gen([json.dumps(self.GOOD)], render=boom)
+        msgs = []
+        out, calls = self.gen([json.dumps(self.GOOD)], render=boom, on_progress=msgs.append)
         assert len(calls) == 1 and "html" in out["tokens"]["thumbnail"]
+        assert msgs[-1] == "parei de conferir: x"  # the job log says why the rounds stopped
 
     def test_agent_failure_in_a_round_keeps_the_layout(self, home):
         from auto_edit import agents

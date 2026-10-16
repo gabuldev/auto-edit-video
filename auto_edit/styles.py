@@ -484,7 +484,8 @@ def generate(description: str, image: bytes | None = None, *, base: dict | None 
                 shot = folder / "render.png"
                 shot.write_bytes(render(tokens))
                 answer = run(_review_prompt(description, tokens["thumbnail"]["html"], bool(ref)), [*refs, shot])
-            except (StyleError, agents.AgentError, OSError):
+            except (StyleError, agents.AgentError, OSError) as exc:
+                progress(f"parei de conferir: {exc}")
                 break  # keep the last good layout
             data = _first_json(answer) or {}
             if data.get("ok") is True:
