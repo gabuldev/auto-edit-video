@@ -388,3 +388,9 @@ def test_generate_wrapper_json_without_style_keys_is_an_error(home):
     """Any JSON is not a style: an agent's envelope must not turn into defaults."""
     with pytest.raises(styles.StyleError, match="não devolveu um estilo"):
         styles.generate("x", complete=lambda p: '{"type": "result", "result": "texto"}')
+
+
+class TestDisplayFonts:
+    @pytest.mark.parametrize("fid", ["luckiest", "lilita", "bangers", "archivo"])
+    def test_new_display_fonts_ship_with_the_app(self, fid):
+        assert styles.font_file(styles.FONTS[fid]["bold"]) is not None

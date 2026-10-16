@@ -33,6 +33,11 @@ FONTS: dict[str, dict] = {
     "bebas": {"label": "Bebas Neue", "bold": "BebasNeue-Regular.ttf"},
     "montserrat": {"label": "Montserrat", "bold": "Montserrat-ExtraBold.ttf", "regular": "Montserrat-SemiBold.ttf"},
     "poppins": {"label": "Poppins", "bold": "Poppins-ExtraBold.ttf", "regular": "Poppins-SemiBold.ttf"},
+    # Display fonts for thumbnail layouts (auto_edit/thumb_html.py).
+    "luckiest": {"label": "Luckiest Guy", "bold": "LuckiestGuy-Regular.ttf"},
+    "lilita": {"label": "Lilita One", "bold": "LilitaOne-Regular.ttf"},
+    "bangers": {"label": "Bangers", "bold": "Bangers-Regular.ttf"},
+    "archivo": {"label": "Archivo Black", "bold": "ArchivoBlack-Regular.ttf"},
 }
 
 DEFAULT_TOKENS: dict = {
