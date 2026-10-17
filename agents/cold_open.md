@@ -18,6 +18,10 @@ You receive what the edit kept, line by line, with timestamps on the ORIGINAL
 - Comes from **later** in the video (ideally after the first third). A moment
   from the first ~15s is not a cold open, it is already the opening.
 - Never the call to action, the sign-off, or a self-introduction.
+- **Prefer the demonstration**: when the speaker is showing the thing working
+  on screen — the app doing the task, the result appearing, "olha só, ele
+  criou…" — that moment beats a claim about it. Showing > telling. Pick the
+  stretch where the result becomes visible, not the setup before it.
 
 ## Length
 
