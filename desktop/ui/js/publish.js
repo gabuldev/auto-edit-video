@@ -61,6 +61,12 @@ function fillForm(d) {
   el("pub-comment-on").checked = false;
   el("pub-comment").value = d.pinned_comment || "";
   el("pub-comment").hidden = true;
+  // Títulos alternativos do metadata: um clique troca o do campo.
+  const options = d.title_options || [];
+  el("pub-titles").hidden = options.length < 2;
+  el("pub-titles").innerHTML = options
+    .map((t) => `<button type="button" class="btn btn-sm" data-title="${escapeHtml(t)}">${escapeHtml(t)}</button>`)
+    .join("");
   syncForm();
 }
 
@@ -74,6 +80,9 @@ function syncForm() {
   if (scheduled) el("pub-privacy").value = "private";
   el("pub-privacy").disabled = scheduled;
 
+  const title = el("pub-title").value.trim();
+  for (const b of el("pub-titles").querySelectorAll("button")) b.classList.toggle("on", b.dataset.title === title);
+
   const notes = [];
   if (scheduled) notes.push("Agendado: fica privado e vira público sozinho na hora marcada.");
   if (state.data?.type === "short") notes.push("Short: o YouTube não aceita thumbnail personalizada pela API — ele escolhe o frame.");
@@ -81,6 +90,9 @@ function syncForm() {
   if (el("pub-comment-on").checked && el("pub-privacy").value === "private") {
     notes.push("Vídeo privado não aceita comentário: escolha não listado/público ou poste depois pelo Studio.");
   }
+  const nv = state.data?.next_video;
+  if (nv) notes.push(`Tela final (últimos 20s, no Studio): indique "${nv.title}".`);
+  if ((state.data?.title_options || []).length > 1) notes.push("Os outros títulos dá pra testar no Studio (Testar e comparar).");
   notes.push("Projeto do Google sem auditoria: o YouTube trava o vídeo como privado — aí é só liberar no Studio.");
   el("pub-note").textContent = notes.join(" ");
   el("btn-publish").disabled = !len || len > max;
@@ -219,6 +231,12 @@ function wire() {
   });
   for (const id of ["pub-title", "pub-when"]) el(id).addEventListener("input", syncForm);
   el("pub-privacy").addEventListener("change", syncForm);
+  el("pub-titles").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-title]");
+    if (!b) return;
+    el("pub-title").value = b.dataset.title;
+    syncForm();
+  });
   el("pub-comment-on").addEventListener("change", () => {
     el("pub-comment").hidden = !el("pub-comment-on").checked;
     syncForm();

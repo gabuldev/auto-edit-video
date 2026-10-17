@@ -18,6 +18,9 @@ You will receive:
 - If a CTA is not clearly present in the transcription, do NOT invent one.
 - For `lower_third`: place it 1-2 seconds after the speaker's name is first said.
 - For `cta`: place it at the exact moment the CTA phrase begins.
+- Nothing in the **last 20 seconds** of the video: that is the YouTube end
+  screen (next video + subscribe button). A CTA said there is already covered
+  by it — skip it.
 
 ## Output Format
 

@@ -12,9 +12,34 @@ Your job is to generate compelling titles and descriptions optimized for the pla
 
 ## For LONG / YOUTUBE videos:
 
-- `youtube_title`: Max 70 characters. SEO-optimized. Include the main keyword. In the video's language.
+- `youtube_title`: Max 70 characters. In the video's language. Its job is the
+  **click**: someone scrolling the feed who has never heard of the creator must
+  want to know what happens.
+  - Promise a **result** or open a **curiosity gap** that only the video closes:
+    what was built, what broke, what changed, the surprising number. The main
+    keyword goes in when it fits naturally — curiosity first, SEO second.
+  - Never spend characters on things a stranger doesn't recognize: the
+    creator's own startup/product name, series labels, "novidades da X",
+    "atualização #3", "parte 2", "vlog". Name the **thing** instead ("meu
+    sistema de pagamento", "um PDV com IA").
+  - Title and thumbnail **complement** each other: the title must not repeat
+    `thumbnail.main_text`; together they tell the story, each half of it.
+  - ❌ "Criei a IA da minha startup com Claude: novidades da Grapepag" (descreve, marca desconhecida)
+  - ✅ "Minha IA cadastra o cardápio inteiro sozinha (fiz com Claude)" ·
+    ✅ "Coloquei IA no meu sistema de pagamento — e mudou tudo"
+- `title_options`: 3 titles, each a different angle (result, curiosity,
+  conflict/number), all following the rules above. The **first is
+  `youtube_title`**. The creator picks one or A/B tests them in YouTube
+  Studio ("Testar e comparar").
 - `youtube_description`: 150–300 words. First 2 sentences are the hook (most important for SEO). Include natural keyword usage. Add a call to action at the end. In the video's language.
 - `tags`: Array of 10–20 tags for YouTube. Mix keyword variations.
+- `next_video`: when the prompt brings a "Vídeos do canal" list, pick the ONE
+  video a viewer who finished this one would want next (same journey, the
+  next step, the deeper dive). `{"title": "...", "url": "...", "reason": "..."}`
+  — copy title and url exactly from the list; `reason` in a few words, in the
+  video's language. End `youtube_description` with a line pointing to it
+  ("▶ Próximo passo: <title> — <url>"). `null` when there is no list or
+  nothing fits. The creator puts it in the end screen.
 - `chapters`: YouTube chapters, from the timestamped transcription. Array of
   `{"start": <seconds>, "title": "..."}` in the order they happen.
   - First chapter at `0`. **At least 3**, each **at least 10 seconds** long —
@@ -86,6 +111,8 @@ Schema for short:
 Schema for long:
 {
   "youtube_title": "...",
+  "title_options": ["<o mesmo youtube_title>", "...", "..."],
+  "next_video": {"title": "Montei meu PDV do zero", "url": "https://youtu.be/abc123", "reason": "mostra a base que a IA usa"},
   "youtube_description": "...",
   "tags": ["pão caseiro", "como fazer pão", ...],
   "pinned_comment": "Qual erro de fermentação você já cometeu?",

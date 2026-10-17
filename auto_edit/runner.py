@@ -312,6 +312,12 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 "dos de menor — sem copiar títulos, priorizando o que é fiel a "
                 "ESTE vídeo.",
             ]
+        others = _channel_videos_section(video_type) if video_type == "long" else ""
+        if others:
+            sections += [
+                "\n## Vídeos do canal (pra indicar no fim — `next_video`)",
+                others,
+            ]
 
     sections.append(
         "\nRespond with ONLY valid JSON. No markdown code fences, no explanation."
@@ -362,6 +368,24 @@ def _performance_section(video_type: str) -> str:
             return ""
         conn = ist.connect(db_path)
         return isvc.performance_brief(conn, kind=kind)
+    except Exception:
+        return ""
+
+
+def _channel_videos_section(video_type: str) -> str:
+    """Vídeos já publicados no canal (do insights.db), pro metadata indicar
+    um no fim. "" sem insights — nunca quebra a edição."""
+    kind = "short" if video_type == "short" else "long"
+    try:
+        from auto_edit import config as cfg
+        from auto_edit.insights import service as isvc
+        from auto_edit.insights import store as ist
+
+        db_path = cfg.insights_db_path()
+        if not db_path.exists():
+            return ""
+        conn = ist.connect(db_path)
+        return isvc.channel_videos(conn, kind=kind)
     except Exception:
         return ""
 
