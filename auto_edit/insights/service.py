@@ -44,6 +44,23 @@ def performance_brief(conn, kind: str | None = None, top: int = 8,
     return "\n".join(parts)
 
 
+def channel_videos(conn, kind: str | None = None, limit: int = 12) -> str:
+    """Vídeos publicados do canal (mais recentes primeiro), um por linha com
+    título e link — o metadata escolhe um pra indicar no fim do vídeo."""
+    rows = [r for r in store.latest_snapshots(conn, "youtube") if r.get("url")]
+    if kind:
+        rows = [r for r in rows
+                if r.get("duration_sec") is not None and _derive_kind(r["duration_sec"]) == kind]
+    rows.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+
+    def _line(r: dict) -> str:
+        ret = r.get("avg_view_pct")
+        extra = f" — {round(ret, 1)}% retenção" if ret is not None else ""
+        return f'- "{r.get("title", "")}" — {r["url"]}{extra}'
+
+    return "\n".join(_line(r) for r in rows[:limit])
+
+
 @dataclass
 class SyncResult:
     videos_seen: int

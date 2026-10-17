@@ -133,6 +133,24 @@ def _resolve_overlays(
     return found, missing, removed
 
 
+# Últimos segundos do vídeo: é onde o YouTube põe a tela final (próximo vídeo
+# + inscrever-se). Overlay ali briga com ela — o CTA de inscrição duplica o
+# botão. Só vale pra vídeo com tamanho pra ter tela final (>= 25s).
+END_SCREEN_SEC = 20.0
+END_SCREEN_MIN_VIDEO = 25.0
+
+
+def _outside_end_screen(found: list, duration: float) -> tuple[list, list]:
+    """Split resolved overlays into (kept, dropped): dropped start inside
+    the end-screen zone."""
+    if duration < END_SCREEN_MIN_VIDEO:
+        return found, []
+    zone = duration - END_SCREEN_SEC
+    kept = [f for f in found if f[3] < zone]
+    dropped = [f for f in found if f[3] >= zone]
+    return kept, dropped
+
+
 def _check_assets_present(missing: list[str], search_dirs: list[Path]) -> None:
     """Warn about missing overlay assets — or raise, under AUTO_EDIT_OVERLAYS_STRICT."""
     if not missing:
@@ -196,6 +214,12 @@ def overlay(workspace: Path) -> None:
 
     input_video = workspace / "edited_video.mp4"
     output_video = workspace / "overlaid_video.mp4"
+    found, in_end_screen = _outside_end_screen(found, _get_duration(input_video))
+    for ov, kind, _asset, start in in_end_screen:
+        print(
+            f"[overlayer] '{ov.get('file') or kind}' at {start:.2f}s skipped: last "
+            f"{END_SCREEN_SEC:.0f}s are the YouTube end screen."
+        )
     with tempfile.TemporaryDirectory(prefix="auto-edit-overlay-") as tmp:
         rendered: dict[str, dict | None] = {}
         placed = []
