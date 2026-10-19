@@ -298,6 +298,32 @@ def _print_token_summary(stats: dict) -> None:
     print(f"  {'TOTAL':12s}        {stats['total_estimated_tokens']:>8,} tokens")
 
 
+def title_options(metadata: dict | None, limit: int = 3) -> list[str]:
+    """Títulos pra escolher/testar: o `youtube_title` primeiro, depois as
+    alternativas do metadata, sem repetidos nem vazios."""
+    m = metadata if isinstance(metadata, dict) else {}
+    raw = [m.get("youtube_title")] + list(m.get("title_options") or [])
+    out: list[str] = []
+    for t in raw:
+        t = str(t or "").strip()
+        if t and t.lower() not in {o.lower() for o in out}:
+            out.append(t)
+    return out[:limit]
+
+
+def next_video(metadata: dict | None) -> dict | None:
+    """O vídeo do canal que o metadata indicou pro fim (tela final), se veio
+    com título e link."""
+    nv = (metadata or {}).get("next_video") if isinstance(metadata, dict) else None
+    if not isinstance(nv, dict) or not str(nv.get("url") or "").strip():
+        return None
+    return {
+        "title": str(nv.get("title") or "").strip(),
+        "url": str(nv["url"]).strip(),
+        "reason": str(nv.get("reason") or "").strip(),
+    }
+
+
 def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
     lines = []
     if video_type in ("short", "reels"):
@@ -327,6 +353,15 @@ def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
             "TAGS:",
             ", ".join(metadata.get("tags", [])),
         ]
+        alternatives = title_options(metadata)[1:]
+        if alternatives:
+            lines += ["", "TÍTULOS ALTERNATIVOS (Testar e comparar no Studio):"]
+            lines += [f"- {t}" for t in alternatives]
+        nv = next_video(metadata)
+        if nv:
+            lines += ["", "PRÓXIMO VÍDEO (tela final, últimos 20s):", f"{nv['title']} — {nv['url']}"]
+            if nv["reason"]:
+                lines.append(f"({nv['reason']})")
         if metadata.get("pinned_comment"):
             lines += ["", "COMENTÁRIO PRA FIXAR:", metadata["pinned_comment"]]
     path.write_text("\n".join(lines), encoding="utf-8")

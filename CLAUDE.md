@@ -63,6 +63,13 @@ Whisper   Claude  Claude   Claude     FFmpeg    FFmpeg    FFmpeg    Claude
 
 O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
 
+No long, o `metadata` escreve o título pra **clique** (gancho/resultado, sem
+nome de marca que estranho não reconhece, complementando a thumbnail) e
+`title_options` (3 ângulos, o 1º é o `youtube_title`) pra testar no Studio; com
+o insights conectado, indica em `next_video` um vídeo do canal pra tela final.
+Os dois saem no `metadata.txt` e no card Publicar do app. O `overlay` não põe
+nada nos últimos 20s (`END_SCREEN_SEC`): ali fica a tela final do YouTube.
+
 O evaluator julga o **corte planejado**, antes de renderizar: a transcrição do
 corte sai do plano (`postcut --planned`, mesmos intervalos do executor, sem
 FFmpeg) e o cold open/reordenação roda logo antes dele. Se rejeitar, o pipeline

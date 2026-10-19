@@ -691,6 +691,8 @@ def publish_state(video_id: str) -> dict | None:
         # Legenda como faixa só no long (o short já tem legenda queimada).
         "captions": not is_short and artifact_path(video_id, "captions") is not None,
         "pinned_comment": (metadata or {}).get("pinned_comment") if isinstance(metadata, dict) else None,
+        "title_options": [] if is_short else pl.title_options(metadata),
+        "next_video": None if is_short else pl.next_video(metadata),
         "limits": {"title": yt.TITLE_MAX, "description": yt.DESCRIPTION_MAX},
         "published": yt.read_record(ws).get("youtube", []),
         "account": youtube_account(),

@@ -56,6 +56,20 @@ video delivers and cut the run-up around it. This rule overrides "keep whole
 blocks" for the opening only — a slow opening is the one place where slow is
 not fine.
 
+## Step 4b — The closing: hand the viewer to the next video
+
+Viewers who reach the end are the most engaged; the closing should send them
+somewhere, not just say goodbye.
+
+- **Keep** any line that points to another video, series or next step ("no
+  próximo vídeo eu mostro…", "se você não viu o anterior…", "isso faz parte da
+  série…"). Never cut it as a sign-off.
+- Keep the goodbye short: one line of thanks/sign-off is enough. Repeated
+  "é isso galera", "valeu", "até a próxima" are trims.
+- The YouTube end screen covers the last ~20 seconds. Keep the closing
+  (pointer to the next video + sign-off) there rather than cutting it so tight
+  that the video ends on the last word of the content.
+
 ## Step 5 — Tighten inside the blocks you kept
 
 Within surviving blocks, also remove:
