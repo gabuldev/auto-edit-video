@@ -654,6 +654,33 @@ class TestFaceCutout:
         assert calls == [[frame]]
         assert seen["face"] == str(tmp_path / "r.png") and seen["face_outline"] == str(tmp_path / "c.png")
 
+    def test_main_frame_without_a_face_looks_at_other_moments(self, monkeypatch, tmp_path):
+        """The best frame is a desk shot: the face comes from elsewhere in the
+        video, and the extra frames are cleaned up."""
+        from auto_edit import face_cutout
+
+        frame, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto}}"/></div>')
+        taken = []
+
+        def extract(video, ts, out):
+            taken.append(ts)
+            Image.new("RGB", (320, 180), (90, 50, 50)).save(out)
+            return out
+
+        monkeypatch.setattr(thumbnailer, "_extract_frame", extract)
+        calls = []
+
+        def cutout(frames, folder):
+            calls.append(list(frames))
+            return None if frames == [frame] else {"rosto": tmp_path / "r.png", "rosto_contorno": tmp_path / "c.png"}
+
+        monkeypatch.setattr(face_cutout, "cutout_files", cutout)
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert calls[0] == [frame] and len(calls) == 2 and len(calls[1]) == len(taken) > 1
+        assert all(5.0 <= ts <= 95.0 for ts in taken)
+        assert seen["face"] == str(tmp_path / "r.png")
+        assert not any(p.exists() for p in calls[1])
+
     def test_face_photo_wins_and_no_cutout(self, monkeypatch, tmp_path):
         from auto_edit import face_cutout
 

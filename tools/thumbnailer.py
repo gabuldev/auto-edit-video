@@ -267,21 +267,39 @@ def _style_html() -> str | None:
         return None
 
 
-def _face_cutout(frame: Path, workspace: Path) -> dict | None:
+FACE_FRAMES = 6  # other moments looked at when the main frame shows no face
+
+
+def _face_cutout(frame: Path, workspace: Path, video_path: str | None = None, duration: float = 0.0) -> dict | None:
     """The person cut out of the frame, only when the style's layout shows a
-    face ({{rosto}} / {{rosto_contorno}}). Downloads the model the first time;
-    any failure means a thumbnail without the face."""
+    face ({{rosto}} / {{rosto_contorno}}). No face in the main frame (a desk
+    shot): the biggest face from other moments of the video. Downloads the
+    models the first time; any failure means a thumbnail without the face."""
     html = _style_html()
     if not html or not {"rosto", "rosto_contorno"} & thumb_html.placeholders(html):
         return None
     from auto_edit import face_cutout
 
+    extra: list[Path] = []
     try:
         cut = face_cutout.cutout_files([frame], workspace / "_face")
+        if cut is None and video_path and duration > 0:
+            margin = max(1.0, duration * 0.05)
+            step = (duration - 2 * margin) / max(FACE_FRAMES - 1, 1)
+            for i in range(FACE_FRAMES):
+                path = workspace / f"_thumb_face_{i}.jpg"
+                try:
+                    extra.append(_extract_frame(video_path, margin + i * step, path))
+                except Exception:
+                    path.unlink(missing_ok=True)
+            cut = face_cutout.cutout_files(extra, workspace / "_face") if extra else None
     except face_cutout.CutoutError as exc:
         print(f"[thumbnailer] Face cut-out unavailable: {exc}")
         return None
-    print("[thumbnailer] Face cut out of the frame" if cut else "[thumbnailer] No person in the frame to cut out")
+    finally:
+        for path in extra:
+            path.unlink(missing_ok=True)
+    print("[thumbnailer] Face cut out of the video" if cut else "[thumbnailer] No face in the video to cut out")
     return cut
 
 
@@ -1191,7 +1209,7 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
     face_outline: str | None = None
     if face_path is None and frame_path is not None:
-        cut = _face_cutout(frame_path, workspace)
+        cut = _face_cutout(frame_path, workspace, video_path, duration)  # a frame means bg is None: both set
         if cut:
             face_path, face_outline = cut["rosto"], str(cut["rosto_contorno"])
 

@@ -58,33 +58,61 @@ def test_outlined_adds_an_opaque_white_ring(tmp_path):
     assert tuple(edge) == (255, 255, 255, 255)
 
 
-def test_cutout_files_pick_the_frame_with_most_person_and_cache(tmp_path, monkeypatch):
-    small, big = frame(tmp_path, "a.jpg", (10, 10, 10)), frame(tmp_path, "b.jpg", (200, 10, 10))
-    sessions = {}
+class FakeFaceSession:
+    """The face detector: answers `score` for one box (fractions of the frame)."""
 
-    def fake_session():
-        return sessions.setdefault("s", FakeSession((0.2, 0.1, 0.8, 1.0)))
+    def __init__(self, score, box=(0.4, 0.2, 0.6, 0.5)):
+        self.score, self.box = score, box
 
-    # the "small" frame gets a smaller person
+    def get_inputs(self):
+        return [type("I", (), {"name": "input"})()]
+
+    def run(self, outputs, feeds):
+        x = next(iter(feeds.values()))
+        assert x.shape == (1, 3, 240, 320)
+        scores = np.array([[[1 - self.score, self.score], [0.99, 0.01]]], dtype=np.float32)
+        boxes = np.array([[self.box, (0, 0, 0.1, 0.1)]], dtype=np.float32)
+        return [scores, boxes]
+
+
+class TestFace:
+    def test_a_face_is_its_box(self, tmp_path):
+        box = fc._face(Image.open(frame(tmp_path)), FakeFaceSession(0.99))
+        assert box is not None and box[1] == pytest.approx((0.4, 0.2, 0.6, 0.5))
+
+    def test_a_hand_is_not_a_face(self, tmp_path):
+        """A thumbs-up scores ~0.8 on the detector: below the bar."""
+        assert fc._face(Image.open(frame(tmp_path)), FakeFaceSession(0.83)) is None
+
+
+def _fakes(monkeypatch, faces: dict):
+    """Person in every frame (the mask); a face only where `faces` says, by
+    the frame's red channel."""
+    sessions = {"s": FakeSession((0.2, 0.1, 0.8, 1.0))}
+    monkeypatch.setattr(fc, "session", lambda: sessions["s"])
+    monkeypatch.setattr(fc, "face_session", lambda: object())
+    monkeypatch.setattr(fc, "_face", lambda img, sess: faces.get(img.getpixel((0, 0))[0]))
+    return sessions
+
+
+def test_cutout_files_pick_the_frame_with_the_biggest_face_and_cache(tmp_path, monkeypatch):
+    far, near, hands = (frame(tmp_path, f"{n}.jpg", (r, 10, 10)) for n, r in (("a", 10), ("b", 200), ("c", 100)))
+    sessions = _fakes(monkeypatch, {10: (0.99, (0.4, 0.4, 0.45, 0.48)), 200: (0.99, (0.3, 0.1, 0.6, 0.6))})
+    picked = []
     real = fc._mask
-
-    def mask(img, session):
-        m = real(img, session)
-        if img.getpixel((0, 0))[0] < 50:
-            return m.resize((m.width // 4, m.height // 4)).resize(m.size, Image.NEAREST).point(lambda v: 0)
-        return m
-
-    monkeypatch.setattr(fc, "_mask", mask)
-    monkeypatch.setattr(fc, "session", fake_session)
-    out = fc.cutout_files([small, big], tmp_path / "cache")
+    monkeypatch.setattr(fc, "_mask", lambda img, s: picked.append(img.getpixel((0, 0))[0]) or real(img, s))
+    out = fc.cutout_files([far, near, hands], tmp_path / "cache")
     assert out and out["rosto"].is_file() and out["rosto_contorno"].is_file()
+    assert picked == [200]  # only the chosen frame is segmented
     calls = sessions["s"].calls
-    again = fc.cutout_files([small, big], tmp_path / "cache")
+    again = fc.cutout_files([far, near, hands], tmp_path / "cache")
     assert again == out and sessions["s"].calls == calls  # cached: the model didn't run again
 
 
-def test_cutout_files_none_when_nobody(tmp_path, monkeypatch):
-    monkeypatch.setattr(fc, "session", lambda: FakeSession((0.5, 0.5, 0.51, 0.51)))
+def test_cutout_files_none_without_a_face(tmp_path, monkeypatch):
+    """Hands and a body but no face (a desk shot): no cut-out, the layout
+    goes without it, never a giant outlined hand."""
+    _fakes(monkeypatch, {})
     assert fc.cutout_files([frame(tmp_path)], tmp_path / "cache") is None
 
 
@@ -117,7 +145,16 @@ class TestModel:
         monkeypatch.setattr(fc, "MODEL_SHA256", hashlib.sha256(payload).hexdigest())
         fc.ensure_model(download=self._fake_download(payload))
         assert fc.ensure_model(download=lambda u, d: pytest.fail("downloaded again")).is_file()
+        assert not fc.model_ready()  # the face detector is still missing
+        monkeypatch.setattr(fc, "FACE_MODEL_SHA256", hashlib.sha256(payload).hexdigest())
+        assert fc.ensure_face_model(download=self._fake_download(payload)).parent == home / "models"
         assert fc.model_ready()
+
+    def test_face_model_wrong_hash(self, home, monkeypatch):
+        monkeypatch.setattr(fc, "FACE_MODEL_SHA256", "0" * 64)
+        with pytest.raises(fc.CutoutError, match="baixado"):
+            fc.ensure_face_model(download=self._fake_download(b"x"))
+        assert not list((home / "models").glob("*"))
 
     def test_without_onnxruntime(self, home, monkeypatch):
         import builtins

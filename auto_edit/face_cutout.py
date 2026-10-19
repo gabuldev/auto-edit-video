@@ -1,9 +1,11 @@
 """The person cut out of a video frame, for the thumbnail layouts' {{rosto}}
 and {{rosto_contorno}} slots (auto_edit/thumb_html.py).
 
-U²-Net trained on people (u2net_human_seg, Apache-2.0) run with onnxruntime.
-The model (176 MB) is downloaded the first time it is needed, into
-~/.auto-edit/models, and checked by SHA-256. Every failure is a CutoutError:
+U²-Net trained on people (u2net_human_seg, Apache-2.0) run with onnxruntime,
+only on a frame where a face shows (Ultra-Light-Fast-Generic-Face-Detector,
+MIT, 1.2 MB): the person mask alone happily cuts out a lone hand. Both models
+are downloaded the first time they are needed, into ~/.auto-edit/models, and
+checked by SHA-256. Every failure is a CutoutError:
 callers then draw the thumbnail without the face.
 """
 from __future__ import annotations
@@ -26,6 +28,13 @@ STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 MIN_PERSON = 0.03  # of the frame: less than this is nobody
 MAX_SIDE = 1600  # frames are shrunk to this before cutting (thumbnail size is 1280x720)
 
+FACE_MODEL_NAME = "ultraface-rfb-320.onnx"
+FACE_MODEL_URL = ("https://raw.githubusercontent.com/Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB/"
+                  "master/models/onnx/version-RFB-320.onnx")
+FACE_MODEL_SHA256 = "34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017"
+FACE_INPUT = (320, 240)
+FACE_MIN_SCORE = 0.9  # real faces score ~1.0; a thumbs-up ~0.8
+
 
 class CutoutError(RuntimeError):
     pass
@@ -39,8 +48,12 @@ def model_path() -> Path:
     return models_dir() / MODEL_NAME
 
 
+def face_model_path() -> Path:
+    return models_dir() / FACE_MODEL_NAME
+
+
 def model_ready() -> bool:
-    return model_path().is_file()
+    return model_path().is_file() and face_model_path().is_file()
 
 
 def _sha256(path: Path) -> str:
@@ -63,9 +76,18 @@ _download_lock = threading.Lock()
 
 
 def ensure_model(download=None) -> Path:
-    """The model file, downloading it first if needed (into a .part that only
-    becomes the model when its hash matches)."""
-    path = model_path()
+    """The person-mask model, downloading it first if needed."""
+    return _ensure(model_path(), MODEL_URL, MODEL_SHA256, download)
+
+
+def ensure_face_model(download=None) -> Path:
+    """The face detector, downloading it first if needed."""
+    return _ensure(face_model_path(), FACE_MODEL_URL, FACE_MODEL_SHA256, download)
+
+
+def _ensure(path: Path, url: str, sha256: str, download=None) -> Path:
+    """A model file, downloaded into a .part that only becomes the model when
+    its hash matches."""
     if path.is_file():
         return path
     with _download_lock:
@@ -74,8 +96,8 @@ def ensure_model(download=None) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         part = path.with_suffix(".part")
         try:
-            (download or _urlretrieve)(MODEL_URL, part)
-            if _sha256(part) != MODEL_SHA256:
+            (download or _urlretrieve)(url, part)
+            if _sha256(part) != sha256:
                 raise CutoutError("o modelo de recorte baixado veio corrompido")
             part.replace(path)
         except CutoutError:
@@ -94,6 +116,7 @@ def download_in_background() -> None:
 
     def run():
         try:
+            ensure_face_model()
             ensure_model()
         except CutoutError as exc:
             print(f"[face_cutout] {exc}")
@@ -102,22 +125,49 @@ def download_in_background() -> None:
 
 
 _session = None
+_face_session = None
+
+
+def _load(path_of, download=None):
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise CutoutError("onnxruntime não instalado") from exc
+    path = path_of(download)
+    try:
+        opts = ort.SessionOptions()
+        opts.log_severity_level = 3  # the face model's export warns about every weight
+        return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+    except Exception as exc:
+        raise CutoutError(f"modelo de recorte inválido ({exc})") from exc
 
 
 def session(download=None):
-    """The ONNX session (one per process)."""
+    """The person-mask ONNX session (one per process)."""
     global _session
     if _session is None:
-        try:
-            import onnxruntime as ort
-        except ImportError as exc:
-            raise CutoutError("onnxruntime não instalado") from exc
-        path = ensure_model(download)
-        try:
-            _session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-        except Exception as exc:
-            raise CutoutError(f"modelo de recorte inválido ({exc})") from exc
+        _session = _load(ensure_model, download)
     return _session
+
+
+def face_session(download=None):
+    """The face detector ONNX session (one per process)."""
+    global _face_session
+    if _face_session is None:
+        _face_session = _load(ensure_face_model, download)
+    return _face_session
+
+
+def _face(img: Image.Image, sess) -> tuple[float, tuple[float, float, float, float]] | None:
+    """(score, box as fractions of the frame) of the surest face, or None when
+    nothing passes for one."""
+    x = (np.asarray(img.convert("RGB").resize(FACE_INPUT, Image.BILINEAR), dtype=np.float32) - 127.0) / 128.0
+    scores, boxes = sess.run(None, {sess.get_inputs()[0].name: x.transpose(2, 0, 1)[None]})
+    p = scores[0, :, 1]
+    i = int(p.argmax())
+    if float(p[i]) < FACE_MIN_SCORE:
+        return None
+    return float(p[i]), tuple(float(v) for v in np.clip(boxes[0, i], 0, 1))
 
 
 def _mask(img: Image.Image, sess) -> Image.Image:
@@ -177,13 +227,13 @@ def outlined(cut: Image.Image, px: int | None = None) -> Image.Image:
 
 
 def cutout_files(frames: list[Path], folder: Path) -> dict | None:
-    """{"rosto", "rosto_contorno"} PNGs from the frame with the most person
-    in it (cached by the frames' content), or None when nobody is in any.
-    Raises CutoutError when the model can't run."""
+    """{"rosto", "rosto_contorno"} PNGs from the frame with the biggest face
+    (cached by the frames' content), or None when no frame shows a face or
+    nobody is big enough. Raises CutoutError when a model can't run."""
     frames = [Path(f) for f in frames if Path(f).is_file()]
     if not frames:
         return None
-    key = hashlib.sha1(b"".join(hashlib.sha1(f.read_bytes()).digest() for f in frames)).hexdigest()[:20]
+    key = hashlib.sha1(b"face-v2" + b"".join(hashlib.sha1(f.read_bytes()).digest() for f in frames)).hexdigest()[:20]
     folder.mkdir(parents=True, exist_ok=True)
     out = {"rosto": folder / f"{key}-rosto.png", "rosto_contorno": folder / f"{key}-rosto-contorno.png"}
     nobody = folder / f"{key}-ninguem"
@@ -191,15 +241,18 @@ def cutout_files(frames: list[Path], folder: Path) -> dict | None:
         return out
     if nobody.is_file():
         return None
-    sess = session()
+    faces = face_session()
     best = None
     for f in frames:
         img = _open(f)
-        mask = _mask(img, sess)
-        cov = _coverage(mask)
-        if best is None or cov > best[0]:
-            best = (cov, img, mask)
-    cut = _crop(best[1], best[2]) if best else None
+        face = _face(img, faces)
+        if face is None:
+            continue
+        x0, y0, x1, y1 = face[1]
+        area = (x1 - x0) * (y1 - y0)
+        if best is None or area > best[0]:
+            best = (area, img)
+    cut = _crop(best[1], _mask(best[1], session())) if best else None
     if cut is None:
         nobody.touch()
         return None
