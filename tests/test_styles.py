@@ -339,6 +339,7 @@ class TestShare:
 class TestStyleApi:
     @pytest.fixture
     def client(self, home):
+        pytest.importorskip("flask")
         return api.create_app(engine.JobManager()).test_client()
 
     @staticmethod
@@ -629,6 +630,7 @@ class TestPreviewFace:
 
 
 class TestPreviewCache:
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
     def test_new_renderer_means_new_previews(self, home, monkeypatch, tmp_path):
         """A cached preview from an older renderer is never shown after an update."""
         from auto_edit import render
