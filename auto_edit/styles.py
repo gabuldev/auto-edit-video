@@ -20,6 +20,7 @@ from pathlib import Path
 
 from auto_edit import config as cfg
 from auto_edit import overlay_assets
+from auto_edit import style_presets
 from auto_edit import thumb_html
 
 DEFAULT_ID = "padrao"
@@ -108,6 +109,45 @@ PRESETS: dict[str, dict] = {
         thumbnail={"accent_from": "style"},
     ),
 }
+
+
+def _gallery(sid: str, name: str, description: str, accent: str, panel: str, title: str,
+             text: str = "montserrat", **changes) -> None:
+    PRESETS[sid] = _preset(
+        name, description,
+        colors={"accent": accent, "panel": panel, "text": "#ffffff"},
+        fonts={"title": title, "text": text},
+        cta={"position": "bottom-center", "steps": _PLAIN_STEPS},
+        thumbnail={"accent_from": "style", "html": style_presets.LAYOUTS[sid]},
+        **changes,
+    )
+
+
+# Ready-made thumbnail layouts (auto_edit/style_presets.py) with matching overlays.
+_gallery("rosto_gigante", "Rosto Gigante", "Você recortado com contorno branco e o título enorme em degradê.",
+         "#ffd400", "#000000", "luckiest", radius=16, speed=1.2)
+_gallery("tarja", "Tarja", "A última palavra numa faixa vermelha inclinada.",
+         "#e3122b", "#000000", "anton", radius=6, speed=1.2)
+_gallery("neon_tech", "Neon Tech", "Escuro, com o título em camadas roxo e ciano.",
+         "#00e5ff", "#ff00e6", "bebas", "poppins", radius=30)
+_gallery("limpo", "Limpo", "Pouco texto, muito respiro, uma cor só.",
+         "#4ade80", "#0a0a0a", "poppins", "poppins", radius=18, speed=0.85, panel_opacity=0.8)
+_gallery("jornal", "Jornal", "Faixa de telejornal com selo vermelho.",
+         "#d90429", "#000000", "archivo", radius=0)
+_gallery("versus", "Versus", "Dois momentos lado a lado com um VS no meio.",
+         "#ff3b3b", "#000000", "luckiest", radius=20, speed=1.2)
+_gallery("painel", "Painel", "Painel de cor com borda inclinada e o vídeo ao lado.",
+         "#ffd400", "#1d1b4b", "montserrat", radius=12)
+_gallery("celular", "Celular", "O vídeo dentro de um celular inclinado.",
+         "#a3e635", "#3b0764", "lilita", "poppins", radius=26)
+_gallery("reacao", "Reação", "Você recortado reagindo e o momento num círculo.",
+         "#ffd400", "#000000", "luckiest", radius=20, speed=1.2)
+_gallery("quadrinho", "Quadrinho", "Título num balão de gibi e selo vermelho.",
+         "#e3122b", "#000000", "bangers", radius=24, speed=1.2)
+_gallery("ouro", "Preto e Ouro", "Sóbrio: título dourado sobre faixa escura.",
+         "#e8b84a", "#0b0b0b", "archivo", radius=4, speed=0.85)
+_gallery("card", "Card", "O título num cartão branco com sombra colorida.",
+         "#6d28d9", "#ffffff", "poppins", "poppins", radius=28)
 
 
 class StyleError(ValueError):

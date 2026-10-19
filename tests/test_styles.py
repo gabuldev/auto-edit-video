@@ -645,3 +645,48 @@ class TestPreviewCache:
         os.utime(exe, (st.st_atime, st.st_mtime + 10))
         assert first == b"PNG-1" and styles.preview({}, "thumbnail") == b"PNG-2"
         assert render.stamp()  # something that changes with the renderer
+
+
+class TestGalleryPresets:
+    """The ready-made thumbnail layouts (auto_edit/style_presets.py)."""
+
+    def test_every_layout_is_a_preset(self):
+        from auto_edit import style_presets
+
+        for sid in style_presets.LAYOUTS:
+            assert styles.PRESETS[sid]["tokens"]["thumbnail"]["html"] == style_presets.LAYOUTS[sid]
+        assert {"padrao", "minimal", "neon", "impacto"} <= set(styles.PRESETS)
+
+    def test_sanitizing_keeps_every_placeholder_and_declaration(self):
+        import re
+
+        from auto_edit import style_presets, thumb_html
+
+        def decls(h):
+            return sorted(d.strip() for s in re.findall(r'style="([^"]*)"', h) for d in s.split(";") if d.strip())
+
+        for sid, html in style_presets.LAYOUTS.items():
+            clean = thumb_html.sanitize(html)
+            assert thumb_html.placeholders(clean) == thumb_html.placeholders(html), sid
+            assert decls(clean) == decls(html.replace("&", "&amp;")), sid
+
+    def test_title_follows_the_style_font(self):
+        import re
+
+        from auto_edit import style_presets
+
+        for sid, html in style_presets.LAYOUTS.items():
+            fits = re.findall(r'data-fit="[^"]*" style="([^"]*)"', html)
+            assert fits, sid
+            assert not any("font-family" in s for s in fits), sid
+            assert styles.PRESETS[sid]["tokens"]["fonts"]["title"] in styles.FONTS
+
+    @pytest.mark.skipif(__import__("auto_edit.render", fromlist=["x"]).command() is None, reason="renderer not available")
+    @pytest.mark.parametrize("title,sub", [("IA", None), ("Criei a IA da minha startup em sete dias sem programar", "Sem esforço")])
+    def test_renders_short_and_long_titles_without_a_person(self, home, monkeypatch, title, sub):
+        from auto_edit import style_presets
+
+        monkeypatch.setattr(styles, "preview_frame", lambda at=0.3: None)
+        monkeypatch.setattr(styles, "preview_face", lambda: None)
+        for sid in style_presets.LAYOUTS:
+            assert styles.render_thumbnail(styles.PRESETS[sid]["tokens"], title=title, sub=sub)[:4] == b"\x89PNG", sid

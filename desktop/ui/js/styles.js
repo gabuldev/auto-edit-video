@@ -4,6 +4,9 @@
 import * as api from "./api.js";
 import { el, escapeHtml, setEngine } from "./shell.js";
 
+// Creating and adjusting styles with AI is a beta that lives on its own
+// branch: off here, the gallery is the ready-made styles.
+const AI_STYLES = false;
 const KINDS = ["thumbnail", "lower_third", "cta"];
 const ICON_LABELS = { like: "👍 like", subscribe: "▶ inscrever", bell: "🔔 sino", comment: "💬 comentar" };
 
@@ -109,11 +112,11 @@ async function pickLogo(file) {
 
 function renderGallery() {
   const { styles, active } = state.data;
-  el("sty-gallery").innerHTML = `
+  el("sty-gallery").innerHTML = (AI_STYLES ? `
       <button class="sty-card sty-card-ai" data-ai>
         <div class="sty-card-img sty-ai-art">✨</div>
         <div class="sty-card-meta"><b>Criar com IA</b></div>
-      </button>` + styles
+      </button>` : "") + styles
     .map((s) => `
       <button class="sty-card${s.id === state.selected ? " selected" : ""}" data-style="${escapeHtml(s.id)}">
         <div class="sty-card-img">${state.thumbs[s.id] ? `<img src="${state.thumbs[s.id]}" alt="" />` : `<div class="sty-spin"></div>`}</div>
@@ -152,6 +155,7 @@ function renderDetail() {
   el("btn-sty-edit").hidden = editing;
   el("btn-sty-delete").hidden = editing || s.builtin;
   el("sty-editor").hidden = !editing;
+  el("sty-adjust-row").hidden = !AI_STYLES;
   if (editing) renderEditor();
 }
 
