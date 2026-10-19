@@ -416,3 +416,17 @@ textarea.input { resize: vertical; }
 @media (max-width: 900px) {
   .sty-previews, .sty-cols, .sty-row { grid-template-columns: 1fr; }
 }
+
+.sty-gallery-head { display: flex; align-items: baseline; gap: 12px; }
+.sty-ai { margin-top: 18px; }
+.sty-ai textarea { width: 100%; resize: vertical; }
+.sty-ai-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.sty-ai-row .input.grow { flex: 1; min-width: 0; }
+.sty-layout details { margin-top: 10px; }
+.sty-layout summary { cursor: pointer; font-size: 13px; color: var(--dim); }
+.sty-html { display: block; width: 100%; min-height: 220px; margin: 8px 0 6px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; line-height: 1.45; resize: vertical; white-space: pre-wrap; }
+.sty-card-ai { border-style: dashed; }
+.sty-ai-art { display: grid; place-items: center; font-size: 34px; }
+#sty-logo-colors { display: inline-block; margin-top: 8px; }
+.sty-gallery.busy { opacity: .55; pointer-events: none; }
+.sty-ai.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }

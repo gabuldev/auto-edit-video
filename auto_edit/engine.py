@@ -321,6 +321,13 @@ def open_artifact(
     path = artifact_path(video_id, kind)
     if path is None:
         return None
+    os_open(path, reveal, run)
+    return path
+
+
+def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subprocess.Popen) -> None:
+    """Open a file with the OS (its default app), or show it selected in the
+    file manager (`reveal`)."""
     if sys.platform == "darwin":
         cmd = ["open", "-R", str(path)] if reveal else ["open", str(path)]
     elif sys.platform == "win32":
@@ -328,7 +335,12 @@ def open_artifact(
     else:  # no portable "select in folder" on Linux: open the folder instead
         cmd = ["xdg-open", str(path.parent if reveal else path)]
     run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return path
+
+
+def downloads_dir() -> Path:
+    """Where an exported file goes: ~/Downloads, or the home without one."""
+    d = Path.home() / "Downloads"
+    return d if d.is_dir() else Path.home()
 
 
 # Links the frontend may ask the OS to open — only the platforms we publish to.
@@ -962,6 +974,26 @@ class JobManager:
                 job.close()
 
         threading.Thread(target=_run, name=f"job-{job.id}", daemon=True).start()
+        return job
+
+    def run_task(self, kind: str, target: Callable[[Emit], None]) -> Job:
+        """A job that isn't about a video (e.g. the AI creating a style): its
+        events over /api/jobs/<id>/events, never listed as a video's job."""
+        job = Job(id=uuid.uuid4().hex[:12], video_id=f"_{kind}", kind=kind)
+        with self._lock:
+            self._jobs[job.id] = job
+
+        def _run() -> None:
+            try:
+                target(job.emit)
+            except Exception as exc:  # surface, never crash the thread silently
+                job.emit({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+            finally:
+                if job.status == "running":
+                    job.emit({"type": "done", "status": "done"})
+                job.close()
+
+        threading.Thread(target=_run, name=f"task-{job.id}", daemon=True).start()
         return job
 
     def stop(self, video_id: str) -> dict:

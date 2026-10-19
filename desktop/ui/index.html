@@ -518,8 +518,28 @@
           </div>
         </section>
 
-        <h3 class="sty-h">Escolha um estilo</h3>
+        <div class="sty-gallery-head">
+          <h3 class="sty-h">Escolha um estilo</h3>
+          <span class="grow"></span>
+          <a href="#" id="sty-import">importar estilo</a>
+          <input type="file" id="sty-import-file" accept=".json,application/json" hidden />
+        </div>
         <div class="sty-gallery" id="sty-gallery"></div>
+
+        <section class="card sty-ai" id="sty-ai" hidden>
+          <div class="card-head"><div><h2>✨ Criar com IA</h2><p>descreva o clima do canal e/ou mande uma thumbnail de referência: a IA reproduz o layout dela (título, fontes, elementos) com o seu conteúdo.</p></div></div>
+          <textarea class="input" id="sty-ai-desc" rows="3" maxlength="500" placeholder="ex.: tech escuro, neon roxo, bem agressivo"></textarea>
+          <div class="sty-ai-row">
+            <a href="#" id="sty-ai-pick">anexar imagem</a><span class="dim">ou cole um print (⌘V / Ctrl+V)</span>
+            <span class="dim" id="sty-ai-img"></span>
+            <a href="#" id="sty-ai-img-remove" hidden>remover</a>
+            <input type="file" id="sty-ai-file" accept="image/png,image/jpeg,image/webp" hidden />
+            <span class="grow"></span>
+            <span class="dim" id="sty-ai-status"></span>
+            <button class="btn btn-sm" id="btn-sty-ai-close">Fechar</button>
+            <button class="btn btn-primary btn-sm" id="btn-sty-ai-go">Gerar</button>
+          </div>
+        </section>
 
         <section class="card sty-detail">
           <div class="sty-detail-head">
@@ -528,6 +548,7 @@
               <p class="dim" id="sty-detail-desc"></p>
             </div>
             <span class="grow"></span>
+            <button class="btn btn-sm" id="btn-sty-export">Exportar</button>
             <button class="btn btn-sm" id="btn-sty-delete" hidden>Excluir</button>
             <button class="btn btn-sm" id="btn-sty-edit">Personalizar</button>
             <button class="btn btn-primary btn-sm" id="btn-sty-use">Usar este estilo</button>
@@ -539,6 +560,19 @@
           </div>
 
           <div class="sty-editor" id="sty-editor" hidden>
+            <fieldset class="sty-layout">
+              <legend>Layout da thumbnail</legend>
+              <div class="sty-ai-row" id="sty-adjust-row" hidden>
+                <input class="input grow" id="sty-adjust-req" maxlength="300" placeholder="ajuste com IA: título maior, tira o círculo, contorno mais grosso…" />
+                <span class="dim" id="sty-adjust-status"></span>
+                <button class="btn btn-sm" id="btn-sty-adjust">Ajustar com IA</button>
+              </div>
+              <details id="sty-adv">
+                <summary>Avançado: editar o HTML</summary>
+                <textarea class="input mono sty-html" id="sty-html" spellcheck="false" placeholder="sem layout próprio: a thumbnail usa o layout padrão"></textarea>
+                <a href="#" id="sty-html-reset">voltar pro layout padrão</a>
+              </details>
+            </fieldset>
             <div class="sty-cols">
               <fieldset>
                 <legend>Cores</legend>
@@ -547,6 +581,7 @@
                   <label><input type="color" data-tok="colors.panel" /><span>Painel</span></label>
                   <label><input type="color" data-tok="colors.text" /><span>Texto</span></label>
                 </div>
+                <a href="#" id="sty-logo-colors" hidden>usar cores do logo</a>
                 <label class="field"><span>Opacidade do painel <b data-out="panel_opacity"></b></span><input type="range" min="0.3" max="1" step="0.05" data-tok="panel_opacity" data-num /></label>
                 <label class="field"><span>Cor da thumbnail</span>
                   <select class="input" data-tok="thumbnail.accent_from"><option value="topic">muda conforme o assunto do vídeo</option><option value="style">sempre a cor de destaque</option></select></label>

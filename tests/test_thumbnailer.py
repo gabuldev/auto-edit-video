@@ -10,6 +10,7 @@ from PIL import Image, ImageFont
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools import thumbnailer
+from auto_edit import styles as styles_mod
 from tools.thumbnailer import (
     COVER_FRAMES,
     COVER_TAG,
@@ -526,3 +527,199 @@ open(out, "wb").write(b"PNG")
         out = thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "Título", "sub_text": "sub"}}, {})
         assert Image.open(out).size == thumbnailer.LONG_SIZE
         assert not frame.exists()  # the temporary frame is cleaned up
+
+
+class TestHtmlLayout:
+    """The active style's own HTML layout (long only); the default React
+    layout when it fails."""
+
+    HTML = '<div><img src="{{frame}}"/><img src="{{frame2}}"/><span>{{titulo}}</span></div>'
+
+    @pytest.fixture
+    def style(self, monkeypatch):
+        def use(html):
+            tokens = styles_mod.validate({"thumbnail": {"html": html}})
+            monkeypatch.setattr(styles_mod, "active", lambda: {"id": "x", "tokens": tokens})
+        return use
+
+    @pytest.fixture
+    def renderer(self, tmp_path, monkeypatch):
+        """A fake auto-edit-render that records every spec; `fail_html` makes
+        the HTML spec fail."""
+        log = tmp_path / "specs.jsonl"
+        exe = tmp_path / "auto-edit-render"
+        def make(fail_html=False):
+            exe.write_text(f"#!{sys.executable}\nimport sys, json\n"
+                           "cmd, spec_file, out = sys.argv[1:]\nspec = json.load(open(spec_file))\n"
+                           f"open({str(log)!r}, 'a').write(json.dumps(spec) + '\\n')\n"
+                           f"if spec.get('html') and {fail_html}: sys.stderr.write('bad html'); sys.exit(1)\n"
+                           "open(out, 'wb').write(b'PNG')\n")
+            exe.chmod(0o755)
+            monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+            monkeypatch.delenv("AUTO_EDIT_THUMB_RENDERER", raising=False)
+            return lambda: [json.loads(x) for x in log.read_text().splitlines()]
+        return make
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_long_sends_the_html_with_images(self, style, renderer, tmp_path):
+        style(self.HTML)
+        specs = renderer()
+        spec = {"kind": "long", "width": 1280, "height": 720, "main_text": "Meu carro novo", "sub_text": None,
+                "accent": [1, 2, 3], "background": "/a.jpg", "frame2": "/b.jpg", "face": None, "logos": []}
+        assert thumbnailer._render_react(spec, tmp_path / "t.png") is True
+        sent = specs()[0]
+        assert sent["html"] and sent["images"]["frame"] == "/a.jpg" and sent["images"]["frame2"] == "/b.jpg"
+        assert sent["values"]["titulo"] == "Meu carro novo" and sent["values"]["destaque"] == "#010203"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_html_failure_falls_back_to_the_default_layout(self, style, renderer, tmp_path, capsys):
+        style(self.HTML)
+        specs = renderer(fail_html=True)
+        spec = {"kind": "long", "width": 1280, "height": 720, "main_text": "x", "accent": [1, 2, 3]}
+        assert thumbnailer._render_react(spec, tmp_path / "t.png") is True
+        sent = specs()
+        assert len(sent) == 2 and "html" in sent[0] and "html" not in sent[1]
+        assert "bad html" in capsys.readouterr().out
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_short_never_uses_the_html(self, style, renderer, tmp_path):
+        style(self.HTML)
+        specs = renderer()
+        thumbnailer._render_react({"kind": "short", "main_text": "x", "accent": [1, 2, 3]}, tmp_path / "t.png")
+        assert "html" not in specs()[0]
+
+    def _long(self, monkeypatch, tmp_path, html):
+        frame = tmp_path / "frame.jpg"
+        Image.new("RGB", (1920, 1080), (40, 40, 40)).save(frame)
+        second = tmp_path / "second.jpg"
+        Image.new("RGB", (1920, 1080), (90, 90, 90)).save(second)
+        monkeypatch.setattr(thumbnailer, "_generate_imagen_bg", lambda *a, **kw: None)
+        monkeypatch.setattr(thumbnailer, "_frame_source", lambda ws, p: ("v.mp4", {"duration": 100.0}))
+        monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, with_ts=False, **kw: (frame, 30.0) if with_ts else frame)
+        monkeypatch.setattr(thumbnailer, "_style_html", lambda: html)
+        seen = {}
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: seen.update(spec) or output.write_bytes(b"PNG") or True)
+        return frame, second, seen
+
+    def test_long_picks_a_second_frame_only_when_used(self, monkeypatch, tmp_path):
+        frame, second, seen = self._long(monkeypatch, tmp_path, self.HTML)
+        calls = []
+        monkeypatch.setattr(thumbnailer, "_pick_second_frame", lambda v, d, ws, ts: calls.append(ts) or second)
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert calls == [30.0] and seen["frame2"] == str(second) and not second.exists()
+
+    def test_long_without_frame2_does_not_look_for_it(self, monkeypatch, tmp_path):
+        _, _, seen = self._long(monkeypatch, tmp_path, "<div><span>{{titulo}}</span></div>")
+        monkeypatch.setattr(thumbnailer, "_pick_second_frame", lambda *a: pytest.fail("looked for frame2"))
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert seen.get("frame2") is None
+
+    def test_second_frame_is_far_from_the_main_one(self, monkeypatch, tmp_path):
+        taken = []
+
+        def extract(video, ts, out):
+            taken.append(ts)
+            Image.new("RGB", (320, 180), (int(ts) % 255, 50, 50)).save(out)
+            return out
+
+        monkeypatch.setattr(thumbnailer, "_extract_frame", extract)
+        path = thumbnailer._pick_second_frame("v.mp4", 100.0, tmp_path, 30.0)
+        assert path is not None and path.exists()
+        assert taken and all(abs(ts - 30.0) >= 15.0 for ts in taken)
+
+
+class TestFaceCutout:
+    """Layouts with {{rosto}}/{{rosto_contorno}} get the person cut out of the
+    main frame — unless there's a face photo; never at the thumbnail's cost."""
+
+    def _long(self, monkeypatch, tmp_path, html, face_asset=None):
+        frame = tmp_path / "frame.jpg"
+        Image.new("RGB", (1920, 1080), (40, 40, 40)).save(frame)
+        monkeypatch.setattr(thumbnailer, "_generate_imagen_bg", lambda *a, **kw: None)
+        monkeypatch.setattr(thumbnailer, "_frame_source", lambda ws, p: ("v.mp4", {"duration": 100.0}))
+        monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, with_ts=False, **kw: (frame, 30.0) if with_ts else frame)
+        monkeypatch.setattr(thumbnailer, "_style_html", lambda: html)
+        monkeypatch.setattr(thumbnailer, "_find_face_asset", lambda: face_asset)
+        seen = {}
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: seen.update(spec) or output.write_bytes(b"PNG") or True)
+        return frame, seen
+
+    def test_layout_with_face_gets_the_cutout(self, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        frame, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto_contorno}}"/></div>')
+        calls = []
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda frames, folder: calls.append(frames) or {"rosto": tmp_path / "r.png", "rosto_contorno": tmp_path / "c.png"})
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert calls == [[frame]]
+        assert seen["face"] == str(tmp_path / "r.png") and seen["face_outline"] == str(tmp_path / "c.png")
+
+    def test_main_frame_without_a_face_looks_at_other_moments(self, monkeypatch, tmp_path):
+        """The best frame is a desk shot: the face comes from elsewhere in the
+        video, and the extra frames are cleaned up."""
+        from auto_edit import face_cutout
+
+        frame, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto}}"/></div>')
+        taken = []
+
+        def extract(video, ts, out):
+            taken.append(ts)
+            Image.new("RGB", (320, 180), (90, 50, 50)).save(out)
+            return out
+
+        monkeypatch.setattr(thumbnailer, "_extract_frame", extract)
+        calls = []
+
+        def cutout(frames, folder):
+            calls.append(list(frames))
+            return None if frames == [frame] else {"rosto": tmp_path / "r.png", "rosto_contorno": tmp_path / "c.png"}
+
+        monkeypatch.setattr(face_cutout, "cutout_files", cutout)
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert calls[0] == [frame] and len(calls) == 2 and len(calls[1]) == len(taken) > 1
+        assert all(5.0 <= ts <= 95.0 for ts in taken)
+        assert seen["face"] == str(tmp_path / "r.png")
+        assert not any(p.exists() for p in calls[1])
+
+    def test_face_photo_wins_and_no_cutout(self, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        photo = tmp_path / "eu.png"
+        _, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto}}"/></div>', face_asset=photo)
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda *a: pytest.fail("cut out despite the photo"))
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert seen["face"] == str(photo)
+
+    def test_layout_without_face_does_not_cut(self, monkeypatch, tmp_path):
+        from auto_edit import face_cutout
+
+        self._long(monkeypatch, tmp_path, "<div><span>{{titulo}}</span></div>")
+        monkeypatch.setattr(face_cutout, "cutout_files", lambda *a: pytest.fail("cut out for nothing"))
+        thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+
+    def test_cutout_failure_means_no_face(self, monkeypatch, tmp_path, capsys):
+        from auto_edit import face_cutout
+
+        _, seen = self._long(monkeypatch, tmp_path, '<div><img src="{{rosto}}"/></div>')
+
+        def boom(*a):
+            raise face_cutout.CutoutError("sem internet")
+
+        monkeypatch.setattr(face_cutout, "cutout_files", boom)
+        out = thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
+        assert out.read_bytes() == b"PNG" and seen.get("face") is None
+        assert "sem internet" in capsys.readouterr().out
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="shebang fake")
+    def test_outlined_cutout_reaches_the_html_spec(self, tmp_path, monkeypatch):
+        tokens = styles_mod.validate({"thumbnail": {"html": '<div><img src="{{rosto_contorno}}"/></div>'}})
+        monkeypatch.setattr(styles_mod, "active", lambda: {"id": "x", "tokens": tokens})
+        log = tmp_path / "spec.json"
+        exe = tmp_path / "auto-edit-render"
+        exe.write_text(f"#!{sys.executable}\nimport sys, shutil\nshutil.copy(sys.argv[2], {str(log)!r})\nopen(sys.argv[3], 'wb').write(b'PNG')\n")
+        exe.chmod(0o755)
+        monkeypatch.setenv("AUTO_EDIT_RENDER_BIN", str(exe))
+        monkeypatch.delenv("AUTO_EDIT_THUMB_RENDERER", raising=False)
+        thumbnailer._render_react({"kind": "long", "main_text": "x", "accent": [1, 2, 3], "face": "/r.png", "face_outline": "/c.png"}, tmp_path / "t.png")
+        images = json.loads(log.read_text())["images"]
+        assert images["rosto"] == "/r.png" and images["rosto_contorno"] == "/c.png"

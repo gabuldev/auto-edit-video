@@ -8,8 +8,8 @@ but the staged engine on PATH — the environment the Tauri shell builds:
 2. ffmpeg with the subtitles filter (captions);
 3. bash and `bash -n ralph.sh`;
 4. a real Whisper transcription of a few seconds of generated audio;
-5. the React renderer (auto-edit-render) drawing a real thumbnail and an
-   overlay animation composited by ffmpeg;
+5. the React renderer (auto-edit-render) drawing a real thumbnail, a
+   style's HTML thumbnail layout and an overlay animation composited by ffmpeg;
 6. `auto-edit serve` answering /api/health.
 
     python scripts/smoke_engine.py desktop/src-tauri/engine
@@ -72,7 +72,7 @@ def main(engine: Path) -> None:
     exe = ".exe" if WIN else ""
     ffmpeg = str(engine / "bin" / f"ffmpeg{exe}")
 
-    run([str(python), "-c", "import auto_edit, whisper, torch, flask, numpy, pysubs2"], env, "python imports")
+    run([str(python), "-c", "import auto_edit, whisper, torch, flask, numpy, pysubs2, onnxruntime"], env, "python imports")
 
     filters = run([ffmpeg, "-hide_banner", "-filters"], env, "ffmpeg")
     if " subtitles " not in filters:
@@ -133,6 +133,26 @@ def main(engine: Path) -> None:
              "    for kind in styles.PREVIEW_KINDS:\n"
              "        assert styles.preview(p['tokens'], kind).startswith(b'\\x89PNG'), (sid, kind)"],
             {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "style previews render", timeout=300)
+        # Estilos → "usar cores do logo": Pillow quantize in the staged Python.
+        run([str(python), "-c",
+             "from PIL import Image; import io\n"
+             "from auto_edit import palette\n"
+             "b = io.BytesIO(); Image.new('RGB', (32, 32), (230, 30, 40)).save(b, 'PNG')\n"
+             "assert palette.suggest(palette.extract(b.getvalue()))['accent'], 'no palette'"],
+            env, "palette from an image", timeout=60)
+        # A style's own thumbnail layout (HTML from the AI): the compiled
+        # renderer parses it (ultrahtml), fits the title and draws every
+        # bundled font (one measured without shaping: Bangers).
+        run([str(python), "-c",
+             "from auto_edit import styles\n"
+             "html = ('<div style=\"background:{{cor.panel}}\"><img src=\"{{frame}}\" style=\"position:absolute;width:1280px;height:720px;object-fit:cover\"/>'\n"
+             "        '<span style=\"position:absolute;top:20px;right:30px;font-family:Bangers;font-size:60px;color:#fff\">{{etiqueta}}</span>'\n"
+             "        '<span data-fit=\"linhas:2;min:50;max:160\" style=\"position:absolute;left:40px;bottom:40px;width:900px;height:330px;'\n"
+             "        'font-family:Luckiest Guy;text-transform:uppercase;color:{{destaque}};-webkit-text-stroke:6px #000\">{{titulo}}</span></div>')\n"
+             "t = styles.validate({'fonts': {'title': 'lilita'}, 'thumbnail': {'html': html}})\n"
+             "assert 'html' in t['thumbnail'], 'layout dropped by the sanitizer'\n"
+             "assert styles.render_thumbnail(t, title='Teste do layout em HTML', sub='novo').startswith(b'\\x89PNG')"],
+            {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "HTML thumbnail layout renders", timeout=120)
 
     port = "8799"
     proc = subprocess.Popen([str(python), "-m", "auto_edit.cli", "serve", "--port", port],

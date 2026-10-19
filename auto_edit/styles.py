@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -19,6 +20,8 @@ from pathlib import Path
 
 from auto_edit import config as cfg
 from auto_edit import overlay_assets
+from auto_edit import style_presets
+from auto_edit import thumb_html
 
 DEFAULT_ID = "padrao"
 POSITIONS_LT = ("bottom-left", "bottom-right", "top-left")
@@ -33,6 +36,11 @@ FONTS: dict[str, dict] = {
     "bebas": {"label": "Bebas Neue", "bold": "BebasNeue-Regular.ttf"},
     "montserrat": {"label": "Montserrat", "bold": "Montserrat-ExtraBold.ttf", "regular": "Montserrat-SemiBold.ttf"},
     "poppins": {"label": "Poppins", "bold": "Poppins-ExtraBold.ttf", "regular": "Poppins-SemiBold.ttf"},
+    # Display fonts for thumbnail layouts (auto_edit/thumb_html.py).
+    "luckiest": {"label": "Luckiest Guy", "bold": "LuckiestGuy-Regular.ttf"},
+    "lilita": {"label": "Lilita One", "bold": "LilitaOne-Regular.ttf"},
+    "bangers": {"label": "Bangers", "bold": "Bangers-Regular.ttf"},
+    "archivo": {"label": "Archivo Black", "bold": "ArchivoBlack-Regular.ttf"},
 }
 
 DEFAULT_TOKENS: dict = {
@@ -103,6 +111,45 @@ PRESETS: dict[str, dict] = {
 }
 
 
+def _gallery(sid: str, name: str, description: str, accent: str, panel: str, title: str,
+             text: str = "montserrat", **changes) -> None:
+    PRESETS[sid] = _preset(
+        name, description,
+        colors={"accent": accent, "panel": panel, "text": "#ffffff"},
+        fonts={"title": title, "text": text},
+        cta={"position": "bottom-center", "steps": _PLAIN_STEPS},
+        thumbnail={"accent_from": "style", "html": style_presets.LAYOUTS[sid]},
+        **changes,
+    )
+
+
+# Ready-made thumbnail layouts (auto_edit/style_presets.py) with matching overlays.
+_gallery("rosto_gigante", "Rosto Gigante", "Você recortado com contorno branco e o título enorme em degradê.",
+         "#ffd400", "#000000", "luckiest", radius=16, speed=1.2)
+_gallery("tarja", "Tarja", "A última palavra numa faixa vermelha inclinada.",
+         "#e3122b", "#000000", "anton", radius=6, speed=1.2)
+_gallery("neon_tech", "Neon Tech", "Escuro, com o título em camadas roxo e ciano.",
+         "#00e5ff", "#ff00e6", "bebas", "poppins", radius=30)
+_gallery("limpo", "Limpo", "Pouco texto, muito respiro, uma cor só.",
+         "#4ade80", "#0a0a0a", "poppins", "poppins", radius=18, speed=0.85, panel_opacity=0.8)
+_gallery("jornal", "Jornal", "Faixa de telejornal com selo vermelho.",
+         "#d90429", "#000000", "archivo", radius=0)
+_gallery("versus", "Versus", "Dois momentos lado a lado com um VS no meio.",
+         "#ff3b3b", "#000000", "luckiest", radius=20, speed=1.2)
+_gallery("painel", "Painel", "Painel de cor com borda inclinada e o vídeo ao lado.",
+         "#ffd400", "#1d1b4b", "montserrat", radius=12)
+_gallery("celular", "Celular", "O vídeo dentro de um celular inclinado.",
+         "#a3e635", "#3b0764", "lilita", "poppins", radius=26)
+_gallery("reacao", "Reação", "Você recortado reagindo e o momento num círculo.",
+         "#ffd400", "#000000", "luckiest", radius=20, speed=1.2)
+_gallery("quadrinho", "Quadrinho", "Título num balão de gibi e selo vermelho.",
+         "#e3122b", "#000000", "bangers", radius=24, speed=1.2)
+_gallery("ouro", "Preto e Ouro", "Sóbrio: título dourado sobre faixa escura.",
+         "#e8b84a", "#0b0b0b", "archivo", radius=4, speed=0.85)
+_gallery("card", "Card", "O título num cartão branco com sombra colorida.",
+         "#6d28d9", "#ffffff", "poppins", "poppins", radius=28)
+
+
 class StyleError(ValueError):
     pass
 
@@ -161,8 +208,18 @@ def validate(tokens) -> dict:
             "avatar": bool(lt.get("avatar", True)),
         },
         "cta": {"position": _choice(cta.get("position"), POSITIONS_CTA, d["cta"]["position"]), "steps": steps},
-        "thumbnail": {"accent_from": _choice(thumb.get("accent_from"), ("topic", "style"), d["thumbnail"]["accent_from"])},
+        "thumbnail": _thumbnail(thumb),
     }
+
+
+def _thumbnail(thumb: dict) -> dict:
+    out = {"accent_from": _choice(thumb.get("accent_from"), ("topic", "style"), DEFAULT_TOKENS["thumbnail"]["accent_from"])}
+    if isinstance(thumb.get("html"), str) and thumb["html"].strip():
+        try:
+            out["html"] = thumb_html.sanitize(thumb["html"])
+        except thumb_html.ThumbHtmlError:
+            pass  # a broken layout: the default one draws the thumbnail
+    return out
 
 
 def _rgb(hex_color: str) -> list[int]:
@@ -301,6 +358,199 @@ def set_active(style_id: str) -> str:
     return style_id
 
 
+FILE_FORMAT = 1
+FILE_SUFFIX = ".autoedit-style.json"
+NOT_A_STYLE = "arquivo não é um estilo do Auto-Edit"
+
+
+def export(style_id: str) -> dict:
+    """The shareable file of a style: its look only, never the brand."""
+    s = get(style_id)
+    if not s:
+        raise StyleError(f"estilo não encontrado: {style_id}")
+    return {"format": FILE_FORMAT, "name": s["name"], "description": s["description"], "tokens": s["tokens"]}
+
+
+def export_file(style_id: str, folder: Path) -> Path:
+    data = export(style_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    path, n = folder / f"{style_id}{FILE_SUFFIX}", 2
+    while path.exists():
+        path, n = folder / f"{style_id}-{n}{FILE_SUFFIX}", n + 1
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _unique_name(name: str) -> str:
+    taken = {s["name"] for s in list_styles()}
+    out, n = name, 2
+    while out in taken:
+        out, n = f"{name[:34]} ({n})", n + 1
+    return out
+
+
+def import_(data) -> dict:
+    """Save a shared style as a new one of the person's (never overwrites)."""
+    if not isinstance(data, dict) or data.get("format") != FILE_FORMAT or not isinstance(data.get("tokens"), dict):
+        raise StyleError(NOT_A_STYLE)
+    name = str(data.get("name") or "").strip()[:40] or "Estilo importado"
+    return save(_unique_name(name), data["tokens"], None, str(data.get("description") or ""))
+
+
+# ── AI ────────────────────────────────────────────────────────────────────────
+
+AI_TIMEOUT = 120
+
+
+def _first_json(text: str) -> dict | None:
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text or ""):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(text, i)
+            except ValueError:
+                continue
+            if isinstance(obj, dict):
+                return obj
+    return None
+
+
+def _agent_prompt(name: str) -> str:
+    return (overlay_assets.default_repo_root() / "agents" / name).read_text(encoding="utf-8")
+
+
+def _stylist_prompt(description: str, has_image: bool, base: dict | None) -> str:
+    from auto_edit import render
+
+    channel = render.brand().get("name") or "(sem nome ainda)"
+    fonts = "\n".join(f"- `{fid}` → font-family: {f['label']}" for fid, f in FONTS.items())
+    current = ""
+    if base:
+        current = ("# ESTILO ATUAL (ajuste a partir dele; mantenha o que o pedido não muda)\n"
+                   + json.dumps(base, ensure_ascii=False) + "\n\n")
+    return (
+        f"{_agent_prompt('stylist.md')}\n\n---\n\n"
+        f"# FONTES (FONTE_ID → nome no CSS)\n{fonts}\n\n"
+        f"# OPÇÕES\nPOSICAO_LT: {', '.join(POSITIONS_LT)}\nPOSICAO_CTA: {', '.join(POSITIONS_CTA)}\n"
+        f"ICONE: {', '.join(ICONS)}\n\n"
+        f"# CANAL\n{channel}\n\n{current}"
+        f"# PEDIDO\n{description or '(sem descrição: siga a imagem de referência)'}\n\n"
+        + ("# REFERÊNCIA\nA imagem anexada (ref.png) é a referência.\n" if has_image else "")
+    )
+
+
+def _review_prompt(description: str, html: str, has_image: bool) -> str:
+    images = ("ref.png = a referência; render.png = o seu desenho" if has_image
+              else "render.png = o seu desenho (sem referência: compare com o pedido)")
+    return (
+        f"{_agent_prompt('stylist_review.md')}\n\n---\n\n"
+        f"# PEDIDO\n{description or '(sem descrição)'}\n\n# IMAGENS\n{images}\n\n# SEU HTML ATUAL\n{html}\n"
+    )
+
+
+REF_MAX_SIDE = 1600
+
+
+def _reference_png(image: bytes, folder: Path) -> Path:
+    """The reference image as a PNG the agents can open (re-encoded: only
+    pixels go out, at most 1600px)."""
+    import io
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(image)) as img:
+            if img.width * img.height > 40_000_000:
+                raise StyleError("imagem grande demais")
+            img = img.convert("RGB")
+            img.thumbnail((REF_MAX_SIDE, REF_MAX_SIDE))
+            out = folder / "ref.png"
+            img.save(out, "PNG")
+            return out
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise StyleError("não consegui ler a imagem de referência") from exc
+
+
+def _merge(base: dict | None, changes: dict) -> dict:
+    """An adjustment on top of the style it started from: a partial answer
+    ("colors": {"accent": …} only, a thumbnail without html) keeps the rest."""
+    out = copy.deepcopy(base or {})
+    for key, value in changes.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **value}
+        else:
+            out[key] = value
+    return out
+
+
+AI_ROUNDS = 3
+NO_LAYOUT = "a IA não devolveu um layout válido"
+
+
+def generate(description: str, image: bytes | None = None, *, base: dict | None = None, complete=None,
+             render=None, on_progress=None, rounds: int = AI_ROUNDS, vision: bool | None = None) -> dict:
+    """A draft style whose thumbnail layout the AI writes (HTML), from a
+    description and/or a reference image — or, with `base`, an adjustment of
+    that style. With an agent that sees images, the layout is rendered and
+    the AI compares it with the reference and corrects it (up to `rounds`
+    answers in all). Never saved here; everything goes through validate().
+
+    complete(prompt, images: list[Path]) -> str; render(tokens) -> PNG bytes.
+    """
+    from auto_edit import agents
+
+    description = (description or "").strip()[:500]
+    if not description and not image:
+        raise StyleError("descreva o estilo ou mande uma imagem")
+    if vision is None:
+        vision = agents.vision_ready()
+    if image and not vision:
+        raise StyleError(agents.NO_VISION)
+    run = complete or (lambda p, imgs: agents.complete(p, images=imgs or None, timeout=AI_TIMEOUT))
+    if render is None:
+        title, sub = sample_texts()
+        render = lambda t: render_thumbnail(t, title=title, sub=sub)  # noqa: E731
+    progress = on_progress or (lambda msg: None)
+    base = validate(base) if base else None
+
+    with tempfile.TemporaryDirectory(prefix="auto-edit-stylist-") as tmp:
+        folder = Path(tmp)
+        ref = _reference_png(image, folder) if image else None
+        refs = [ref] if ref else []
+        progress("desenhando o layout")
+        try:
+            answer = run(_stylist_prompt(description, bool(ref), base), refs)
+        except agents.AgentError as exc:
+            raise StyleError(f"a IA falhou: {exc}") from exc
+        data = _first_json(answer)
+        raw = None if data is None else data.get("tokens") if isinstance(data.get("tokens"), dict) else data
+        tokens = validate(_merge(base, raw)) if isinstance(raw, dict) else None
+        if not tokens or "html" not in tokens["thumbnail"]:
+            raise StyleError(NO_LAYOUT)
+        name = data.get("name") if isinstance(data.get("name"), str) else ""
+        desc = data.get("description") if isinstance(data.get("description"), str) else ""
+
+        for r in range(2, rounds + 1) if vision else ():
+            progress(f"conferindo (volta {r}/{rounds})")
+            try:
+                shot = folder / "render.png"
+                shot.write_bytes(render(tokens))
+                answer = run(_review_prompt(description, tokens["thumbnail"]["html"], bool(ref)), [*refs, shot])
+            except (StyleError, agents.AgentError, OSError) as exc:
+                progress(f"parei de conferir: {exc}")
+                break  # keep the last good layout
+            data = _first_json(answer) or {}
+            if data.get("ok") is True:
+                break
+            if isinstance(data.get("html"), str):
+                try:
+                    tokens["thumbnail"]["html"] = thumb_html.sanitize(data["html"])
+                except thumb_html.ThumbHtmlError:
+                    pass  # a broken correction: keep the previous layout
+
+    return {"name": name.strip()[:40] or "Estilo IA", "description": desc.strip()[:200], "tokens": tokens}
+
+
 # ── Preview ───────────────────────────────────────────────────────────────────
 
 PREVIEW_W, PREVIEW_H = 1280, 720
@@ -312,7 +562,7 @@ def _cache_dir() -> Path:
     return cfg.home_dir() / "cache" / "styles"
 
 
-def preview_frame() -> Path | None:
+def preview_frame(at: float = 0.3) -> Path | None:
     """A frame from the newest edited video in the library (the previews show
     the style on the person's own footage); None → a neutral background."""
     from auto_edit import engine
@@ -325,7 +575,7 @@ def preview_frame() -> Path | None:
     if not videos:
         return None
     src = max(videos, key=lambda p: p.stat().st_mtime)
-    key = hashlib.sha1(f"{src}:{src.stat().st_mtime}".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"{src}:{src.stat().st_mtime}:{at}".encode()).hexdigest()[:16]
     out = _cache_dir() / f"frame-{key}.jpg"
     if out.is_file():
         return out
@@ -338,7 +588,7 @@ def preview_frame() -> Path | None:
     except (OSError, ValueError, subprocess.TimeoutExpired):
         duration = 0.0
     res = subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(0.0, duration * 0.3):.2f}", "-i", str(src),
+        ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(0.0, duration * at):.2f}", "-i", str(src),
          "-frames:v", "1", "-vf", f"scale={PREVIEW_W}:{PREVIEW_H}:force_original_aspect_ratio=increase,crop={PREVIEW_W}:{PREVIEW_H}",
          "-q:v", "3", str(out)],
         capture_output=True, text=True, timeout=60,
@@ -346,39 +596,171 @@ def preview_frame() -> Path | None:
     return out if res.returncode == 0 and out.is_file() else None
 
 
-def preview(tokens, kind: str) -> bytes:
-    """PNG of one part of a style (cached by everything that changes it)."""
+def _hex(rgb) -> str:
+    return "#%02x%02x%02x" % tuple(max(0, min(255, int(c))) for c in list(rgb)[:3])
+
+
+def html_fonts(tokens: dict) -> list[dict]:
+    """Every bundled font for an HTML layout, the style's title font first (the
+    renderer's default). Bold files at weight 700, regular (or bold) at 400."""
+    title = tokens["fonts"]["title"]
+    out = []
+    for fid in [title, *(f for f in FONTS if f != title)]:
+        spec = FONTS[fid]
+        bold = font_file(spec["bold"])
+        if bold is None:
+            continue
+        regular = font_file(spec["regular"]) if spec.get("regular") else None
+        out.append({"name": spec["label"], "path": str(bold), "weight": 700})
+        out.append({"name": spec["label"], "path": str(regular or bold), "weight": 400})
+    return out
+
+
+def html_spec(tokens: dict, *, title: str, sub: str | None, accent, images: dict,
+              width: int = PREVIEW_W, height: int = PREVIEW_H) -> dict:
+    """The renderer spec for a style's HTML thumbnail layout."""
+    words = (title or "").split()
+    values = {
+        "titulo": title or "",
+        "titulo_inicio": " ".join(words[:-1]),
+        "titulo_fim": words[-1] if words else "",
+        "etiqueta": sub or "",
+        "destaque": _hex(accent),
+        **{f"cor.{k}": v for k, v in tokens["colors"].items()},
+    }
+    return {
+        "html": tokens["thumbnail"]["html"], "values": values, "width": width, "height": height,
+        "images": {k: images.get(k) for k in thumb_html.IMAGE_SLOTS},
+        "fonts": html_fonts(tokens),
+    }
+
+
+def face_asset() -> str | None:
+    """The person's face cut-out (transparent PNG), as the thumbnailer finds it."""
+    dirs = [Path(os.environ["AUTO_EDIT_ASSETS_FACES"])] if os.environ.get("AUTO_EDIT_ASSETS_FACES") else []
+    dirs.append(overlay_assets.default_repo_root() / "assets" / "thumbnails" / "faces")
+    for d in dirs:
+        for f in sorted(d.glob("*.png")) if d.is_dir() else []:
+            return str(f)
+    return None
+
+
+def preview_face() -> dict | None:
+    """{"rosto", "rosto_contorno"} cut out of the newest video's frames for the
+    previews. Without the model yet, its download starts in the background and
+    this preview goes without the face (the next one has it)."""
+    from auto_edit import face_cutout
+
+    if not face_cutout.model_ready():
+        face_cutout.download_in_background()
+        return None
+    frames = [f for f in (preview_frame(at) for at in (0.2, 0.4, 0.6, 0.8)) if f]
+    try:
+        return face_cutout.cutout_files(frames, _cache_dir() / "faces")
+    except face_cutout.CutoutError as exc:
+        print(f"[styles] face cut-out: {exc}")
+        return None
+
+
+SAMPLE_FALLBACK = "SEU TÍTULO AQUI"
+
+
+def sample_texts() -> tuple[str, str | None]:
+    """Title and tag of the newest edited video (the AI checks its layout on
+    a real title), or a placeholder."""
+    from auto_edit import engine
+
+    try:
+        root = engine.library_root()
+        metas = [p for p in root.glob("*/metadata.json") if p.is_file()] if root.is_dir() else []
+        if metas:
+            meta = json.loads(max(metas, key=lambda p: p.stat().st_mtime).read_text(encoding="utf-8"))
+            thumb = meta.get("thumbnail") if isinstance(meta.get("thumbnail"), dict) else {}
+            title = thumb.get("main_text") or meta.get("youtube_title")
+            if isinstance(title, str) and title.strip():
+                sub = thumb.get("sub_text")
+                return title.strip(), sub.strip() if isinstance(sub, str) and sub.strip() else None
+    except Exception:
+        pass
+    return SAMPLE_FALLBACK, None
+
+
+def _check_layout(tokens) -> None:
+    thumb = tokens.get("thumbnail") if isinstance(tokens, dict) else None
+    raw = thumb.get("html") if isinstance(thumb, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            thumb_html.sanitize(raw)
+        except thumb_html.ThumbHtmlError as exc:
+            raise StyleError(f"layout inválido: {exc}") from exc
+
+
+def _brand_for_preview() -> dict:
     from auto_edit import render
 
-    if kind not in PREVIEW_KINDS:
-        raise StyleError(f"prévia desconhecida: {kind}")
-    tokens = validate(tokens)
-    cmd = render.command()
-    if cmd is None:
-        raise StyleError("renderizador (auto-edit-render) não encontrado")
     brand = render.brand()
     if not brand.get("name"):  # show the shape even before the brand is set
         brand = {**brand, "name": "Seu nome", "handle": brand.get("handle") or "@seucanal"}
-    frame = preview_frame()
+    return brand
 
-    if kind == "thumbnail":
+
+def render_thumbnail(tokens, *, title: str = SAMPLE_TITLE, sub: str | None = SAMPLE_SUB) -> bytes:
+    """PNG of a style's thumbnail on the person's own footage: its HTML layout
+    when it has one, else the default React layout."""
+    _check_layout(tokens)
+    tokens = validate(tokens)
+    frame = preview_frame()
+    brand = _brand_for_preview()
+    accent = thumbnail_accent(tokens, [55, 224, 160])
+    if "html" in tokens["thumbnail"]:
+        second = preview_frame(0.7) or frame
+        face = face_asset()
+        outline = face
+        if face is None and {"rosto", "rosto_contorno"} & thumb_html.placeholders(tokens["thumbnail"]["html"]):
+            cut = preview_face()
+            if cut:
+                face, outline = str(cut["rosto"]), str(cut["rosto_contorno"])
+        spec = {"kind": "thumbnail", **html_spec(tokens, title=title, sub=sub, accent=accent, images={
+            "frame": str(frame) if frame else None, "frame2": str(second) if second else None,
+            "rosto": face, "rosto_contorno": outline, "logo": brand.get("logo"),
+        })}
+    else:
         font = title_font(tokens)
         if font is None:
             raise StyleError("fonte do título não encontrada")
         spec = {
             "kind": "thumbnail", "thumbnail_kind": "long", "width": PREVIEW_W, "height": PREVIEW_H,
-            "main_text": SAMPLE_TITLE, "sub_text": SAMPLE_SUB,
-            "accent": thumbnail_accent(tokens, [55, 224, 160]),
+            "main_text": title, "sub_text": sub, "accent": accent,
             "background": str(frame) if frame else None, "font": str(font),
         }
-    else:
-        spec = {
-            "kind": kind, "width": PREVIEW_W, "height": PREVIEW_H,
-            "background": str(frame) if frame else None,
-            "style": tokens, "brand": brand, "fonts": overlay_fonts(tokens),
-        }
+    return _render_preview(spec, "thumbnail", brand)
 
-    key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode() + str(_mtime(brand.get("logo"))).encode()).hexdigest()[:20]
+
+def preview(tokens, kind: str) -> bytes:
+    """PNG of one part of a style (cached by everything that changes it)."""
+    if kind not in PREVIEW_KINDS:
+        raise StyleError(f"prévia desconhecida: {kind}")
+    if kind == "thumbnail":
+        return render_thumbnail(tokens)
+    tokens = validate(tokens)
+    frame = preview_frame()
+    brand = _brand_for_preview()
+    spec = {
+        "kind": kind, "width": PREVIEW_W, "height": PREVIEW_H,
+        "background": str(frame) if frame else None,
+        "style": tokens, "brand": brand, "fonts": overlay_fonts(tokens),
+    }
+    return _render_preview(spec, kind, brand)
+
+
+def _render_preview(spec: dict, kind: str, brand: dict) -> bytes:
+    from auto_edit import render
+
+    cmd = render.command()
+    if cmd is None:
+        raise StyleError("renderizador (auto-edit-render) não encontrado")
+    mtimes = [render.stamp(), _mtime(brand.get("logo"))] + [_mtime(p) for p in (spec.get("images") or {}).values()]
+    key = hashlib.sha1(json.dumps(spec, sort_keys=True).encode() + str(mtimes).encode()).hexdigest()[:20]
     cached = _cache_dir() / f"{kind}-{key}.png"
     if cached.is_file():
         return cached.read_bytes()

@@ -24,6 +24,7 @@ from auto_edit._version import __version__
 from auto_edit.ideas import ideas_app
 from auto_edit.insights import insights_app
 from auto_edit.publish.cli import publish_app
+from auto_edit.style_cli import style_app
 from auto_edit.plan import plan_app
 from auto_edit.workspace import get_workspace, init_workspace, get_status_table
 
@@ -45,6 +46,7 @@ app.add_typer(plan_app, name="plan")
 app.add_typer(ideas_app, name="ideas")
 app.add_typer(insights_app, name="insights")
 app.add_typer(publish_app, name="publish")
+app.add_typer(style_app, name="style")
 
 
 @app.callback(invoke_without_command=True)

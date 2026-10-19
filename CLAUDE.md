@@ -22,6 +22,12 @@ auto-edit batch upload/ --type short --context "vlogs de viagem"
 auto-edit shorts video.mp4              # propõe candidatos
 auto-edit shorts video.mp4 --pick 1,3   # corta os escolhidos
 
+# Estilos: criar com IA, exportar/importar (o app faz o mesmo na tela Estilos)
+auto-edit style generate "tech escuro, neon roxo" --image ref.png --save   # a IA reproduz o layout da referência
+auto-edit style adjust meu-estilo "título maior, tira o círculo" --activate
+auto-edit style export neon -o neon.autoedit-style.json
+auto-edit style import neon.autoedit-style.json --activate
+
 # Publicar no YouTube (vídeo final + thumbnail + metadata)
 auto-edit publish auth youtube                       # conecta o canal (uma vez)
 auto-edit publish youtube video.mp4 --privacy unlisted
@@ -111,7 +117,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `agents/` | Prompts para stages LLM (planner, reviewer, evaluator, metadata) |
 | `ralph.sh` | Orquestrador bash que executa o pipeline stage-by-stage |
 | `assets/` | Fontes, overlays, sons para composição de vídeo |
-| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar) e os overlays animados do long (lower third + CTA, `tools/overlayer.py`). **Estilo = dados** (tokens: cores, fontes, cantos, posições, textos do CTA, velocidade), validados em `auto_edit/styles.py` (presets Padrão/Minimal/Neon/Impacto + os da pessoa em `~/.auto-edit/styles/`, ativo em `settings.style`); o layout React que aplica os tokens fica em `renderer/src/layouts/<nome>/`. Tela **Estilos** do app: marca (nome, @, logo), galeria com prévia real num frame do vídeo mais recente (`auto-edit-render preview`) e editor. Dev: `cd renderer && bun install` |
+| `renderer/` | Layouts em React → PNG sem navegador (Satori + resvg-wasm), compilado pelo bun no executável `auto-edit-render` que vai no app. Hoje: a thumbnail (`tools/thumbnailer.py` cai pro Pillow se ele faltar ou falhar) e os overlays animados do long (lower third + CTA, `tools/overlayer.py`). **Estilo = dados** (tokens: cores, fontes, cantos, posições, textos do CTA, velocidade), validados em `auto_edit/styles.py` (presets Padrão/Minimal/Neon/Impacto + os da pessoa em `~/.auto-edit/styles/`, ativo em `settings.style`); o layout React que aplica os tokens fica em `renderer/src/layouts/<nome>/`. Tela **Estilos** do app: marca (nome, @, logo), galeria com prévia real num frame do vídeo mais recente (`auto-edit-render preview`) e editor. A galeria traz 12 estilos prontos com layout próprio da thumbnail em HTML (`auto_edit/style_presets.py`: Rosto Gigante, Tarja, Neon Tech, Limpo, Jornal, Versus, Painel, Celular, Reação, Quadrinho, Preto e Ouro, Card; o título usa a fonte do estilo). **Criar com IA** é beta: desligado no app (`AI_STYLES` em `desktop/ui/js/styles.js`), segue na CLI (`agents/stylist.md` via `agents.complete(images=)`): a IA vê a thumbnail de referência e escreve o **layout da thumbnail em HTML + CSS** (`tokens.thumbnail.html`, limpo em `auto_edit/thumb_html.py`; lacunas `{{titulo}}`, `{{frame}}`, `{{frame2}}`, `{{destaque}}`…; `data-fit` ajusta o título), desenha com um frame e título reais e corrige comparando (`agents/stylist_review.md`, até 3 voltas, job com progresso); **Ajustar com IA** e editor de HTML no app; o renderer desenha em `renderer/src/html.ts` e o thumbnailer cai pro layout padrão (e depois Pillow) se falhar; só o long 16:9 usa. Agentes com visão: Claude, Codex, OpenRouter, Ollama de visão. `{{rosto}}`/`{{rosto_contorno}}` são a pessoa recortada automaticamente de um frame (`auto_edit/face_cutout.py`: U²-Net via onnxruntime, só num frame onde um detector de rosto (UltraFace, 1,2 MB) acha um rosto — mão sozinha nunca vira recorte; se o frame da thumb não tem rosto, procura em outros momentos do vídeo; sem rosto em nenhum, o layout sai sem o recorte. Modelos baixados no 1º uso em `~/.auto-edit/models`; foto em `assets/thumbnails/faces/` tem prioridade). Cores do logo (`auto_edit/palette.py`), exportar/importar `.autoedit-style.json` (sem a marca). Dev: `cd renderer && bun install` |
 
 ## Convenções
 
@@ -205,6 +211,11 @@ PUT  /api/styles/active           # {id}
 POST /api/styles                  # {name, tokens, id?, activate?} salva um estilo seu
 DELETE /api/styles/<id>
 POST /api/styles/preview/<kind>   # {tokens} → PNG (thumbnail | lower_third | cta)
+POST /api/styles/generate         # {description, image?} → {job_id}; SSE progress → done {result: rascunho} (IA)
+POST /api/styles/adjust           # {tokens, request, image?} → {job_id}; o mesmo, ajustando um estilo
+POST /api/styles/palette          # {image?} → {colors, suggested} (sem imagem: o logo salvo)
+POST /api/styles/<id>/export      # grava em Downloads e mostra no Finder → {path}
+POST /api/styles/import           # {file} → estilo salvo (nunca sobrescreve)
 PUT|DELETE|GET /api/brand/logo    # {data: "data:image/png;base64,…"}
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/progress/done/error)
 GET  /api/videos/<id>/events      # SSE do job atual daquele vídeo

@@ -30,6 +30,19 @@ def command() -> list[str] | None:
     return None
 
 
+def stamp() -> str:
+    """Changes whenever the renderer does (an app update, a source edit): the
+    preview cache keys on it so an old drawing is never shown."""
+    cmd = command()
+    if not cmd:
+        return ""
+    if cmd[-1].endswith(".tsx"):  # dev checkout: any source file
+        files = list(Path(cmd[-1]).parent.rglob("*.ts*"))
+    else:
+        files = [Path(cmd[0])]
+    return str(max((f.stat().st_mtime for f in files if f.is_file()), default=0))
+
+
 def brand() -> dict:
     """Name, handle and logo for the overlays: settings ("brand"), then the
     connected YouTube channel's name. Name may be None — then there is no
