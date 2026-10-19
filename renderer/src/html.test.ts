@@ -35,6 +35,11 @@ test("img with a value gets the data URL", () => {
   expect(find(t, (n) => n.type === "img").props.src).toBe("data:image/png;base64,AA");
 });
 
+test("img slot with an underscore ({{rosto_contorno}}) is drawn", () => {
+  const t = htmlTree('<div><img src="{{rosto_contorno}}" style="width:10px"/></div>', V, { rosto_contorno: "data:image/png;base64,BB" }, { Anton: m }, "Anton", 1280, 720);
+  expect(find(t, (n) => n.type === "img")?.props.src).toBe("data:image/png;base64,BB");
+});
+
 test("data-fit shrinks a long title into its box", () => {
   const t = htmlTree('<div><span data-fit="linhas:1;min:20;max:200" style="width:400px;font-family:Anton">{{titulo}}</span></div>', V, {}, { Anton: m }, "Anton", 1280, 720);
   const span = find(t, (n) => n.type === "span");

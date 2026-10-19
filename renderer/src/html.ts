@@ -79,7 +79,7 @@ export function htmlTree(
     const font = style.fontFamily || inherited;
     const how = String(style.textTransform || tt);
     if (n.name === "img") {
-      const m = String(a.src || "").match(/\{\{\s*([a-z0-9]+)\s*\}\}/);
+      const m = String(a.src || "").match(/\{\{\s*([a-z0-9_]+)\s*\}\}/);
       const src = m ? images[m[1]] : null;
       // Only inline images (cli.tsx turns the slots' files into data: URLs).
       return src && src.startsWith("data:") ? { type: "img", props: { src, style } } : null;
