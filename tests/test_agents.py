@@ -130,9 +130,11 @@ class TestOllama:
 
     def test_prompt_past_the_context_is_refused_not_truncated(self, ollama, monkeypatch):
         monkeypatch.setattr(agents, "OLLAMA_CONTEXT", 8000)
-        with pytest.raises(agents.AgentError, match="não cabe"):
+        with pytest.raises(agents.AgentError, match="não cabe") as err:
             agents.run_ollama("x" * 30000, model="qwen2.5:7b")
         assert ollama.seen == []
+        # Says what to do; never promises a fallback that may not be set.
+        assert "usando o fallback" not in str(err.value) and "Configurações" in str(err.value)
 
     def test_server_down(self, monkeypatch):
         monkeypatch.setattr(agents, "OLLAMA_URL", "http://127.0.0.1:9")

@@ -305,3 +305,70 @@ def test_overlay_reads_the_edited_timeline(tmp_path):
 def test_overlay_without_post_cut_falls_back_to_original(tmp_path):
     prompt = runner.build_prompt("overlay", _workspace(tmp_path, "long"), AGENTS_DIR / "overlayer.md")
     assert "ORIGINAL video" in prompt and "original_start" in prompt
+
+
+# ── Small-context agents (Ollama): a compact transcript ─────────────────────
+
+
+def _realistic(minutes: float) -> dict:
+    """~160 words a minute in ~5s segments, with the per-segment word copies
+    and confidences Whisper writes (what makes the JSON ~4x the speech)."""
+    words, segments, t = [], [], 0.0
+    while t < minutes * 60:
+        seg = []
+        for i in range(13):
+            w = {"word": f"palavra{i}", "start": round(t, 2), "end": round(t + 0.3, 2), "confidence": 0.912}
+            seg.append(w)
+            t += 0.375 if i % 6 else 1.1  # every 6th word a pause
+        words += seg
+        segments.append({"start": seg[0]["start"], "end": seg[-1]["end"], "no_speech_prob": 0.1,
+                         "text": " ".join(w["word"] for w in seg), "words": seg})
+    return {"duration": round(t, 2), "resolution_seconds": 0.5, "energy_db": [-20.5] * int(t * 2),
+            "segments": segments, "words": words}
+
+
+def _ws_with(tmp_path: Path, video_type: str, t: dict) -> Path:
+    ws = _workspace(tmp_path, video_type)
+    (ws / "transcription.json").write_text(json.dumps(t), encoding="utf-8")
+    return ws
+
+
+def test_compact_transcript_lines_words_and_pauses():
+    t = {"duration": 3.0, "energy_db": [-30.0, -12.5], "segments": [
+        {"start": 0.0, "end": 2.5, "text": "oi gente", "words": [
+            {"word": "oi", "start": 0.0, "end": 0.4}, {"word": "gente", "start": 1.2, "end": 2.5}]}]}
+    out = runner._compact_transcript(t)
+    assert "[0.00–2.50] oi@0.00 «pausa 0.40–1.20» gente@1.20" in out
+    assert "duration: 3.0" in out and "energy_db: -30.0,-12.5" in out
+
+
+def test_compact_transcript_takes_top_level_words_when_segments_have_none():
+    t = {"duration": 2.0, "segments": [{"start": 0.0, "end": 2.0, "text": "oi gente"}],
+         "words": [{"word": "oi", "start": 0.0, "end": 0.4}, {"word": "gente", "start": 0.5, "end": 0.9}]}
+    assert "[0.00–2.00] oi@0.00 gente@0.50" in runner._compact_transcript(t)
+
+
+@pytest.mark.parametrize("video_type,minutes", [("short", 1), ("long", 20)])
+def test_plan_prompt_fits_ollama(tmp_path, monkeypatch, video_type, minutes):
+    """A 20-minute long used to be ~3x Ollama's context: refused every time."""
+    from auto_edit import agents
+
+    monkeypatch.setenv("AUTO_EDIT_LLM", "ollama")
+    prompt = runner.build_prompt("plan", _ws_with(tmp_path, video_type, _realistic(minutes)), AGENTS_DIR / "planner.md")
+    assert '"words"' not in prompt and "palavra0@" in prompt and "«pausa" in prompt
+    assert len(prompt) // 3 + 4096 <= agents.OLLAMA_CONTEXT
+
+
+def test_overlay_prompt_fits_ollama(tmp_path, monkeypatch):
+    from auto_edit import agents
+
+    monkeypatch.setenv("AUTO_EDIT_LLM", "ollama")
+    prompt = runner.build_prompt("overlay", _ws_with(tmp_path, "long", _realistic(20)), AGENTS_DIR / "overlayer.md")
+    assert '"words"' not in prompt and "palavra0@" in prompt
+    assert len(prompt) // 3 + 4096 <= agents.OLLAMA_CONTEXT
+
+
+def test_plan_prompt_for_claude_keeps_the_full_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTO_EDIT_LLM", "claude")
+    prompt = runner.build_prompt("plan", _ws_with(tmp_path, "long", _realistic(2)), AGENTS_DIR / "planner.md")
+    assert '"words"' in prompt and "«pausa" not in prompt
