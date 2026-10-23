@@ -434,8 +434,8 @@ textarea.input { resize: vertical; }
 .sty-ai.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
 
 /* Ajustar legenda */
-.cap-stage { position: relative; width: min(270px, 100%); margin: 0 auto 6px; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; overflow: hidden; touch-action: none; }
-.cap-stage img { width: 100%; height: 100%; display: block; object-fit: contain; user-select: none; }
+.cap-stage { position: relative; isolation: isolate; width: min(270px, 100%); margin: 0 auto 6px; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; overflow: hidden; touch-action: none; }
+.cap-stage img { position: relative; z-index: 0; pointer-events: none; width: 100%; height: 100%; display: block; object-fit: contain; user-select: none; }
 .cap-stage.loading img { opacity: .6; }
-.cap-band { position: absolute; left: 4%; right: 4%; border: 2px dashed #8ab4ff; border-radius: 6px; background: rgba(138, 180, 255, .12); cursor: ns-resize; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #cfe0ff; letter-spacing: .5px; text-transform: uppercase; }
+.cap-band { position: absolute; z-index: 2; box-sizing: border-box; min-height: 14px; touch-action: none; pointer-events: auto; left: 4%; right: 4%; border: 2px dashed #8ab4ff; border-radius: 6px; background: rgba(138, 180, 255, .12); cursor: ns-resize; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #cfe0ff; letter-spacing: .5px; text-transform: uppercase; }
 .cap-band[hidden] { display: none; }

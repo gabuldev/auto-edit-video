@@ -8,7 +8,7 @@ import * as api from "./api.js";
 import { el } from "./shell.js";
 import { go } from "./router.js";
 
-const state = { grab: 0, id: null, adjust: {}, fast: true, seq: 0, timer: null, url: null, wired: false, drag: null };
+const state = { grab: 0, startY: 0, id: null, adjust: {}, fast: true, seq: 0, timer: null, url: null, wired: false, drag: null };
 
 const OLD_WARN = "Esse vídeo é de antes desta versão: vai recortar de novo (alguns minutos)";
 
@@ -130,6 +130,7 @@ function wire() {
     state.drag = e.pointerId;
     // Onde na faixa o dedo/mouse pegou: a faixa não pula pro cursor.
     const r = stageRect();
+    state.startY = e.clientY;
     state.grab = (e.clientY - r.top) / r.height - topY(state.adjust);
     e.preventDefault();
   });
@@ -139,6 +140,8 @@ function wire() {
   band.addEventListener("pointerup", (e) => {
     if (state.drag !== e.pointerId) return;
     state.drag = null;
+    // Um clique simples (quase sem mover) não mexe no ajuste.
+    if (Math.abs(e.clientY - state.startY) < 4) { placeBand(); return; }
     Object.assign(state.adjust, fromTop(topAt(e)));
     placeBand();
     requestPreview();
