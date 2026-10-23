@@ -33,6 +33,7 @@ def init(
     caption_style: dict | None = None,
     language: str = "pt",
     plan_id: str | None = None,
+    captions: dict | None = None,
 ) -> dict:
     """Create initial pipeline.json. Returns the pipeline dict."""
     stages = {}
@@ -62,6 +63,8 @@ def init(
         "stages": stages,
         "created_at": _now(),
     }
+    if captions is not None:
+        pipeline["captions"] = captions
 
     save(workspace, pipeline)
     return pipeline
