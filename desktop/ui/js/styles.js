@@ -7,7 +7,7 @@ import { el, escapeHtml, setEngine } from "./shell.js";
 // Creating and adjusting styles with AI is a beta that lives on its own
 // branch: off here, the gallery is the ready-made styles.
 const AI_STYLES = false;
-const KINDS = ["thumbnail", "lower_third", "cta"];
+const KINDS = ["thumbnail", "lower_third", "cta", "caption"];
 const ICON_LABELS = { like: "👍 like", subscribe: "▶ inscrever", bell: "🔔 sino", comment: "💬 comentar" };
 
 const state = {
@@ -212,6 +212,7 @@ function fmt(path, v) {
   if (path === "panel_opacity") return `${Math.round(v * 100)}%`;
   if (path === "speed") return `${Math.round(v * 100)}%`;
   if (path === "radius") return `${v}px`;
+  if (path === "captions.size" || path === "captions.offset") return `${v}%`;
   return v;
 }
 
@@ -226,6 +227,7 @@ function renderEditor() {
   });
   document.querySelectorAll("#sty-editor [data-out]").forEach((o) => (o.textContent = fmt(o.dataset.out, getTok(t, o.dataset.out))));
   renderSteps();
+  syncCaptionOffset();
   if (document.activeElement !== el("sty-html")) el("sty-html").value = t.thumbnail.html || "";
   el("sty-html-reset").hidden = !t.thumbnail.html;
   const s = styleOf(state.selected);
@@ -253,7 +255,13 @@ function renderSteps() {
   el("sty-step-add").hidden = steps.length >= 3;
 }
 
+function syncCaptionOffset() {
+  const off = document.querySelector('#sty-editor [data-tok="captions.offset"]');
+  if (off) off.disabled = getTok(state.draft, "captions.position") === "middle";
+}
+
 function changed() {
+  syncCaptionOffset();
   document.querySelectorAll("#sty-editor [data-out]").forEach((o) => (o.textContent = fmt(o.dataset.out, getTok(state.draft, o.dataset.out))));
   debounce("preview", () => refreshPreviews(), 350);
 }

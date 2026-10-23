@@ -10,9 +10,17 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from auto_edit import caption_render, caption_style  # noqa: E402  -- needs repo root on sys.path
+from auto_edit.caption_render import (  # noqa: E402,F401  -- re-exported for callers/tests
+    _ffmpeg_has_subtitles,
+    _known_ffmpeg_locations,
+)
 
 try:
     import whisper
@@ -20,37 +28,13 @@ except ImportError:
     print("ERROR: openai-whisper not installed. Run: uv pip install openai-whisper", file=sys.stderr)
     sys.exit(1)
 
-try:
-    import pysubs2
-except ImportError:
-    print("ERROR: pysubs2 not installed. Run: uv pip install pysubs2", file=sys.stderr)
-    sys.exit(1)
-
 MAX_WORDS_PER_LINE = 4      # max words shown simultaneously (CapCut style)
-MAX_GAP_FOR_GROUP = 0.6     # seconds — gap larger than this starts a new group
 WORD_CONFIDENCE_THRESHOLD = 0.3
 NO_SPEECH_PROB_THRESHOLD = 0.8
 
 # Reuse/validation of an existing post_cut_transcription.json
 POST_CUT_DURATION_TOLERANCE = 2.0   # seconds of allowed drift vs edited video
 POST_CUT_MIN_COVERAGE = 0.5         # last word must reach >= this fraction of video
-
-# ── Default caption style ─────────────────────────────────────────────────────
-# Colors in ASS format: &HBBGGRR& (blue-green-red, reversed from RGB)
-# Override via pipeline.json["caption_style"] or CLI --highlight-* flags
-
-DEFAULTS = {
-    "color_highlight": "&H0045FF&",  # orange  (#FF4500 in RGB)
-    "color_text":      "&HFFFFFF&",  # white
-    "color_outline":   "&H000000&",  # black
-    "border_normal":   1.5,
-    "border_highlight": 2.5,         # was 5.0 — reduced to avoid grotesque look
-    "blur_highlight":   0.8,         # was 2.0 — softer
-    "font_name":       "Montserrat",
-    "font_size":       14,
-    "font_bold":       True,
-    "margin_v":        95,           # distance from bottom (pixels)
-}
 
 
 def _is_existing_post_cut_usable(post_cut: dict, edited_duration: float) -> bool:
@@ -215,9 +199,13 @@ def caption(workspace: Path) -> None:
             "Rode `auto-edit resume <video> --from execute` pra reconstruí-lo."
         )
 
-    # Merge pipeline caption_style over defaults
-    style = {**DEFAULTS, **pipeline.get("caption_style", {})}
-    print(f"[captioner] Style: highlight_border={style['border_highlight']}  blur={style['blur_highlight']}  color={style['color_highlight']}")
+    # Style tokens + old CLI options + per-video adjust
+    style = caption_style.resolve(pipeline)
+    print(
+        f"[captioner] Style: font={style['font']}  position={style['position']}  "
+        f"offset={style['offset']}%  size={style['size']}%  highlight={style['highlight']} ({style['highlight_mode']})"
+        + ("  hidden" if style["hidden"] else "")
+    )
 
     post_cut_path = workspace / "post_cut_transcription.json"
     edited_duration = _get_duration(edited_video)
@@ -308,13 +296,14 @@ def caption(workspace: Path) -> None:
                 "Possible timeline mismatch."
             )
 
-    # 2. Group words into display lines (max 4 words, gap-aware)
-    groups = _group_words(words)
+    # 2. Group words into display lines (style["words"] max, gap-aware)
+    groups = caption_render.group_words(words, style["words"])
     print(f"[captioner] Generated {len(groups)} caption groups")
 
-    # 3. Generate ASS file
+    # 3. Generate ASS file, in video pixels
     ass_path = workspace / "captions.ass"
-    _generate_ass(groups, ass_path, style)
+    width, height = caption_render.video_size(edited_video)
+    _generate_ass(groups, ass_path, style, width, height)
     print(f"[captioner] ASS written → {ass_path}")
 
     # 4. Generate SRT file
@@ -322,9 +311,13 @@ def caption(workspace: Path) -> None:
     _generate_srt(groups, srt_path)
     print(f"[captioner] SRT written → {srt_path}")
 
-    # 5. Burn captions into video
+    # 5. Burn captions into video (hidden: the cut goes out as is)
     output = workspace / "captioned_video.mp4"
-    _burn_captions(edited_video, ass_path, output)
+    if style["hidden"]:
+        shutil.copyfile(edited_video, output)
+        print(f"[captioner] Captions hidden for this video — copied without burning → {output}")
+        return
+    _burn_captions(edited_video, ass_path, output, style["font"])
     print(f"[captioner] Done → {output}")
 
 
@@ -372,28 +365,8 @@ def _transcribe(video: Path, model_name: str, language: str, context: str = "") 
 # ── Word grouping ─────────────────────────────────────────────────────────────
 
 def _group_words(words: list[dict]) -> list[list[dict]]:
-    """
-    Groups words into display chunks of max MAX_WORDS_PER_LINE.
-    Starts a new group on large gaps or when max words reached.
-    """
-    if not words:
-        return []
-
-    groups: list[list[dict]] = []
-    current: list[dict] = [words[0]]
-
-    for w in words[1:]:
-        gap = w["start"] - current[-1]["end"]
-        if len(current) >= MAX_WORDS_PER_LINE or gap > MAX_GAP_FOR_GROUP:
-            groups.append(current)
-            current = [w]
-        else:
-            current.append(w)
-
-    if current:
-        groups.append(current)
-
-    return groups
+    """Groups words into display chunks of max MAX_WORDS_PER_LINE (gap-aware)."""
+    return caption_render.group_words(words, MAX_WORDS_PER_LINE)
 
 
 # ── SRT generation ────────────────────────────────────────────────────────────
@@ -428,66 +401,8 @@ def _format_srt_time(seconds: float) -> str:
 
 # ── ASS generation ────────────────────────────────────────────────────────────
 
-def _generate_ass(groups: list[list[dict]], ass_path: Path, style: dict) -> None:
-    subs = pysubs2.SSAFile()
-
-    ass_style = pysubs2.SSAStyle()
-    ass_style.fontname = style["font_name"]
-    ass_style.fontsize = style["font_size"]
-    ass_style.bold = style["font_bold"]
-    ass_style.primarycolor = pysubs2.Color(255, 255, 255)
-    ass_style.outlinecolor = pysubs2.Color(0, 0, 0)
-    ass_style.outline = style["border_normal"]
-    ass_style.shadow = 0
-    ass_style.alignment = 2     # bottom center
-    ass_style.marginv = style["margin_v"]
-    subs.styles["Default"] = ass_style
-
-    HIGHLIGHT_TAG = (
-        rf"{{\1c{style['color_text']}}}"
-        rf"{{\3c{style['color_highlight']}}}"
-        rf"{{\bord{style['border_highlight']}}}"
-        rf"{{\blur{style['blur_highlight']}}}"
-    )
-    NORMAL_TAG = (
-        rf"{{\1c{style['color_text']}}}"
-        rf"{{\3c{style['color_outline']}}}"
-        rf"{{\bord{style['border_normal']}}}"
-        rf"{{\blur0}}"
-    )
-
-    def ms(t: float) -> int:
-        return int(t * 1000)
-
-    for group in groups:
-        display = [w["word"].strip().upper() for w in group]
-
-        for j, word_obj in enumerate(group):
-            w_start = ms(word_obj["start"])
-            # Extend to next word start if gap is small, else use word end
-            if j < len(group) - 1:
-                next_start = ms(group[j + 1]["start"])
-                w_end = next_start if (next_start - ms(word_obj["end"])) < 500 else ms(word_obj["end"])
-            else:
-                w_end = ms(word_obj["end"])
-
-            parts = []
-            for k, txt in enumerate(display):
-                if k == j:
-                    parts.append(f"{HIGHLIGHT_TAG}{txt}{NORMAL_TAG}")
-                else:
-                    parts.append(txt)
-
-            subs.events.append(
-                pysubs2.SSAEvent(
-                    start=w_start,
-                    end=w_end,
-                    text=" ".join(parts),
-                    style="Default",
-                )
-            )
-
-    subs.save(str(ass_path))
+def _generate_ass(groups: list[list[dict]], ass_path: Path, style: dict, width: int, height: int) -> None:
+    caption_render.build_ass(groups, style, width, height).save(str(ass_path))
 
 
 # ── Caption burning ───────────────────────────────────────────────────────────
@@ -503,98 +418,21 @@ def _get_duration(video: Path) -> float:
     return float(result.stdout.strip())
 
 
-def _ffmpeg_has_subtitles(binary: str) -> bool:
-    """True if this ffmpeg build exposes the libass 'subtitles' filter."""
-    try:
-        result = subprocess.run(
-            [binary, "-hide_banner", "-filters"],
-            capture_output=True, text=True, timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return " subtitles " in (result.stdout or "")
-
-
-def _known_ffmpeg_locations() -> list[str]:
-    """Where an ffmpeg with libass usually lives when it isn't on PATH.
-
-    The desktop app runs the engine from the repo .venv, whose PATH only has
-    Homebrew's ffmpeg (no libass) — the nix `ffmpeg-full` the CLI wrapper puts
-    on PATH is not there. Last resort: the newest ffmpeg-full in the nix store.
-    """
-    home = Path.home()
-    paths = [
-        home / ".nix-profile/bin/ffmpeg",
-        Path("/etc/profiles/per-user") / home.name / "bin/ffmpeg",
-        Path("/run/current-system/sw/bin/ffmpeg"),
-        Path("/nix/var/nix/profiles/default/bin/ffmpeg"),
-        Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"),
-        Path("/usr/local/opt/ffmpeg-full/bin/ffmpeg"),
-    ]
-    store = Path("/nix/store")
-    if store.is_dir():
-        try:
-            full = sorted(
-                store.glob("*-ffmpeg-full-*-bin/bin/ffmpeg"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-        except OSError:
-            full = []
-        paths.extend(full)
-    return [str(p) for p in paths]
-
-
 def _resolve_caption_ffmpeg() -> str:
-    """Find an ffmpeg build with libass (the 'subtitles' filter) to burn captions.
-
-    Order: AUTO_EDIT_FFMPEG override, each ffmpeg on PATH, then the usual
-    nix/Homebrew ffmpeg-full spots. Raises with an actionable message if none
-    has libass — many Homebrew builds ship without it.
-    """
-    candidates: list[str] = []
-    env = os.environ.get("AUTO_EDIT_FFMPEG")
-    if env:
-        candidates.append(env)
-
-    seen = set(candidates)
-    on_path = [
-        os.path.join(d, "ffmpeg")
-        for d in os.environ.get("PATH", "").split(os.pathsep)
-        if d
-    ]
-    for p in on_path + _known_ffmpeg_locations():
-        if p not in seen and os.path.isfile(p) and os.access(p, os.X_OK):
-            seen.add(p)
-            candidates.append(p)
-
-    for binary in candidates:
-        if _ffmpeg_has_subtitles(binary):
-            return binary
-
-    raise RuntimeError(
-        "Nenhum ffmpeg com libass encontrado (filtro 'subtitles' ausente) — "
-        "necessário pra queimar legendas. Instale um ffmpeg com libass "
-        "(ex: `brew reinstall ffmpeg`) ou aponte AUTO_EDIT_FFMPEG para um "
-        "binário com libass."
-    )
+    return caption_render.resolve_ffmpeg()
 
 
-def _burn_captions(video: Path, ass: Path, output: Path) -> None:
-    # ASS path must use forward slashes and be absolute
-    ass_norm = str(ass.resolve()).replace("\\", "/")
-
-    ffmpeg_bin = _resolve_caption_ffmpeg()
-    cmd = [
-        ffmpeg_bin, "-y",
-        "-i", str(video),
-        "-vf", f"subtitles='{ass_norm}'",
-        "-c:a", "copy",
-        "-movflags", "+faststart", "-brand", "mp42",
-        str(output),
-    ]
-    print("[captioner] Burning captions...")
-    result = subprocess.run(cmd)
+def _burn_captions(video: Path, ass: Path, output: Path, font: str) -> None:
+    # cwd = the ASS folder, so the filter only sees relative names
+    folder = ass.parent
+    ffmpeg = _resolve_caption_ffmpeg()  # before the fonts copy: nothing to clean if it raises
+    fonts = caption_render.prepare_fonts(font, folder)
+    try:
+        cmd = caption_render.burn_command(ffmpeg, video, ass.name, str(fonts), output)
+        print("[captioner] Burning captions...")
+        result = subprocess.run(cmd, cwd=folder)
+    finally:
+        shutil.rmtree(folder / fonts, ignore_errors=True)
     if result.returncode != 0:
         raise RuntimeError("FFmpeg failed during caption burning")
 

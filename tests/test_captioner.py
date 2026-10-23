@@ -257,14 +257,14 @@ class TestFfmpegHasSubtitles:
 
 class TestResolveCaptionFfmpeg:
     def test_env_override_wins_when_valid(self, monkeypatch):
-        import tools.captioner as c
+        from auto_edit import caption_render as c
 
         monkeypatch.setenv("AUTO_EDIT_FFMPEG", "/opt/good/ffmpeg")
         monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: b == "/opt/good/ffmpeg")
         assert _resolve_caption_ffmpeg() == "/opt/good/ffmpeg"
 
     def test_falls_back_to_path_binary(self, monkeypatch, tmp_path):
-        import tools.captioner as c
+        from auto_edit import caption_render as c
 
         # a fake ffmpeg on PATH that "has" libass
         bindir = tmp_path / "bin"
@@ -280,7 +280,7 @@ class TestResolveCaptionFfmpeg:
     def test_falls_back_to_known_locations_off_path(self, monkeypatch, tmp_path):
         """The desktop engine runs from the .venv: PATH only has Homebrew's
         ffmpeg (no libass) while nix's ffmpeg-full sits elsewhere."""
-        import tools.captioner as c
+        from auto_edit import caption_render as c
 
         brew = tmp_path / "brew"
         brew.mkdir()
@@ -296,7 +296,7 @@ class TestResolveCaptionFfmpeg:
         assert _resolve_caption_ffmpeg() == str(full)
 
     def test_raises_actionable_error_when_none(self, monkeypatch):
-        import tools.captioner as c
+        from auto_edit import caption_render as c
 
         monkeypatch.setattr(c, "_known_ffmpeg_locations", lambda: [])
         monkeypatch.delenv("AUTO_EDIT_FFMPEG", raising=False)
@@ -304,3 +304,66 @@ class TestResolveCaptionFfmpeg:
         monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: False)
         with pytest.raises(RuntimeError, match="libass"):
             _resolve_caption_ffmpeg()
+
+
+# ── caption() with the per-video "hidden" adjust ──────────────────────────────
+
+
+def test_hidden_copies_the_cut_without_burning(tmp_path, monkeypatch):
+    import json
+
+    import tools.captioner as c
+
+    words = [{"word": "oi", "start": 0.0, "end": 0.5}, {"word": "tchau", "start": 9.0, "end": 9.8}]
+    (tmp_path / "pipeline.json").write_text(json.dumps({
+        "type": "short", "caption_style": {"hidden": True}, "video_path": "x.mp4",
+    }))
+    (tmp_path / "post_cut_transcription.json").write_text(json.dumps({"duration": 10.0, "words": words}))
+    (tmp_path / "edited_video.mp4").write_bytes(b"cut video")
+    monkeypatch.setattr(c, "_get_duration", lambda v: 10.0)
+    monkeypatch.setattr(c.caption_render, "video_size", lambda v: (1080, 1920))
+
+    def no_burn(*a, **k):
+        raise AssertionError("hidden must not burn")
+
+    monkeypatch.setattr(c, "_burn_captions", no_burn)
+    c.caption(tmp_path)
+    assert (tmp_path / "captioned_video.mp4").read_bytes() == b"cut video"
+    assert (tmp_path / "captions.srt").exists()
+    assert (tmp_path / "captions.ass").exists()
+
+
+# ── _burn_captions: .caption-fonts/ never stays in the workspace ────────────
+
+
+def _ass(tmp_path):
+    ass = tmp_path / "captions.ass"
+    ass.write_text("")
+    return ass
+
+
+def test_burn_cleans_fonts_when_ffmpeg_run_raises(tmp_path, monkeypatch):
+    import tools.captioner as c
+
+    monkeypatch.setattr(c, "_resolve_caption_ffmpeg", lambda: "ffmpeg")
+
+    def boom(*a, **k):
+        assert (tmp_path / ".caption-fonts").is_dir()
+        raise OSError("ffmpeg sumiu")
+
+    monkeypatch.setattr(c.subprocess, "run", boom)
+    with pytest.raises(OSError):
+        c._burn_captions(tmp_path / "v.mp4", _ass(tmp_path), tmp_path / "out.mp4", "montserrat")
+    assert not (tmp_path / ".caption-fonts").exists()
+
+
+def test_burn_creates_no_fonts_when_ffmpeg_resolve_raises(tmp_path, monkeypatch):
+    import tools.captioner as c
+
+    def no_libass():
+        raise RuntimeError("sem libass")
+
+    monkeypatch.setattr(c, "_resolve_caption_ffmpeg", no_libass)
+    with pytest.raises(RuntimeError):
+        c._burn_captions(tmp_path / "v.mp4", _ass(tmp_path), tmp_path / "out.mp4", "montserrat")
+    assert not (tmp_path / ".caption-fonts").exists()

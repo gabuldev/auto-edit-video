@@ -197,6 +197,16 @@ def _resolve_plan(plan_id: Optional[str], no_prompt: bool, resume_from: Optional
     return plan_mod.prompt_for_plan_id()
 
 
+def _caption_overrides(highlight_border, highlight_color, font_size) -> dict:
+    """Só o que a pessoa passou na linha de comando; o resto vem do estilo."""
+    passed = {
+        "border_highlight": highlight_border,
+        "color_highlight": highlight_color,
+        "font_size": font_size,
+    }
+    return {k: v for k, v in passed.items() if v is not None}
+
+
 def _run_pipeline(
     video: Path,
     video_type: str,
@@ -304,9 +314,9 @@ def short(
         "--cli-fallback",
         help="If primary fails or returns invalid JSON after retry, try this CLI. Default: $AUTO_EDIT_LLM_FALLBACK.",
     ),
-    highlight_border: float = typer.Option(2.5, "--highlight-border", help="Highlight word border thickness (default 2.5)"),
-    highlight_color: str = typer.Option("&H0045FF&", "--highlight-color", help="Highlight color in ASS format &HBBGGRR& (default orange)"),
-    font_size: int = typer.Option(14, "--font-size", help="Caption font size (default 14)"),
+    highlight_border: Optional[float] = typer.Option(None, "--highlight-border", help="Highlight word border thickness (overrides the style)"),
+    highlight_color: Optional[str] = typer.Option(None, "--highlight-color", help="Highlight color in ASS format &HBBGGRR& (overrides the style)"),
+    font_size: Optional[int] = typer.Option(None, "--font-size", help="Caption font size (overrides the style)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run only through review stage — shows cut plan without executing FFmpeg."),
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
     plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link this video to a plan slot (e.g. 'S2' or '2026-W19/S2'). Use 'none' to skip prompt."),
@@ -318,11 +328,7 @@ def short(
     if whisper_model not in VALID_MODELS:
         console.print(f"[red]Invalid model.[/red] Choose from: {', '.join(VALID_MODELS)}")
         raise typer.Exit(1)
-    caption_style = {
-        "border_highlight": highlight_border,
-        "color_highlight": highlight_color,
-        "font_size": font_size,
-    }
+    caption_style = _caption_overrides(highlight_border, highlight_color, font_size)
     pid = _resolve_plan(plan_id, no_plan_prompt, resume_from)
     _run_pipeline(
         video,
@@ -602,9 +608,9 @@ def merge(
         "--cli-fallback",
         help="Fallback CLI if primary fails. Default: $AUTO_EDIT_LLM_FALLBACK.",
     ),
-    highlight_border: float = typer.Option(2.5, "--highlight-border"),
-    highlight_color: str = typer.Option("&H0045FF&", "--highlight-color"),
-    font_size: int = typer.Option(14, "--font-size"),
+    highlight_border: Optional[float] = typer.Option(None, "--highlight-border", help="Overrides the style"),
+    highlight_color: Optional[str] = typer.Option(None, "--highlight-color", help="Overrides the style"),
+    font_size: Optional[int] = typer.Option(None, "--font-size", help="Overrides the style"),
     language: str = typer.Option("pt", "--language", "-l", help="Audio language (pt, en, es, etc.)"),
     plan_id: Optional[str] = typer.Option(None, "--plan-id", help="Link merged video to a plan slot (e.g. 'S2' or '2026-W19/S2')."),
     no_plan_prompt: bool = typer.Option(False, "--no-plan-prompt", help="Don't prompt for a plan slot when --plan-id is omitted."),
@@ -710,11 +716,10 @@ def merge(
 
     console.print(f"[green]Merged successfully.[/green] ({merged_path.stat().st_size // 1_000_000} MB)\n")
 
-    caption_style = {
-        "border_highlight": highlight_border,
-        "color_highlight": highlight_color,
-        "font_size": font_size,
-    } if video_type == "short" else None
+    caption_style = (
+        _caption_overrides(highlight_border, highlight_color, font_size)
+        if video_type == "short" else None
+    )
 
     pid = _resolve_plan(plan_id, no_plan_prompt, None)
     _run_pipeline(
@@ -1237,9 +1242,9 @@ auto-edit doctor
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--font-size` | 14 | Caption font size |
-| `--highlight-color` | `&H0045FF&` | Highlight color in ASS `&HBBGGRR&` format |
-| `--highlight-border` | 2.5 | Highlight word border thickness |
+| `--font-size` | — | Caption font size (overrides the style) |
+| `--highlight-color` | — | Highlight color in ASS `&HBBGGRR&` format |
+| `--highlight-border` | — | Highlight word border thickness |
 
 ## Pipeline Stages
 

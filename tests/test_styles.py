@@ -1,11 +1,13 @@
 """Styles: tokens are validated into something that always renders, presets
 and the person's own styles, the active one, the preview and the API."""
 import json
+import os
 import sys
+import time
 
 import pytest
 
-from auto_edit import api, engine, settings, styles
+from auto_edit import api, caption_style, engine, settings, styles
 
 
 @pytest.fixture
@@ -17,6 +19,12 @@ def home(tmp_path, monkeypatch):
 class TestValidate:
     def test_empty_is_the_default(self):
         assert styles.validate({}) == styles.validate(None) == styles.DEFAULT_TOKENS
+
+    def test_captions_default_and_presets(self):
+        assert styles.validate({})["captions"] == caption_style.DEFAULT
+        assert styles.PRESETS["padrao"]["tokens"]["captions"] == caption_style.DEFAULT
+        for sid, p in styles.PRESETS.items():
+            assert caption_style.validate(p["tokens"]["captions"]) == p["tokens"]["captions"], sid
 
     def test_bad_values_fall_back_one_by_one(self):
         t = styles.validate({
@@ -122,6 +130,13 @@ class TestPreview:
         styles.preview({}, "lower_third")
         styles.preview({}, "lower_third")
         assert len((fake / "calls").read_text().splitlines()) == 1
+
+    def test_changing_only_captions_keeps_overlay_and_thumbnail_cached(self, fake):
+        for kind in ("cta", "lower_third", "thumbnail"):
+            styles.preview({"captions": {"font": "anton"}}, kind)
+            styles.preview({"captions": {"font": "bangers", "size": 150}}, kind)
+        assert len((fake / "calls").read_text().splitlines()) == 3
+        assert "captions" not in json.loads((fake / "spec.json").read_text()).get("style", {})
 
     def test_unknown_kind(self, fake):
         with pytest.raises(styles.StyleError):
@@ -324,6 +339,13 @@ class TestShare:
         imported = styles.import_({"format": 1, "name": "Neon", "tokens": {"colors": {"accent": "#222222"}}})
         assert imported["id"] != first["id"] and imported["name"] == "Neon (2)"
         assert styles.get(first["id"])["tokens"]["colors"]["accent"] == "#111111"
+
+    def test_import_without_captions_gets_the_default(self, home):
+        s = styles.import_({"format": 1, "name": "Velho", "tokens": {"radius": 5}})
+        assert s["tokens"]["captions"] == caption_style.DEFAULT
+
+    def test_export_includes_captions(self, home):
+        assert styles.export("neon")["tokens"]["captions"]["font"] == "poppins"
 
     def test_import_junk_tokens_are_validated(self, home):
         s = styles.import_({"format": 1, "name": "", "tokens": {"radius": 9999}})
@@ -692,3 +714,80 @@ class TestGalleryPresets:
         monkeypatch.setattr(styles, "preview_face", lambda: None)
         for sid in style_presets.LAYOUTS:
             assert styles.render_thumbnail(styles.PRESETS[sid]["tokens"], title=title, sub=sub)[:4] == b"\x89PNG", sid
+
+
+class TestCaptionPreview:
+    def test_default_tokens_and_vertical_size_then_cached(self, home, monkeypatch):
+        from auto_edit import caption_render, caption_style
+
+        calls = []
+
+        def fake(captions, frame, w, h):
+            calls.append((captions, frame, w, h))
+            return b"PNG"
+
+        monkeypatch.setattr(caption_render, "render_preview", fake)
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: None)
+        assert styles.preview({}, "caption") == b"PNG"
+        assert styles.preview({}, "caption") == b"PNG"
+        assert len(calls) == 1
+        assert calls[0] == (caption_style.DEFAULT, None, 540, 960)
+
+    def test_changed_captions_miss_the_cache(self, home, monkeypatch):
+        from auto_edit import caption_render
+
+        calls = []
+        monkeypatch.setattr(caption_render, "render_preview", lambda c, f, w, h: calls.append(c) or b"PNG")
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: None)
+        styles.preview({}, "caption")
+        styles.preview({"captions": {"font": "bangers"}}, "caption")
+        assert len(calls) == 2
+
+    def test_without_libass_is_a_style_error(self, home, monkeypatch):
+        from auto_edit import caption_render
+
+        def boom():
+            raise RuntimeError("no libass")
+
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", boom)
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: None)
+        with pytest.raises(styles.StyleError, match="libass"):
+            styles.preview({}, "caption")
+
+    def test_vertical_frame_prefers_short_to_long(self, home, tmp_path, monkeypatch):
+        from auto_edit import engine
+
+        root = tmp_path / "lib"
+        for name, kind, age in (("a_long", "long", 0), ("b_short", "short", -100)):
+            ws = root / name
+            ws.mkdir(parents=True)
+            (ws / "pipeline.json").write_text(json.dumps({"type": kind}))
+            v = ws / "edited_video.mp4"
+            v.write_bytes(b"x")
+            os.utime(v, (time.time() + age, time.time() + age))  # the long is newer
+        monkeypatch.setattr(engine, "library_root", lambda: root)
+        seen = []
+
+        def fake_extract(src, long):
+            seen.append((src.parent.name, long))
+            return None
+
+        monkeypatch.setattr(styles, "_extract_vertical", fake_extract)
+        styles.preview_frame_vertical()
+        assert seen == [("b_short", False)]
+
+    def test_vertical_frame_falls_back_to_a_long(self, home, tmp_path, monkeypatch):
+        from auto_edit import engine
+
+        root = tmp_path / "lib"
+        ws = root / "a_long"
+        ws.mkdir(parents=True)
+        (ws / "pipeline.json").write_text(json.dumps({"type": "long"}))
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        monkeypatch.setattr(engine, "library_root", lambda: root)
+        seen = []
+        monkeypatch.setattr(styles, "_extract_vertical", lambda src, long: seen.append(long))
+        styles.preview_frame_vertical()
+        assert seen == [True]

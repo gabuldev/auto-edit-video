@@ -6,7 +6,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from auto_edit import pipeline as pl
+from auto_edit import caption_style, pipeline as pl
+
+
+def active_captions() -> dict:
+    """Legenda do estilo ativo, validada; qualquer problema vira o default."""
+    try:
+        from auto_edit import styles
+
+        return caption_style.validate(styles.active()["tokens"]["captions"])
+    except Exception:
+        return caption_style.default()
 
 
 def workspace_root() -> Path:
@@ -55,6 +65,7 @@ def init_workspace(
         caption_style=caption_style or {},
         language=language,
         plan_id=plan_id,
+        captions=active_captions(),
     )
     return ws
 

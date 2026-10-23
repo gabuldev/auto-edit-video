@@ -67,3 +67,5 @@ workspace/
 output/
 
 .claude/worktrees/
+
+.superpowers/

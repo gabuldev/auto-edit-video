@@ -5,9 +5,10 @@ import * as api from "./api.js";
 import { el, escapeHtml, releaseMedia, humanSize, setEngine } from "./shell.js";
 import { go } from "./router.js";
 import { mountPublish, unmountPublish } from "./publish.js";
+import { mountCaptionAdjust, unmountCaptionAdjust } from "./caption-adjust.js";
 import { mountRetention } from "./retention.js";
 
-const state = { id: null, data: null };
+const state = { id: null, data: null, capMounted: false, stamp: Date.now() };
 
 const FIELDS = [
   ["short_title", "Título do short"],
@@ -69,8 +70,15 @@ function render(d) {
   const hasVideo = Boolean(files.video);
   el("res-player").hidden = !hasVideo;
   if (hasVideo) {
-    const src = `${api.API}/api/videos/${encodeURIComponent(d.id)}/file/video`;
+    // ?t= : o vídeo pode ter sido regravado e o webview guarda cache.
+    const src = `${api.API}/api/videos/${encodeURIComponent(d.id)}/file/video?t=${state.stamp}`;
     if (el("res-video").getAttribute("src") !== src) el("res-video").setAttribute("src", src);
+  }
+  // Ajustar legenda: só short com vídeo pronto (monta uma vez por visita).
+  if (d.type === "short" && hasVideo && d.status === "done") {
+    if (!state.capMounted) { state.capMounted = true; mountCaptionAdjust(d.id); }
+  } else {
+    el("cap-card").hidden = true;
   }
   el("res-thumb-box").hidden = !files.thumbnail;
   if (files.thumbnail) {
@@ -148,6 +156,8 @@ export default {
   mount({ id }) {
     if (!state.wired) { wire(); state.wired = true; }
     state.id = id;
+    state.stamp = Date.now();
+    state.capMounted = false;
     el("res-video").removeAttribute("src");
     el("btn-res-shorts").hidden = true;
     load(id);
@@ -156,6 +166,7 @@ export default {
   },
   unmount() {
     unmountPublish();
+    unmountCaptionAdjust();
     releaseMedia(el("res-video"));
   },
 };

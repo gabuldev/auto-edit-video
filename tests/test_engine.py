@@ -170,6 +170,112 @@ class TestJobManager:
         assert job.status == "done"  # auto-emitted on clean finish
 
 
+class TestResumeRecaption:
+    def _setup(self, tmp_path, monkeypatch, vtype):
+        from auto_edit import pipeline as pl
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        ws = tmp_path / "v"
+        ws.mkdir()
+        pl.init(ws, tmp_path / "v.mp4", vtype, "")
+        calls = []
+        monkeypatch.setattr(engine, "run_workspace", lambda *a, **k: calls.append(1) or 0)
+        return ws, calls
+
+    def test_short_caption_uses_recaption(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        (ws / "edited_video.mp4").write_text("x")
+        mgr = engine.JobManager()
+        mgr.resume_edit("v", "caption", caption_only=True)
+        p = pl.load(ws)
+        assert p["caption_only"] is True
+        assert p["current_stage"] == "caption"
+
+    def test_short_caption_without_edited_video_starts_at_execute(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        (tmp_path / "v.mp4").write_text("orig")
+        engine.JobManager().resume_edit("v", "caption", caption_only=True)
+        p = pl.load(ws)
+        assert p["current_stage"] == "execute"
+        assert p["caption_only"] is True
+
+    def test_regravar_without_cut_nor_original_is_refused_untouched(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, calls = self._setup(tmp_path, monkeypatch, "short")
+        for st in pl.STAGES[:-1]:
+            if st != "overlay":
+                pl.set_stage_status(ws, st, "complete")
+        before = pl.load(ws)
+        assert not (tmp_path / "v.mp4").exists()
+        with pytest.raises(ValueError, match="não está mais em"):
+            engine.JobManager().resume_edit("v", "caption", caption_only=True)
+        assert pl.load(ws) == before and before["current_stage"] == "done"
+        assert calls == []
+
+    def test_regravar_without_original_is_400(self, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
+        self._setup(tmp_path, monkeypatch, "short")
+        r = api.create_app().test_client().post(
+            "/api/videos/v/resume", json={"from_stage": "caption", "caption_only": True})
+        assert r.status_code == 400
+        assert "não está mais em" in r.get_json()["error"]
+
+    def test_plain_resume_from_failed_caption_runs_metadata(self, tmp_path, monkeypatch):
+        """The app's ordinary "Retomar" after a failed caption must not skip
+        metadata/thumbnail (only the explicit Regravar is caption_only)."""
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        (ws / "edited_video.mp4").write_text("x")
+        for st in ["extract", "plan", "review", "evaluate", "execute"]:
+            pl.set_stage_status(ws, st, "complete")
+        pl.set_stage_status(ws, "caption", "failed", "boom")
+        engine.JobManager().resume_edit("v", "caption")
+        p = pl.load(ws)
+        assert "caption_only" not in p and p["current_stage"] == "caption"
+        assert p["stages"]["metadata"]["status"] == "pending"
+        p = pl.set_stage_status(ws, "caption", "complete")
+        assert p["current_stage"] == "metadata"
+
+    def test_api_resume_passes_caption_only_only_when_true(self, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        (ws / "edited_video.mp4").write_text("x")
+        mgr = engine.JobManager()
+        client = api.create_app(mgr).test_client()
+        assert client.post("/api/videos/v/resume", json={"from_stage": "caption"}).status_code == 202
+        assert "caption_only" not in pl.load(ws)
+        for _ in range(200):
+            if not mgr.active_ids():
+                break
+            time.sleep(0.01)
+        r = client.post("/api/videos/v/resume", json={"from_stage": "caption", "caption_only": True})
+        assert r.status_code == 202
+        assert pl.load(ws)["caption_only"] is True
+
+    def test_short_caption_refused_while_job_running(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        mgr = engine.JobManager()
+        release = threading.Event()
+        mgr._spawn("v", "edit", lambda emit: release.wait(2))
+        before = pl.load(ws)
+        with pytest.raises(ValueError):
+            mgr.resume_edit("v", "caption", caption_only=True)
+        assert pl.load(ws) == before
+        release.set()
+
+    def test_long_caption_behaves_as_before(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "long")
+        mgr = engine.JobManager()
+        mgr.resume_edit("v", "caption", caption_only=True)
+        p = pl.load(ws)
+        assert "caption_only" not in p
+        assert p["current_stage"] == "caption"
+
+
 # ── run_workspace ─────────────────────────────────────────────────────────────
 
 class _FakeProc:
@@ -582,3 +688,130 @@ def test_file_endpoint_with_relative_library_root(tmp_path, monkeypatch):
     (tmp_path / "workspace" / "output" / "clip_thumbnail.png").write_bytes(b"png")
     r = api.create_app().test_client().get("/api/videos/vid/file/thumbnail")
     assert r.status_code == 200 and r.data == b"png"
+
+
+# ── ajuste da legenda por vídeo ──────────────────────────────────────────────
+
+class TestVideoCaptions:
+    def _short(self, tmp_path, monkeypatch, **cs):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        ws = _mkws(tmp_path, "vid", type="short", caption_style=cs)
+        return ws
+
+    def _client(self):
+        pytest.importorskip("flask")
+        return api.create_app().test_client()
+
+    def test_put_saves_only_adjust_keys_and_keeps_legacy(self, tmp_path, monkeypatch):
+        ws = self._short(tmp_path, monkeypatch, font_size=14)
+        r = self._client().put("/api/videos/vid/captions", json={"position": "top", "offset": 12, "font": "bangers"})
+        assert r.status_code == 200
+        saved = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))["caption_style"]
+        assert saved == {"font_size": 14, "position": "top", "offset": 12}
+        body = r.get_json()
+        assert body["adjust"] == {"position": "top", "offset": 12}
+        assert body["captions"]["position"] == "top"
+        assert body["captions"]["font"] != "bangers"
+
+    def test_put_keeps_previous_adjust_of_absent_keys(self, tmp_path, monkeypatch):
+        self._short(tmp_path, monkeypatch, position="top", size=150)
+        out = engine.save_video_captions("vid", {"size": 80})
+        assert out["adjust"] == {"position": "top", "size": 80}
+
+    def test_get_reflects_adjust_and_fast(self, tmp_path, monkeypatch):
+        ws = self._short(tmp_path, monkeypatch, hidden=True)
+        client = self._client()
+        body = client.get("/api/videos/vid/captions").get_json()
+        assert body["adjust"] == {"hidden": True}
+        assert body["fast"] is False
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        assert client.get("/api/videos/vid/captions").get_json()["fast"] is True
+
+    def test_source_ok_reflects_cut_or_original(self, tmp_path, monkeypatch):
+        ws = self._short(tmp_path, monkeypatch)
+        orig = tmp_path / "orig.mp4"
+        pj = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))
+        pj["video_path"] = str(orig)
+        (ws / "pipeline.json").write_text(json.dumps(pj), encoding="utf-8")
+        body = engine.video_captions("vid")
+        assert body["fast"] is False and body["source_ok"] is False
+        assert body["video_path"] == str(orig)
+        orig.write_bytes(b"x")
+        assert engine.video_captions("vid")["source_ok"] is True
+        orig.unlink()
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        body = engine.video_captions("vid")
+        assert body["fast"] is True and body["source_ok"] is True
+
+    def test_preview_with_non_dict_caption_style_is_not_500(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render, styles
+        ws = self._short(tmp_path, monkeypatch)
+        pj = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))
+        pj["caption_style"] = ["lixo"]
+        (ws / "pipeline.json").write_text(json.dumps(pj), encoding="utf-8")
+        seen = {}
+        monkeypatch.setattr(caption_render, "render_preview", lambda c, *a: seen.update(c=c) or b"png")
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: None)
+        r = self._client().post("/api/videos/vid/captions/preview", json={"position": "top"})
+        assert r.status_code == 200 and r.data == b"png"
+        assert seen["c"]["position"] == "top"
+
+    def test_long_is_400_and_unknown_is_404(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "lng")
+        client = self._client()
+        assert client.get("/api/videos/lng/captions").status_code == 400
+        assert client.put("/api/videos/lng/captions", json={}).status_code == 400
+        assert client.post("/api/videos/lng/captions/preview", json={}).status_code == 400
+        assert client.get("/api/videos/nope/captions").status_code == 404
+        assert client.put("/api/videos/nope/captions", json={}).status_code == 404
+        assert client.post("/api/videos/nope/captions/preview", json={}).status_code == 404
+
+    def test_preview_returns_png(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render, styles
+        self._short(tmp_path, monkeypatch)
+        seen = {}
+
+        def fake(captions, frame, w, h):
+            seen.update(captions=captions, size=(w, h))
+            return b"\x89PNGfake"
+
+        monkeypatch.setattr(caption_render, "render_preview", fake)
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: None)
+        r = self._client().post("/api/videos/vid/captions/preview", json={"position": "middle"})
+        assert r.status_code == 200 and r.mimetype == "image/png"
+        assert r.data == b"\x89PNGfake"
+        assert seen["captions"]["position"] == "middle" and seen["size"] == (540, 960)
+
+    def test_preview_frame_comes_from_the_videos_own_source(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render, styles
+        ws = self._short(tmp_path, monkeypatch)
+        orig = tmp_path / "orig.mp4"
+        orig.write_bytes(b"x")
+        pj = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))
+        pj["video_path"] = str(orig)
+        (ws / "pipeline.json").write_text(json.dumps(pj), encoding="utf-8")
+        got = []
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: got.append(video))
+        monkeypatch.setattr(caption_render, "render_preview", lambda *a: b"png")
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        engine.video_caption_preview("vid", {})
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        engine.video_caption_preview("vid", {})
+        orig.unlink()
+        (ws / "edited_video.mp4").unlink()
+        engine.video_caption_preview("vid", {})
+        assert got == [orig, ws / "edited_video.mp4", None]
+
+    def test_preview_render_failure_is_json_error(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render
+        self._short(tmp_path, monkeypatch)
+
+        def boom():
+            raise RuntimeError("sem libass")
+
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", boom)
+        r = self._client().post("/api/videos/vid/captions/preview", json={})
+        assert r.status_code == 400 and "error" in r.get_json()

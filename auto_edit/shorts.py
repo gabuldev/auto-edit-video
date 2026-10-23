@@ -239,6 +239,12 @@ def overwrite_warning(
     )
 
 
+def _active_captions() -> dict:
+    from auto_edit import workspace
+
+    return workspace.active_captions()
+
+
 def seed_short_workspace(
     long_ws: Path, long_pipeline: dict, clip: dict, index: int
 ) -> Path:
@@ -279,6 +285,9 @@ def seed_short_workspace(
         "current_stage": "execute",
         "evaluator_feedback": None,
         "caption_style": long_pipeline.get("caption_style", {}),
+        # O estilo ativo na hora do `shorts --pick` (é um início de edição),
+        # não o que o long gravou.
+        "captions": _active_captions(),
         "plan_id": None,
         "stages": stages,
         "created_at": datetime.now(timezone.utc).isoformat(),
