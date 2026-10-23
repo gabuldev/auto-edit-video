@@ -134,7 +134,7 @@ decrescente e marca os candidatos que se sobrepõem.
 |-----|---------|-----------|
 | `AUTO_EDIT_LLM` | `claude` | Agente dos stages de IA: `claude`, `cursor`, `agy` (Antigravity), `opencode`, `codex`, `openrouter` (API, chave em `OPENROUTER_API_KEY` ou salva pelo app em `tokens/openrouter.key`) ou `ollama` (modelo local). Ver `auto_edit/agents.py` |
 | `AUTO_EDIT_AGY_MODEL` / `AUTO_EDIT_OPENCODE_MODEL` / `AUTO_EDIT_CODEX_MODEL` / `AUTO_EDIT_OPENROUTER_MODEL` / `AUTO_EDIT_OLLAMA_MODEL` | — | Modelo de cada agente (ex.: `opencode/big-pickle`, `anthropic/claude-sonnet-4.5`, `qwen2.5:7b`; OpenRouter usa `openrouter/auto` sem modelo) |
-| `AUTO_EDIT_OLLAMA_CTX` | `32768` | Janela de contexto do modelo local; prompt maior é recusado (cai no fallback), nunca truncado |
+| `AUTO_EDIT_OLLAMA_CTX` | `32768` | Janela de contexto do modelo local. Com Ollama como principal, plan e overlay recebem a transcrição compacta em linhas (`auto_edit/runner.py`, `_compact_transcript`; long de 10 min ≈ 18k tokens); prompt maior que a janela é recusado (cai no fallback, se houver), nunca truncado |
 | `AUTO_EDIT_LLM_FALLBACK` | — | CLI fallback se primário falhar |
 | `AUTO_EDIT_END_PADDING` | `0.2` | Segundos adicionados ao final de cada segmento mantido |
 | `AUTO_EDIT_LANGUAGE` | `pt` | Idioma do áudio para transcrição |
