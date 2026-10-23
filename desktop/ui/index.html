@@ -557,6 +557,7 @@
             <figure><div class="sty-shot" data-kind="thumbnail"><img alt="" /><div class="sty-spin"></div></div><figcaption>Thumbnail</figcaption></figure>
             <figure><div class="sty-shot" data-kind="lower_third"><img alt="" /><div class="sty-spin"></div></div><figcaption>Nome na tela</figcaption></figure>
             <figure><div class="sty-shot" data-kind="cta"><img alt="" /><div class="sty-spin"></div></div><figcaption>Chamada pra se inscrever</figcaption></figure>
+            <figure class="sty-fig-vert"><div class="sty-shot" data-kind="caption"><img alt="" /><div class="sty-spin"></div></div><figcaption>Legenda</figcaption></figure>
           </div>
 
           <div class="sty-editor" id="sty-editor" hidden>
@@ -605,6 +606,26 @@
                   <option value="bottom-center">embaixo, no centro</option><option value="bottom-right">embaixo, à direita</option><option value="top-right">em cima, à direita</option></select></label>
                 <div id="sty-steps"></div>
                 <a href="#" id="sty-step-add">+ adicionar passo</a>
+              </fieldset>
+              <fieldset>
+                <legend>Legenda</legend>
+                <label class="field"><span>Posição</span><select class="input" data-tok="captions.position">
+                  <option value="top">topo</option><option value="middle">meio</option><option value="bottom">embaixo</option></select></label>
+                <label class="field"><span>Altura da margem <b data-out="captions.offset"></b></span><input type="range" min="0" max="40" step="1" data-tok="captions.offset" data-num /></label>
+                <label class="field"><span>Tamanho <b data-out="captions.size"></b></span><input type="range" min="50" max="200" step="5" data-tok="captions.size" data-num /></label>
+                <label class="field"><span>Fonte</span><select class="input" data-tok="captions.font" data-fonts></select></label>
+                <div class="sty-colors">
+                  <label><input type="color" data-tok="captions.color" /><span>Texto</span></label>
+                  <label><input type="color" data-tok="captions.highlight" /><span>Destaque</span></label>
+                </div>
+                <label class="field"><span>Destaque da palavra</span><select class="input" data-tok="captions.highlight_mode">
+                  <option value="outline">contorno colorido</option><option value="fill">letra colorida</option><option value="box">caixa atrás da palavra</option></select></label>
+                <label class="field"><span>Contorno <b data-out="captions.outline"></b></span><input type="range" min="0" max="6" step="0.5" data-tok="captions.outline" data-num /></label>
+                <label class="field"><span>Fundo</span><select class="input" data-tok="captions.background">
+                  <option value="none">nenhum</option><option value="box">caixa</option></select></label>
+                <label class="field"><span>Palavras por vez</span><select class="input" data-tok="captions.words" data-num>
+                  <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+                <label class="check"><input type="checkbox" data-tok="captions.uppercase" /><span>TUDO EM MAIÚSCULAS</span></label>
               </fieldset>
             </div>
             <div class="sty-save">
