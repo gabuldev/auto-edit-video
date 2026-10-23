@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from auto_edit import api, engine, settings, styles
+from auto_edit import api, caption_style, engine, settings, styles
 
 
 @pytest.fixture
@@ -17,6 +17,12 @@ def home(tmp_path, monkeypatch):
 class TestValidate:
     def test_empty_is_the_default(self):
         assert styles.validate({}) == styles.validate(None) == styles.DEFAULT_TOKENS
+
+    def test_captions_default_and_presets(self):
+        assert styles.validate({})["captions"] == caption_style.DEFAULT
+        assert styles.PRESETS["padrao"]["tokens"]["captions"] == caption_style.DEFAULT
+        for sid, p in styles.PRESETS.items():
+            assert caption_style.validate(p["tokens"]["captions"]) == p["tokens"]["captions"], sid
 
     def test_bad_values_fall_back_one_by_one(self):
         t = styles.validate({
@@ -324,6 +330,13 @@ class TestShare:
         imported = styles.import_({"format": 1, "name": "Neon", "tokens": {"colors": {"accent": "#222222"}}})
         assert imported["id"] != first["id"] and imported["name"] == "Neon (2)"
         assert styles.get(first["id"])["tokens"]["colors"]["accent"] == "#111111"
+
+    def test_import_without_captions_gets_the_default(self, home):
+        s = styles.import_({"format": 1, "name": "Velho", "tokens": {"radius": 5}})
+        assert s["tokens"]["captions"] == caption_style.DEFAULT
+
+    def test_export_includes_captions(self, home):
+        assert styles.export("neon")["tokens"]["captions"]["font"] == "poppins"
 
     def test_import_junk_tokens_are_validated(self, home):
         s = styles.import_({"format": 1, "name": "", "tokens": {"radius": 9999}})

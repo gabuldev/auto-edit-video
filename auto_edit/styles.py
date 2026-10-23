@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from auto_edit import caption_style
 from auto_edit import config as cfg
 from auto_edit import overlay_assets
 from auto_edit import style_presets
@@ -62,6 +63,7 @@ DEFAULT_TOKENS: dict = {
     # "topic": the thumbnail's color follows the video's subject (the
     # thumbnail templates); "style": always this style's accent.
     "thumbnail": {"accent_from": "topic"},
+    "captions": caption_style.default(),
 }
 
 
@@ -90,6 +92,7 @@ PRESETS: dict[str, dict] = {
         fonts={"title": "bebas", "text": "poppins"},
         cta={"position": "bottom-right", "steps": _PLAIN_STEPS},
         thumbnail={"accent_from": "style"},
+        captions={"font": "poppins", "highlight": "#ffffff", "highlight_mode": "fill", "color": "#cfcfcf", "uppercase": False, "outline": 1},
     ),
     "neon": _preset(
         "Neon", "Verde neon sobre preto, bem arredondado.",
@@ -97,6 +100,7 @@ PRESETS: dict[str, dict] = {
         radius=34, fonts={"title": "anton", "text": "poppins"},
         cta={"position": "bottom-center", "steps": _PLAIN_STEPS},
         thumbnail={"accent_from": "style"},
+        captions={"font": "poppins", "highlight": "#39ff14", "highlight_mode": "fill"},
     ),
     "impacto": _preset(
         "Impacto", "Amarelo e preto, chamativo, animação rápida.",
@@ -107,6 +111,7 @@ PRESETS: dict[str, dict] = {
             {"icon": "like", "text": "DEIXA O LIKE!", "color": None},
         ]},
         thumbnail={"accent_from": "style"},
+        captions={"font": "anton", "highlight": "#ffd400", "highlight_mode": "box"},
     ),
 }
 
@@ -125,29 +130,29 @@ def _gallery(sid: str, name: str, description: str, accent: str, panel: str, tit
 
 # Ready-made thumbnail layouts (auto_edit/style_presets.py) with matching overlays.
 _gallery("rosto_gigante", "Rosto Gigante", "Você recortado com contorno branco e o título enorme em degradê.",
-         "#ffd400", "#000000", "luckiest", radius=16, speed=1.2)
+         "#ffd400", "#000000", "luckiest", radius=16, speed=1.2, captions={"font": "luckiest", "highlight": "#ffd400", "highlight_mode": "fill"})
 _gallery("tarja", "Tarja", "A última palavra numa faixa vermelha inclinada.",
-         "#e3122b", "#000000", "anton", radius=6, speed=1.2)
+         "#e3122b", "#000000", "anton", radius=6, speed=1.2, captions={"font": "anton", "highlight": "#e3122b", "highlight_mode": "box"})
 _gallery("neon_tech", "Neon Tech", "Escuro, com o título em camadas roxo e ciano.",
-         "#00e5ff", "#ff00e6", "bebas", "poppins", radius=30)
+         "#00e5ff", "#ff00e6", "bebas", "poppins", radius=30, captions={"font": "bebas", "highlight": "#00e5ff", "highlight_mode": "fill"})
 _gallery("limpo", "Limpo", "Pouco texto, muito respiro, uma cor só.",
-         "#4ade80", "#0a0a0a", "poppins", "poppins", radius=18, speed=0.85, panel_opacity=0.8)
+         "#4ade80", "#0a0a0a", "poppins", "poppins", radius=18, speed=0.85, panel_opacity=0.8, captions={"font": "poppins", "highlight": "#4ade80", "highlight_mode": "fill", "uppercase": False})
 _gallery("jornal", "Jornal", "Faixa de telejornal com selo vermelho.",
-         "#d90429", "#000000", "archivo", radius=0)
+         "#d90429", "#000000", "archivo", radius=0, captions={"font": "archivo", "highlight": "#d90429", "highlight_mode": "box", "background": "box"})
 _gallery("versus", "Versus", "Dois momentos lado a lado com um VS no meio.",
-         "#ff3b3b", "#000000", "luckiest", radius=20, speed=1.2)
+         "#ff3b3b", "#000000", "luckiest", radius=20, speed=1.2, captions={"font": "luckiest", "highlight": "#ff3b3b", "highlight_mode": "outline"})
 _gallery("painel", "Painel", "Painel de cor com borda inclinada e o vídeo ao lado.",
-         "#ffd400", "#1d1b4b", "montserrat", radius=12)
+         "#ffd400", "#1d1b4b", "montserrat", radius=12, captions={"font": "montserrat", "highlight": "#ffd400", "highlight_mode": "box"})
 _gallery("celular", "Celular", "O vídeo dentro de um celular inclinado.",
-         "#a3e635", "#3b0764", "lilita", "poppins", radius=26)
+         "#a3e635", "#3b0764", "lilita", "poppins", radius=26, captions={"font": "lilita", "highlight": "#a3e635", "highlight_mode": "fill"})
 _gallery("reacao", "Reação", "Você recortado reagindo e o momento num círculo.",
-         "#ffd400", "#000000", "luckiest", radius=20, speed=1.2)
+         "#ffd400", "#000000", "luckiest", radius=20, speed=1.2, captions={"font": "luckiest", "highlight": "#ffd400", "highlight_mode": "fill"})
 _gallery("quadrinho", "Quadrinho", "Título num balão de gibi e selo vermelho.",
-         "#e3122b", "#000000", "bangers", radius=24, speed=1.2)
+         "#e3122b", "#000000", "bangers", radius=24, speed=1.2, captions={"font": "bangers", "highlight": "#e3122b", "highlight_mode": "outline", "outline": 3})
 _gallery("ouro", "Preto e Ouro", "Sóbrio: título dourado sobre faixa escura.",
-         "#e8b84a", "#0b0b0b", "archivo", radius=4, speed=0.85)
+         "#e8b84a", "#0b0b0b", "archivo", radius=4, speed=0.85, captions={"font": "archivo", "highlight": "#e8b84a", "highlight_mode": "fill"})
 _gallery("card", "Card", "O título num cartão branco com sombra colorida.",
-         "#6d28d9", "#ffffff", "poppins", "poppins", radius=28)
+         "#6d28d9", "#ffffff", "poppins", "poppins", radius=28, captions={"font": "poppins", "highlight": "#6d28d9", "highlight_mode": "box"})
 
 
 class StyleError(ValueError):
@@ -209,6 +214,7 @@ def validate(tokens) -> dict:
         },
         "cta": {"position": _choice(cta.get("position"), POSITIONS_CTA, d["cta"]["position"]), "steps": steps},
         "thumbnail": _thumbnail(thumb),
+        "captions": caption_style.validate(t.get("captions")),
     }
 
 
