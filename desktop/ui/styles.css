@@ -437,5 +437,5 @@ textarea.input { resize: vertical; }
 .cap-stage { position: relative; width: min(270px, 100%); margin: 0 auto 6px; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; overflow: hidden; touch-action: none; }
 .cap-stage img { width: 100%; height: 100%; display: block; object-fit: contain; user-select: none; }
 .cap-stage.loading img { opacity: .6; }
-.cap-band { position: absolute; left: 4%; right: 4%; height: 36px; transform: translateY(-50%); border: 2px dashed #8ab4ff; border-radius: 6px; background: rgba(138, 180, 255, .12); cursor: ns-resize; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #cfe0ff; letter-spacing: .5px; text-transform: uppercase; }
+.cap-band { position: absolute; left: 4%; right: 4%; border: 2px dashed #8ab4ff; border-radius: 6px; background: rgba(138, 180, 255, .12); cursor: ns-resize; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #cfe0ff; letter-spacing: .5px; text-transform: uppercase; }
 .cap-band[hidden] { display: none; }

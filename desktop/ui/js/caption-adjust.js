@@ -8,7 +8,7 @@ import * as api from "./api.js";
 import { el } from "./shell.js";
 import { go } from "./router.js";
 
-const state = { id: null, adjust: {}, fast: true, seq: 0, timer: null, url: null, wired: false, drag: null };
+const state = { grab: 0, id: null, adjust: {}, fast: true, seq: 0, timer: null, url: null, wired: false, drag: null };
 
 const OLD_WARN = "Esse vídeo é de antes desta versão: vai recortar de novo (alguns minutos)";
 
@@ -19,24 +19,32 @@ function setError(msg) {
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-/** Vertical center of the band (0–1 of the height) for the current adjust. */
-function centerY(a) {
+/** Band height as a fraction of the stage: ~one caption line, follows the size. */
+const bandH = (a) => 0.07 * clamp(Number(a.size ?? 100), 50, 200) / 100;
+
+/** Top edge of the band (0–1). libass anchors the text by its edge: bottom →
+ * the bottom edge sits at (1 − offset); top → the top edge at offset. */
+function topY(a) {
   const off = clamp(Number(a.offset ?? 33), 0, 40) / 100;
+  const h = bandH(a);
   if (a.position === "top") return off;
-  if (a.position === "middle") return 0.5;
-  return 1 - off;
+  if (a.position === "middle") return 0.5 - h / 2;
+  return 1 - off - h;
 }
 
-function placeBand() {
+function placeBand(top = topY(state.adjust)) {
   const a = state.adjust;
   el("cap-band").hidden = Boolean(a.hidden);
-  el("cap-band").style.top = `${centerY(a) * 100}%`;
+  el("cap-band").style.top = `${top * 100}%`;
+  el("cap-band").style.height = `${bandH(a) * 100}%`;
 }
 
-function fromY(y) {
-  y = clamp(y, 0, 1);
-  if (y < 0.4) return { position: "top", offset: clamp(Math.round(y * 100), 0, 40) };
-  if (y > 0.6) return { position: "bottom", offset: clamp(Math.round((1 - y) * 100), 0, 40) };
+/** position/offset from the band's top edge, using the same anchoring. */
+function fromTop(top) {
+  const h = bandH(state.adjust);
+  const c = clamp(top, 0, 1 - h) + h / 2;
+  if (c < 0.4) return { position: "top", offset: clamp(Math.round((c - h / 2) * 100), 0, 40) };
+  if (c > 0.6) return { position: "bottom", offset: clamp(Math.round((1 - c - h / 2) * 100), 0, 40) };
   return { position: "middle", offset: state.adjust.offset ?? 33 };
 }
 
@@ -71,8 +79,10 @@ function requestPreview(now = false) {
 }
 
 async function load() {
+  const id = state.id;
   try {
-    const d = await api.videoCaptions(state.id);
+    const d = await api.videoCaptions(id);
+    if (id !== state.id) return;
     const c = d.captions || {};
     state.fast = d.fast !== false;
     state.adjust = {
@@ -81,12 +91,13 @@ async function load() {
       size: d.adjust?.size ?? c.size ?? 100,
       hidden: Boolean(d.adjust?.hidden ?? c.hidden),
     };
-    el("cap-note").textContent = state.fast ? "" : OLD_WARN;
-    el("cap-note").hidden = state.fast;
+    el("btn-cap-redo").textContent = state.fast ? "Regravar legenda" : "Regravar legenda (vai recortar, alguns minutos)";
+    el("btn-cap-redo").title = state.fast ? "" : OLD_WARN;
     el("cap-card").hidden = false;
     syncControls();
     requestPreview(true);
   } catch (err) {
+    if (id !== state.id) return;
     // Sem rota/sem legenda: o card simplesmente não aparece.
     el("cap-card").hidden = true;
   }
@@ -109,28 +120,33 @@ async function regravar() {
 
 function wire() {
   const band = el("cap-band");
+  const stageRect = () => el("cap-stage").getBoundingClientRect();
+  const topAt = (e) => {
+    const r = stageRect();
+    return clamp((e.clientY - r.top) / r.height - state.grab, 0, 1 - bandH(state.adjust));
+  };
   band.addEventListener("pointerdown", (e) => {
     band.setPointerCapture(e.pointerId);
     state.drag = e.pointerId;
+    // Onde na faixa o dedo/mouse pegou: a faixa não pula pro cursor.
+    const r = stageRect();
+    state.grab = (e.clientY - r.top) / r.height - topY(state.adjust);
     e.preventDefault();
   });
   band.addEventListener("pointermove", (e) => {
-    if (state.drag !== e.pointerId) return;
-    const r = el("cap-stage").getBoundingClientRect();
-    band.style.top = `${clamp((e.clientY - r.top) / r.height, 0, 1) * 100}%`;
+    if (state.drag === e.pointerId) placeBand(topAt(e));
   });
-  const end = (e) => {
+  band.addEventListener("pointerup", (e) => {
     if (state.drag !== e.pointerId) return;
     state.drag = null;
-    const r = el("cap-stage").getBoundingClientRect();
-    Object.assign(state.adjust, fromY((e.clientY - r.top) / r.height));
+    Object.assign(state.adjust, fromTop(topAt(e)));
     placeBand();
     requestPreview();
-  };
-  band.addEventListener("pointerup", end);
+  });
   band.addEventListener("pointercancel", () => { state.drag = null; placeBand(); });
   el("cap-size").addEventListener("input", () => {
     state.adjust.size = Number(el("cap-size").value);
+    placeBand();
     el("cap-size-val").textContent = `${state.adjust.size}%`;
     requestPreview();
   });

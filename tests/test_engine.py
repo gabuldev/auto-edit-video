@@ -700,6 +700,26 @@ class TestVideoCaptions:
         assert r.data == b"\x89PNGfake"
         assert seen["captions"]["position"] == "middle" and seen["size"] == (540, 960)
 
+    def test_preview_frame_comes_from_the_videos_own_source(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render, styles
+        ws = self._short(tmp_path, monkeypatch)
+        orig = tmp_path / "orig.mp4"
+        orig.write_bytes(b"x")
+        pj = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))
+        pj["video_path"] = str(orig)
+        (ws / "pipeline.json").write_text(json.dumps(pj), encoding="utf-8")
+        got = []
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: got.append(video))
+        monkeypatch.setattr(caption_render, "render_preview", lambda *a: b"png")
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        engine.video_caption_preview("vid", {})
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        engine.video_caption_preview("vid", {})
+        orig.unlink()
+        (ws / "edited_video.mp4").unlink()
+        engine.video_caption_preview("vid", {})
+        assert got == [orig, ws / "edited_video.mp4", None]
+
     def test_preview_render_failure_is_json_error(self, tmp_path, monkeypatch):
         from auto_edit import caption_render
         self._short(tmp_path, monkeypatch)

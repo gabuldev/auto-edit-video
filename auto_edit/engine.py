@@ -373,7 +373,16 @@ def video_caption_preview(video_id: str, adjust: dict) -> bytes:
     except RuntimeError as exc:
         raise styles.StyleError("ffmpeg sem libass: a prévia da legenda precisa do filtro subtitles") from exc
     edited = ws / "edited_video.mp4"
-    frame = styles.preview_frame_vertical(edited if edited.is_file() else None)
+    # O quadro é do próprio vídeo: o editado, senão o original (mesmo
+    # enquadramento); só sem nenhum dos dois cai no da biblioteca.
+    source = None
+    if edited.is_file():
+        source = edited
+    else:
+        orig = Path(str(p.get("video_path") or ""))
+        if p.get("video_path") and orig.is_file():
+            source = orig
+    frame = styles.preview_frame_vertical(source)
     try:
         return caption_render.render_preview(captions, frame, styles.CAPTION_W, styles.CAPTION_H)
     except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
