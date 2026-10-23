@@ -2,19 +2,21 @@
 // (PNG do motor) com uma faixa tracejada que se arrasta na vertical; tamanho e
 // esconder. Nada é salvo até "Regravar legenda": soltar a faixa só atualiza o
 // ajuste local e pede uma prévia nova (debounce). Regravar faz PUT e depois
-// resume(id, "caption"), e segue pra tela do pipeline.
+// resume(id, "caption", {captionOnly}), e segue pra tela do pipeline.
 
 import * as api from "./api.js";
 import { el } from "./shell.js";
 import { go } from "./router.js";
 
-const state = { grab: 0, startY: 0, id: null, adjust: {}, fast: true, seq: 0, timer: null, url: null, wired: false, drag: null };
+const state = { grab: 0, startY: 0, id: null, adjust: {}, fast: true, sourceOk: true, blocked: "", seq: 0, timer: null, url: null, wired: false, drag: null };
 
 const OLD_WARN = "Esse vídeo é de antes desta versão: vai recortar de novo (alguns minutos)";
 
+/** Mostra `msg`; sem ele, o motivo de Regravar estar desligado (se houver). */
 function setError(msg) {
-  el("cap-error").hidden = !msg;
-  el("cap-error").textContent = msg || "";
+  const text = msg || state.blocked;
+  el("cap-error").hidden = !text;
+  el("cap-error").textContent = text || "";
 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -85,6 +87,7 @@ async function load() {
     if (id !== state.id) return;
     const c = d.captions || {};
     state.fast = d.fast !== false;
+    state.sourceOk = state.fast || d.source_ok !== false;
     state.adjust = {
       position: d.adjust?.position ?? c.position ?? "bottom",
       offset: d.adjust?.offset ?? c.offset ?? 33,
@@ -93,6 +96,11 @@ async function load() {
     };
     el("btn-cap-redo").textContent = state.fast ? "Regravar legenda" : "Regravar legenda (vai recortar, alguns minutos)";
     el("btn-cap-redo").title = state.fast ? "" : OLD_WARN;
+    // Sem o corte e sem o original não dá pra recortar: regravar quebraria o vídeo.
+    state.blocked = state.sourceOk ? "" : missingSource(d.video_path);
+    el("btn-cap-redo").disabled = !state.sourceOk;
+    el("btn-cap-redo").title = state.blocked || el("btn-cap-redo").title;
+    setError("");
     el("cap-card").hidden = false;
     syncControls();
     requestPreview(true);
@@ -103,18 +111,22 @@ async function load() {
   }
 }
 
+const missingSource = (path) =>
+  `O vídeo original não está mais em ${path || "(sem caminho)"}; sem ele não dá pra recortar e regravar a legenda`;
+
 async function regravar() {
   const btn = el("btn-cap-redo");
+  if (!state.sourceOk) return;
   btn.disabled = true;
   setError("");
   try {
     await api.saveVideoCaptions(state.id, state.adjust);
-    await api.resume(state.id, "caption");
+    await api.resume(state.id, "caption", { captionOnly: true });
     go(`/video/${encodeURIComponent(state.id)}`);
   } catch (err) {
     setError(String(err.message || err));
   } finally {
-    btn.disabled = false;
+    btn.disabled = !state.sourceOk;
   }
 }
 
@@ -164,6 +176,7 @@ function wire() {
 export function mountCaptionAdjust(id) {
   if (!state.wired) { wire(); state.wired = true; }
   state.id = id;
+  state.blocked = "";
   el("cap-card").hidden = true;
   setError("");
   load();

@@ -23,7 +23,7 @@ Endpoints
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run, cold_open, reorder,
                                     overlays_dir}
-    POST /api/videos/<id>/resume   {from_stage, overlays_dir}
+    POST /api/videos/<id>/resume   {from_stage, overlays_dir, caption_only?}
     POST /api/videos/<id>/stop     para o que está rodando (job, ralph avulso, fila)
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
     POST /api/videos/<id>/shorts       {max_dur}  roda o clipper (job, SSE)
@@ -251,7 +251,10 @@ def create_app(jobs: engine.JobManager | None = None):
         if not from_stage:
             return jsonify({"error": "from_stage is required"}), 400
         try:
-            job = jobs.resume_edit(video_id, from_stage, overlays_dir=body.get("overlays_dir"))
+            job = jobs.resume_edit(
+                video_id, from_stage, overlays_dir=body.get("overlays_dir"),
+                caption_only=body.get("caption_only") is True,
+            )
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
         except ValueError as exc:

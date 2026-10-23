@@ -185,9 +185,18 @@ def recaption(workspace: Path) -> str:
 
     With the uncaptioned cut (`edited_video.mp4`) it starts at caption; older
     videos lost it, so execute runs again first. Returns the starting stage.
+    Raises ValueError (nothing touched) when execute would be needed but the
+    original video is gone: re-running it would flip a finished video to failed.
     """
     pipeline = load(workspace)
     start = "caption" if (workspace / "edited_video.mp4").exists() else "execute"
+    if start == "execute":
+        source = str(pipeline.get("video_path") or "")
+        if not source or not Path(source).is_file():
+            raise ValueError(
+                f"o vídeo original não está mais em {source}; "
+                "sem ele não dá pra recortar e regravar a legenda"
+            )
     for s in (["caption"] if start == "caption" else ["execute", "caption"]):
         pipeline["stages"][s] = {"status": "pending"}
     pipeline["current_stage"] = start

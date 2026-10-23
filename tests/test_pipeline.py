@@ -181,6 +181,23 @@ class TestRecaption:
             p = pl.set_stage_status(workspace, st, "complete")
         assert p["current_stage"] == "metadata"
 
+    def test_loop_back_clears_caption_only(self, workspace):
+        self._done_short(workspace, True)
+        pl.recaption(workspace)
+        assert pl.load(workspace)["caption_only"] is True
+        p = pl.loop_back(workspace)
+        assert "caption_only" not in p and "caption_only" not in pl.load(workspace)
+
+    def test_without_edited_video_nor_original_refuses_untouched(self, workspace):
+        self._done_short(workspace, False)
+        p = pl.load(workspace)
+        p["video_path"] = str(workspace / "sumiu.mp4")
+        pl.save(workspace, p)
+        before = pl.load(workspace)
+        with pytest.raises(ValueError, match="sumiu.mp4"):
+            pl.recaption(workspace)
+        assert pl.load(workspace) == before
+
     def test_finalize_short_keeps_edited_video(self, workspace):
         (workspace / "captioned_video.mp4").write_text("c")
         (workspace / "edited_video.mp4").write_text("e")

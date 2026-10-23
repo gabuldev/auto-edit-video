@@ -329,10 +329,15 @@ def video_captions(video_id: str) -> dict:
     from auto_edit import caption_style as cs
 
     ws, p = _short_workspace(video_id)
+    fast = (ws / "edited_video.mp4").is_file()
+    source = str(p.get("video_path") or "")
     return {
         "captions": cs.resolve(p),
         "adjust": _adjust_of(p),
-        "fast": (ws / "edited_video.mp4").is_file(),
+        "fast": fast,
+        # Without the cut, regravar re-runs execute from the original video.
+        "source_ok": fast or (bool(source) and Path(source).is_file()),
+        "video_path": source,
     }
 
 
@@ -365,7 +370,8 @@ def video_caption_preview(video_id: str, adjust: dict) -> bytes:
     ws, p = _short_workspace(video_id)
     adjust = adjust if isinstance(adjust, dict) else {}
     valid = cs.validate(adjust)
-    saved = dict(p.get("caption_style") or {})
+    saved = p.get("caption_style")
+    saved = dict(saved) if isinstance(saved, dict) else {}
     saved.update({k: valid[k] for k in cs.ADJUST_KEYS if k in adjust})
     captions = cs.resolve({**p, "caption_style": saved})
     try:
@@ -1153,14 +1159,19 @@ class JobManager:
             ),
         )
 
-    def resume_edit(self, video_id: str, from_stage: str, *, overlays_dir: str | None = None) -> Job:
+    def resume_edit(
+        self, video_id: str, from_stage: str, *, overlays_dir: str | None = None,
+        caption_only: bool = False,
+    ) -> Job:
         ws = library_root() / video_id
         if not (ws / "pipeline.json").exists():
             raise FileNotFoundError(f"no workspace for: {video_id}")
         p = pl.load(ws)
         if from_stage not in pl.STAGES:
             raise ValueError(f"unknown stage: {from_stage}")
-        if from_stage == "caption" and p.get("type") == "short":
+        if caption_only and from_stage == "caption" and p.get("type") == "short":
+            # Only re-burn the captions (metadata/thumbnail stay). A plain
+            # resume from caption (failed/interrupted) runs everything after it.
             # Check before touching pipeline.json: a busy video stays as it is.
             if self._busy(video_id):
                 raise ValueError(f"{video_id} já tem um job rodando")

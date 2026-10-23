@@ -32,11 +32,12 @@ export const savePlan = (id, kept_segments) =>
     body: JSON.stringify({ kept_segments }),
   });
 
-export const resume = (id, from_stage) =>
+/** `captionOnly`: só regravar a legenda do short (metadata/thumbnail ficam). */
+export const resume = (id, from_stage, { captionOnly = false } = {}) =>
   json(`/api/videos/${encodeURIComponent(id)}/resume`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ from_stage }),
+    body: JSON.stringify(captionOnly ? { from_stage, caption_only: true } : { from_stage }),
   });
 
 export const browse = (dir) =>

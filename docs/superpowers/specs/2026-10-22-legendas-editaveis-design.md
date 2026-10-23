@@ -121,9 +121,9 @@ mudam.
   `hidden` em `pipeline.json["caption_style"]` (o resto vem do estilo gravado).
 - Prévia usa um frame do próprio vídeo cortado.
 - API nova: `GET/PUT /api/videos/<id>/captions` (ajuste atual / salvar) e
-  "Regravar" = `POST /api/videos/<id>/resume {from_stage: "caption"}` (existe).
-  Depois do caption, o pipeline segue normal (metadata e thumbnail não refazem:
-  o resume para no `done` se só a legenda foi pedida — ver "Para o builder").
+  "Regravar" = `POST /api/videos/<id>/resume {from_stage: "caption", caption_only: true}`.
+  Só com `caption_only` o resume para no `done` depois do caption (metadata e
+  thumbnail não refazem); o "Retomar" comum de caption segue normal.
 
 ### 6. Guardar o vídeo sem legenda
 
@@ -131,7 +131,9 @@ mudam.
   `edited_video.mp4` do short (é ele que recebe a legenda). Custo: ~1 cópia do
   short em disco (dezenas a ~100 MB).
 - Vídeo feito antes disso não tem a cópia: "Regravar" avisa que vai recortar
-  (alguns minutos) e roda `resume --from execute`.
+  (alguns minutos) e roda `resume --from execute`. Sem o vídeo original
+  (`video_path`) também, o botão fica desligado com o motivo (e a API recusa
+  com 400): recortar falharia e o vídeo pronto viraria "falhou".
 
 ## Testes
 
