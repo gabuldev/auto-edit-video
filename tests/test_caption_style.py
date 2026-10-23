@@ -90,7 +90,8 @@ def test_broken_settings_records_default(home, tmp_path, monkeypatch):
     assert _recorded(ws) == caption_style.DEFAULT
 
 
-def test_derived_short_inherits_long_captions(home, tmp_path):
+def test_derived_short_records_active_style_not_long_captions(home, tmp_path):
+    settings.save({**settings.load(), "style": "neon"})
     long_ws = tmp_path / "L"
     long_ws.mkdir()
     (long_ws / "edited_video.mp4").write_text("")
@@ -101,7 +102,9 @@ def test_derived_short_inherits_long_captions(home, tmp_path):
     cap = caption_style.validate({"font": "anton", "size": 120})
     lp = {"type": "long", "video_name": "L", "captions": cap, "context": "x"}
     ws = shorts.seed_short_workspace(long_ws, lp, {"start": 1.0, "end": 30.0, "hook": "h"}, 1)
-    assert _recorded(ws) == cap
+    expected = caption_style.validate(styles.PRESETS["neon"]["tokens"]["captions"])
+    assert expected != cap
+    assert _recorded(ws) == expected
 
 
 def _cli_style(monkeypatch, tmp_path, args):

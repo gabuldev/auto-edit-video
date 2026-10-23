@@ -9,7 +9,7 @@ from pathlib import Path
 from auto_edit import caption_style, pipeline as pl
 
 
-def _active_captions() -> dict:
+def active_captions() -> dict:
     """Legenda do estilo ativo, validada; qualquer problema vira o default."""
     try:
         from auto_edit import styles
@@ -65,7 +65,7 @@ def init_workspace(
         caption_style=caption_style or {},
         language=language,
         plan_id=plan_id,
-        captions=_active_captions(),
+        captions=active_captions(),
     )
     return ws
 
