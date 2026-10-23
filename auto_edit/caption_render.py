@@ -26,6 +26,9 @@ _MARGIN_X = 10
 _HIGHLIGHT_BORDER = 5 / 3  # highlight outline = outline × 5/3 (1.5 → 2.5)
 _HIGHLIGHT_BLUR = 0.8
 _BOX_PAD = 3  # box padding around the glyphs, at base size
+# Today's captions asked for "Montserrat" and libass fell back to Helvetica
+# Bold, whose (win ascent + descent)/em is 1.192: that is the em to keep.
+_BASE_HEIGHT_RATIO = 1.192
 _BLACK = "&H000000&"
 
 
@@ -54,6 +57,16 @@ def _font_spec(font_id: str) -> dict:
     return styles.FONTS.get(font_id) or styles.FONTS[caption_style.DEFAULT["font"]]
 
 
+def _tables(data: bytes) -> dict[bytes, int]:
+    """sfnt table tag → offset."""
+    (num_tables,) = struct.unpack(">H", data[4:6])
+    out = {}
+    for i in range(num_tables):
+        tag, _, offset, _ = struct.unpack(">4sIII", data[12 + 16 * i:28 + 16 * i])
+        out[tag] = offset
+    return out
+
+
 def _name_table_family(path: Path) -> str | None:
     """Legacy family (name ID 1) of a TTF — the name libass matches.
 
@@ -63,24 +76,46 @@ def _name_table_family(path: Path) -> str | None:
     """
     try:
         data = path.read_bytes()
-        (num_tables,) = struct.unpack(">H", data[4:6])
-        for i in range(num_tables):
-            tag, _, offset, _ = struct.unpack(">4sIII", data[12 + 16 * i:28 + 16 * i])
-            if tag != b"name":
+        offset = _tables(data).get(b"name")
+        if offset is None:
+            return None
+        _, count, strings = struct.unpack(">HHH", data[offset:offset + 6])
+        found: dict[int, str] = {}
+        for r in range(count):
+            rec = offset + 6 + 12 * r
+            platform, _, _, name_id, length, start = struct.unpack(">HHHHHH", data[rec:rec + 12])
+            if name_id != 1 or platform not in (1, 3):
                 continue
-            _, count, strings = struct.unpack(">HHH", data[offset:offset + 6])
-            found: dict[int, str] = {}
-            for r in range(count):
-                rec = offset + 6 + 12 * r
-                platform, _, _, name_id, length, start = struct.unpack(">HHHHHH", data[rec:rec + 12])
-                if name_id != 1 or platform not in (1, 3):
-                    continue
-                raw = data[offset + strings + start:offset + strings + start + length]
-                found.setdefault(platform, raw.decode("utf-16-be" if platform == 3 else "mac-roman"))
-            return found.get(3) or found.get(1)
+            raw = data[offset + strings + start:offset + strings + start + length]
+            found.setdefault(platform, raw.decode("utf-16-be" if platform == 3 else "mac-roman"))
+        return found.get(3) or found.get(1)
     except (OSError, struct.error, UnicodeDecodeError):
         return None
-    return None
+
+
+def _height_ratio(path: Path) -> float | None:
+    """(ascent + descent) / unitsPerEm as libass sizes the font: OS/2 win
+    metrics, hhea when they're missing. libass makes this height = Fontsize."""
+    try:
+        data = path.read_bytes()
+        tables = _tables(data)
+        (upem,) = struct.unpack(">H", data[tables[b"head"] + 18:tables[b"head"] + 20])
+        os2 = tables.get(b"OS/2")
+        if os2 is not None:
+            win_ascent, win_descent = struct.unpack(">HH", data[os2 + 74:os2 + 78])
+            if win_ascent + win_descent:
+                return (win_ascent + win_descent) / upem
+        ascent, descent = struct.unpack(">hh", data[tables[b"hhea"] + 4:tables[b"hhea"] + 8])
+        return (ascent - descent) / upem if upem and ascent - descent else None
+    except (OSError, KeyError, struct.error):
+        return None
+
+
+def size_factor(font_id: str) -> float:
+    """Fontsize multiplier that gives every font the em of today's captions."""
+    path = styles.font_file(_font_spec(font_id)["bold"])
+    ratio = _height_ratio(path) if path else None
+    return ratio / _BASE_HEIGHT_RATIO if ratio else 1.0
 
 
 def font_family(font_id: str) -> str:
@@ -136,7 +171,7 @@ def build_ass(groups: list[list[dict]], captions: dict, width: int, height: int)
     subs.info["PlayResY"] = str(height)
     subs.info["ScaledBorderAndShadow"] = "yes"
 
-    fontsize = round(_FONT_SIZE * s * c["size"] / 100, 2)
+    fontsize = round(_FONT_SIZE * s * c["size"] / 100 * size_factor(c["font"]), 2)
     outline = round(c["outline"] * s, 2)
     st = pysubs2.SSAStyle()
     st.fontname = font_family(c["font"])

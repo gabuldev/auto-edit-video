@@ -19,7 +19,9 @@ def test_default_matches_todays_geometry_on_1080x1920():
     assert ass.info["PlayResX"] == "1080" and ass.info["PlayResY"] == "1920"
     assert ass.info["ScaledBorderAndShadow"] == "yes"
     assert s.alignment == 2 and s.marginv == pytest.approx(95 / 288 * 1920, abs=2)
-    assert s.fontsize == pytest.approx(14 / 288 * 1920, abs=0.5)
+    # libass sizes Montserrat by its win ascent+descent (1.562 em); today's
+    # captions rendered in Helvetica Bold (1.192 em) — keep that em
+    assert s.fontsize == pytest.approx(14 / 288 * 1920 * 1.562 / 1.192, abs=0.5)
     assert s.outline == pytest.approx(1.5 / 288 * 1920, abs=0.05)
     assert s.marginl == s.marginr == round(10 * 1080 / 384)
     assert s.fontname == "Montserrat ExtraBold" and s.bold is False
@@ -53,7 +55,7 @@ def test_size_font_colors_words_uppercase():
     ass = caption_render.build_ass([[W1, W2]], c, 1080, 1920)
     s = _style(ass)
     assert s.fontname == "Bangers"
-    assert s.fontsize == pytest.approx(1.5 * 14 / 288 * 1920, abs=0.5)
+    assert s.fontsize == pytest.approx(1.5 * 14 / 288 * 1920 * 1.757 / 1.192, abs=0.5)
     first = ass.events[0].text
     assert "hello" in first and "HELLO" not in first
     assert "\\1c&H0045FF&" in first  # spoken word filled with the highlight
@@ -112,6 +114,12 @@ def test_prepare_fonts_has_only_the_chosen_file(tmp_path):
     # switching font leaves only the new one
     caption_render.prepare_fonts("bangers", tmp_path)
     assert [p.name for p in (tmp_path / name).iterdir()] == ["Bangers-Regular.ttf"]
+
+
+def test_size_factor_gives_every_font_the_same_em():
+    assert caption_render.size_factor("montserrat") == pytest.approx(1.562 / 1.192, abs=0.001)
+    assert caption_render.size_factor("anton") == pytest.approx(3550 / 2048 / 1.192, abs=0.001)
+    assert caption_render.size_factor("nope") == caption_render.size_factor("montserrat")
 
 
 def test_font_family_is_the_name_libass_matches():
@@ -186,3 +194,49 @@ def test_background_and_box_highlight_get_their_own_layers():
     assert [e.layer for e in first] == [0, 1, 2]
     assert "\\3a&H60&" in first[0].text and "\\3a&H00&" in first[1].text
     assert first[2].style == "Default"
+
+
+def _cap_height(png: bytes) -> int:
+    import io
+
+    from PIL import Image
+
+    im = Image.open(io.BytesIO(png)).convert("L").point(lambda v: 255 if v > 128 else 0)
+    box = im.getbbox()
+    return box[3] - box[1]
+
+
+@pytest.mark.skipif(_FFMPEG is None, reason="sem ffmpeg com libass")
+def test_default_keeps_todays_caption_size(tmp_path):
+    """Old ASS (no PlayRes, "Montserrat" bold → system fallback) vs the new
+    default: same cap height within 5%."""
+    old = tmp_path / "old"
+    old.mkdir()
+    (old / "fonts").mkdir()
+    (old / "captions.ass").write_text(
+        "[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
+        "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
+        "MarginR, MarginV, Encoding\n"
+        "Style: Default,Montserrat,14,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,10,10,95,1\n"
+        "\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,HHH\n"
+    )
+    run = [_FFMPEG, "-y", "-v", "debug", "-f", "lavfi", "-i", "color=black:s=540x960:d=1",
+           "-vf", "subtitles=captions.ass:fontsdir=fonts", "-frames:v", "1", "frame.png"]
+    log = subprocess.run(run, cwd=old, capture_output=True, text=True).stderr
+    if "Helvetica-Bold" not in log:
+        pytest.skip("fallback do sistema não é a Helvetica Bold")
+
+    new = tmp_path / "new"
+    new.mkdir()
+    tokens = caption_style.validate({"outline": 0})
+    caption_render.build_ass([[{"word": "HHH", "start": 0.0, "end": 5.0}]], tokens, 540, 960).save(
+        str(new / "captions.ass"))
+    vf = f"subtitles=captions.ass:fontsdir={caption_render.prepare_fonts('montserrat', new)}"
+    subprocess.run([_FFMPEG, "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=540x960:d=1",
+                    "-vf", vf, "-frames:v", "1", "frame.png"], cwd=new, check=True)
+
+    before = _cap_height((old / "frame.png").read_bytes())
+    after = _cap_height((new / "frame.png").read_bytes())
+    assert after == pytest.approx(before, rel=0.05), (before, after)
