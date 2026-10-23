@@ -115,6 +115,9 @@ def set_stage_status(workspace: Path, stage: str, status: str, error: str | None
             if pipeline["stages"].get(next_stage, {}).get("status") != "skip":
                 pipeline["current_stage"] = next_stage
                 break
+        # Re-burning only the captions: nothing after caption is redone.
+        if stage == "caption" and pipeline.pop("caption_only", None):
+            pipeline["current_stage"] = "done"
 
     elif status == "failed":
         pipeline["stages"][stage]["failed_at"] = _now()
@@ -173,6 +176,22 @@ def set_stage(workspace: Path, stage: str) -> dict:
 
     save(workspace, pipeline)
     return pipeline
+
+
+def recaption(workspace: Path) -> str:
+    """Redo only the caption burn (metadata/thumbnail stay as they are).
+
+    With the uncaptioned cut (`edited_video.mp4`) it starts at caption; older
+    videos lost it, so execute runs again first. Returns the starting stage.
+    """
+    pipeline = load(workspace)
+    start = "caption" if (workspace / "edited_video.mp4").exists() else "execute"
+    for s in (["caption"] if start == "caption" else ["execute", "caption"]):
+        pipeline["stages"][s] = {"status": "pending"}
+    pipeline["current_stage"] = start
+    pipeline["caption_only"] = True
+    save(workspace, pipeline)
+    return start
 
 
 def finalize(workspace: Path) -> Path:
@@ -242,9 +261,9 @@ def _cleanup_workspace(workspace: Path, video_type: str) -> None:
     # Always remove extracted audio (no longer needed)
     _remove_if_exists(workspace / "audio.wav")
 
-    # For shorts: remove edited_video (captioned_video is the final)
+    # For shorts: remove overlaid_video (captioned_video is the final).
+    # edited_video stays: it's the uncaptioned cut that recaption burns again.
     if video_type == "short":
-        _remove_if_exists(workspace / "edited_video.mp4")
         _remove_if_exists(workspace / "overlaid_video.mp4")
 
     # Remove any leftover claude prompt/output temp files

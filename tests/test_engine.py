@@ -170,6 +170,49 @@ class TestJobManager:
         assert job.status == "done"  # auto-emitted on clean finish
 
 
+class TestResumeRecaption:
+    def _setup(self, tmp_path, monkeypatch, vtype):
+        from auto_edit import pipeline as pl
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        ws = tmp_path / "v"
+        ws.mkdir()
+        pl.init(ws, tmp_path / "v.mp4", vtype, "")
+        calls = []
+        monkeypatch.setattr(engine, "run_workspace", lambda *a, **k: calls.append(1) or 0)
+        return ws, calls
+
+    def test_short_caption_uses_recaption(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        (ws / "edited_video.mp4").write_text("x")
+        mgr = engine.JobManager()
+        mgr.resume_edit("v", "caption")
+        p = pl.load(ws)
+        assert p["caption_only"] is True
+        assert p["current_stage"] == "caption"
+
+    def test_short_caption_refused_while_job_running(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        mgr = engine.JobManager()
+        release = threading.Event()
+        mgr._spawn("v", "edit", lambda emit: release.wait(2))
+        before = pl.load(ws)
+        with pytest.raises(ValueError):
+            mgr.resume_edit("v", "caption")
+        assert pl.load(ws) == before
+        release.set()
+
+    def test_long_caption_behaves_as_before(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "long")
+        mgr = engine.JobManager()
+        mgr.resume_edit("v", "caption")
+        p = pl.load(ws)
+        assert "caption_only" not in p
+        assert p["current_stage"] == "caption"
+
+
 # ── run_workspace ─────────────────────────────────────────────────────────────
 
 class _FakeProc:

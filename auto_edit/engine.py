@@ -1076,7 +1076,13 @@ class JobManager:
         p = pl.load(ws)
         if from_stage not in pl.STAGES:
             raise ValueError(f"unknown stage: {from_stage}")
-        pl.set_stage(ws, from_stage)
+        if from_stage == "caption" and p.get("type") == "short":
+            # Check before touching pipeline.json: a busy video stays as it is.
+            if self._busy(video_id):
+                raise ValueError(f"{video_id} já tem um job rodando")
+            pl.recaption(ws)
+        else:
+            pl.set_stage(ws, from_stage)
         return self._spawn(
             video_id,
             "resume",

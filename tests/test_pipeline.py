@@ -133,6 +133,53 @@ class TestSetStage:
         assert p["stages"]["extract"]["status"] == "complete"
 
 
+class TestRecaption:
+    def _done_short(self, ws, with_edited):
+        for st in pl.STAGES[:-1]:
+            if st != "overlay":
+                pl.set_stage_status(ws, st, "complete")
+        if with_edited:
+            (ws / "edited_video.mp4").write_text("x")
+
+    def test_with_edited_video_starts_at_caption_then_done(self, workspace):
+        self._done_short(workspace, True)
+        assert pl.recaption(workspace) == "caption"
+        p = pl.load(workspace)
+        assert p["current_stage"] == "caption"
+        assert p["caption_only"] is True
+        assert p["stages"]["caption"]["status"] == "pending"
+        assert p["stages"]["execute"]["status"] == "complete"
+        p = pl.set_stage_status(workspace, "caption", "complete")
+        assert p["current_stage"] == "done"
+        assert "caption_only" not in p
+        assert p["stages"]["metadata"]["status"] == "complete"
+        assert p["stages"]["thumbnail"]["status"] == "complete"
+
+    def test_without_edited_video_reexecutes_only(self, workspace):
+        self._done_short(workspace, False)
+        assert pl.recaption(workspace) == "execute"
+        p = pl.load(workspace)
+        assert p["current_stage"] == "execute"
+        assert p["stages"]["execute"]["status"] == "pending"
+        assert p["stages"]["caption"]["status"] == "pending"
+        assert p["stages"]["evaluate"]["status"] == "complete"
+        p = pl.set_stage_status(workspace, "execute", "complete")
+        assert p["current_stage"] == "caption"
+        assert p["caption_only"] is True
+        p = pl.set_stage_status(workspace, "caption", "complete")
+        assert p["current_stage"] == "done"
+        assert p["stages"]["metadata"]["status"] == "complete"
+        assert p["stages"]["thumbnail"]["status"] == "complete"
+
+    def test_finalize_short_keeps_edited_video(self, workspace):
+        (workspace / "captioned_video.mp4").write_text("c")
+        (workspace / "edited_video.mp4").write_text("e")
+        (workspace / "overlaid_video.mp4").write_text("o")
+        pl.finalize(workspace)
+        assert (workspace / "edited_video.mp4").exists()
+        assert not (workspace / "overlaid_video.mp4").exists()
+
+
 # ── _merge_target ────────────────────────────────────────────────────────────
 
 class TestMergeTarget:
