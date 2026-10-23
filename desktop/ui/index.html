@@ -307,6 +307,32 @@
               <video id="res-video" class="player" controls preload="metadata"></video>
             </div>
 
+            <div class="card" id="cap-card" hidden>
+              <div class="card-head">
+                <div>
+                  <h2>Ajustar legenda</h2>
+                  <p>arraste a faixa pra mover a legenda; só regrava a legenda, o resto do vídeo fica.</p>
+                </div>
+              </div>
+              <div id="cap-error" class="banner err" hidden></div>
+              <div class="cap-stage" id="cap-stage">
+                <img id="cap-img" alt="prévia da legenda" draggable="false" />
+                <div class="cap-band" id="cap-band"><span>legenda</span></div>
+              </div>
+              <label class="field">
+                <span>Tamanho <b id="cap-size-val">100%</b></span>
+                <input type="range" id="cap-size" min="50" max="200" step="5" value="100" />
+              </label>
+              <label class="check">
+                <input type="checkbox" id="cap-hidden" />
+                <span>Esconder legenda</span>
+              </label>
+              <p class="pub-note" id="cap-note" hidden></p>
+              <div class="pub-actions">
+                <button class="btn btn-primary" id="btn-cap-redo">Regravar legenda</button>
+              </div>
+            </div>
+
             <div class="card" id="ret-card" hidden>
               <div class="card-head ret-head">
                 <div>

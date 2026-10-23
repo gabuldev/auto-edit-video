@@ -171,3 +171,18 @@ export async function stylePreview(tokens, kind) {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `prévia → ${r.status}`);
   return URL.createObjectURL(await r.blob());
 }
+
+// ── Legenda por vídeo (short) ───────────────────────────────────────────────
+export const videoCaptions = (id) => json(`/api/videos/${encodeURIComponent(id)}/captions`);
+export const saveVideoCaptions = (id, adjust) =>
+  json(`/api/videos/${encodeURIComponent(id)}/captions`, sendJson("PUT", adjust));
+
+/** A blob: URL with the PNG of the vertical preview, with `adjust` over the saved one. */
+export async function videoCaptionPreview(id, adjust) {
+  const r = await fetch(`${API}/api/videos/${encodeURIComponent(id)}/captions/preview`, {
+    ...sendJson("POST", adjust),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `prévia → ${r.status}`);
+  return URL.createObjectURL(await r.blob());
+}
