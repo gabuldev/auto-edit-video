@@ -240,3 +240,18 @@ def test_default_keeps_todays_caption_size(tmp_path):
     before = _cap_height((old / "frame.png").read_bytes())
     after = _cap_height((new / "frame.png").read_bytes())
     assert after == pytest.approx(before, rel=0.05), (before, after)
+
+
+@pytest.mark.skipif(_FFMPEG is None, reason="sem ffmpeg com libass")
+def test_render_preview_is_a_png_in_the_chosen_font():
+    montserrat = caption_render.render_preview(caption_style.validate({"font": "montserrat"}), None, 540, 960)
+    bangers = caption_render.render_preview(caption_style.validate({"font": "bangers"}), None, 540, 960)
+    assert montserrat.startswith(b"\x89PNG") and bangers.startswith(b"\x89PNG")
+    assert montserrat != bangers
+
+
+def test_preview_words_highlight_the_third_or_the_last():
+    words, hl = caption_render.preview_words(4)
+    assert [w["word"] for w in words] == ["Editei", "esse", "vídeo", "com"] and hl == 2
+    words, hl = caption_render.preview_words(1)
+    assert len(words) == 1 and hl == 0

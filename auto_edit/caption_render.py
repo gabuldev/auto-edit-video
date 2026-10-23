@@ -242,17 +242,71 @@ def build_ass(groups: list[list[dict]], captions: dict, width: int, height: int)
 
 # ── Burning ───────────────────────────────────────────────────────────────────
 
+def _subtitles_filter(ass_name: str, fonts_name: str) -> str:
+    return f"subtitles={ass_name}:fontsdir={fonts_name}"
+
+
 def burn_command(ffmpeg: str, video: Path, ass_name: str, fonts_name: str, output: Path) -> list[str]:
     """Run with cwd = the ASS folder: the filter only sees relative names, so
     drive letters, spaces and accents in the path never reach it."""
     return [
         ffmpeg, "-y",
         "-i", str(Path(video).absolute()),
-        "-vf", f"subtitles={ass_name}:fontsdir={fonts_name}",
+        "-vf", _subtitles_filter(ass_name, fonts_name),
         "-c:a", "copy",
         "-movflags", "+faststart", "-brand", "mp42",
         str(Path(output).absolute()),
     ]
+
+
+PREVIEW_SENTENCE = "Editei esse vídeo com IA"
+_PREVIEW_AT = 1.5  # seconds into the 0-5s event
+
+
+def preview_words(max_words: int) -> tuple[list[dict], int]:
+    """The sample phrase cut to one caption line, and the index of the spoken
+    word (the 3rd, or the last when the line is shorter)."""
+    texts = PREVIEW_SENTENCE.split()[:max(1, max_words)]
+    hl = min(2, len(texts) - 1)
+    words = []
+    for i, text in enumerate(texts):
+        if i < hl:
+            start = 1.0 - 0.1 * (hl - i)
+            words.append({"word": text, "start": start, "end": start + 0.1})
+        elif i == hl:
+            words.append({"word": text, "start": 1.0, "end": 5.0})
+        else:
+            start = 5.0 + 0.1 * (i - hl - 1)  # right after: same line, shown but not yet spoken
+            words.append({"word": text, "start": start, "end": start + 0.1})
+    return words, hl
+
+
+def render_preview(captions: dict, frame: Path | None, width: int, height: int) -> bytes:
+    """PNG of one caption line burnt by the same ASS + libass path as a real
+    video. No frame → a dark grey background. Raises RuntimeError on failure."""
+    import tempfile
+
+    ffmpeg = resolve_ffmpeg()
+    c = caption_style.validate(captions)
+    words, _ = preview_words(c["words"])
+    groups = group_words(words, c["words"])[:1]  # close together: one line
+    with tempfile.TemporaryDirectory(prefix="auto-edit-caption-") as tmp:
+        folder = Path(tmp)
+        build_ass(groups, c, width, height).save(str(folder / "captions.ass"))
+        fonts = prepare_fonts(c["font"], folder)
+        if frame is not None:
+            source = ["-loop", "1", "-t", "5", "-i", str(Path(frame).absolute())]
+        else:
+            source = ["-f", "lavfi", "-i", f"color=c=0x303030:s={width}x{height}:d=5"]
+        cmd = [ffmpeg, "-y", "-v", "error", *source,
+               "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},"
+                      + _subtitles_filter("captions.ass", str(fonts)),
+               "-ss", str(_PREVIEW_AT), "-frames:v", "1", "preview.png"]
+        res = subprocess.run(cmd, cwd=folder, capture_output=True, text=True, timeout=60)
+        out = folder / "preview.png"
+        if res.returncode != 0 or not out.is_file():
+            raise RuntimeError(f"ffmpeg falhou na prévia da legenda: {(res.stderr or '').strip()[-300:]}")
+        return out.read_bytes()
 
 
 def video_size(path: Path) -> tuple[int, int]:

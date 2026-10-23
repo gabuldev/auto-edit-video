@@ -560,7 +560,8 @@ def generate(description: str, image: bytes | None = None, *, base: dict | None 
 # ── Preview ───────────────────────────────────────────────────────────────────
 
 PREVIEW_W, PREVIEW_H = 1280, 720
-PREVIEW_KINDS = ("thumbnail", "lower_third", "cta")
+PREVIEW_KINDS = ("thumbnail", "lower_third", "cta", "caption")
+CAPTION_W, CAPTION_H = 540, 960
 SAMPLE_TITLE, SAMPLE_SUB = "Editei esse vídeo com IA", "Sem esforço"
 
 
@@ -600,6 +601,83 @@ def preview_frame(at: float = 0.3) -> Path | None:
         capture_output=True, text=True, timeout=60,
     )
     return out if res.returncode == 0 and out.is_file() else None
+
+
+def _workspace_type(ws: Path) -> str:
+    try:
+        return str(json.loads((ws / "pipeline.json").read_text(encoding="utf-8")).get("type") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _extract_vertical(src: Path, long: bool, at: float = 0.3) -> Path | None:
+    """A CAPTION_W×CAPTION_H JPEG frame of `src`; a long is cut at the centre (9:16)."""
+    key = hashlib.sha1(f"{src}:{src.stat().st_mtime}:{at}:{long}:v".encode()).hexdigest()[:16]
+    out = _cache_dir() / f"vframe-{key}.jpg"
+    if out.is_file():
+        return out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        duration = float(subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)],
+            capture_output=True, text=True, timeout=30,
+        ).stdout.strip())
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        duration = 0.0
+    crop = "crop=ih*9/16:ih," if long else ""
+    vf = f"{crop}scale={CAPTION_W}:{CAPTION_H}:force_original_aspect_ratio=increase,crop={CAPTION_W}:{CAPTION_H}"
+    try:
+        res = subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(0.0, duration * at):.2f}", "-i", str(src),
+             "-frames:v", "1", "-vf", vf, "-q:v", "3", str(out)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out if res.returncode == 0 and out.is_file() else None
+
+
+def preview_frame_vertical(video: Path | None = None) -> Path | None:
+    """A 540×960 frame for the caption preview: from `video`, else the newest
+    short in the library, else the newest long cut to the centre 9:16; None →
+    a neutral background."""
+    if video is not None:
+        return _extract_vertical(Path(video), False)
+    from auto_edit import engine
+
+    try:
+        root = engine.library_root()
+        found = [p for p in root.glob("*/edited_video.mp4") if p.is_file()] if root.is_dir() else []
+    except Exception:
+        return None
+    for want_short in (True, False):
+        pool = [p for p in found if (_workspace_type(p.parent) == "short") == want_short]
+        if pool:
+            return _extract_vertical(max(pool, key=lambda p: p.stat().st_mtime), not want_short)
+    return None
+
+
+def _render_caption_preview(tokens: dict) -> bytes:
+    from auto_edit import caption_render
+
+    try:
+        caption_render.resolve_ffmpeg()
+    except RuntimeError as exc:
+        raise StyleError("ffmpeg sem libass: a prévia da legenda precisa do filtro subtitles") from exc
+    captions = tokens["captions"]
+    frame = preview_frame_vertical()
+    key = hashlib.sha1(
+        json.dumps(captions, sort_keys=True).encode() + f"{frame}:{_mtime(frame)}".encode()).hexdigest()[:20]
+    cached = _cache_dir() / f"caption-{key}.png"
+    if cached.is_file():
+        return cached.read_bytes()
+    try:
+        data = caption_render.render_preview(captions, frame, CAPTION_W, CAPTION_H)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        raise StyleError(f"falhou ao desenhar a prévia: {exc}") from exc
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_bytes(data)
+    return data
 
 
 def _hex(rgb) -> str:
@@ -749,6 +827,8 @@ def preview(tokens, kind: str) -> bytes:
     if kind == "thumbnail":
         return render_thumbnail(tokens)
     tokens = validate(tokens)
+    if kind == "caption":
+        return _render_caption_preview(tokens)
     frame = preview_frame()
     brand = _brand_for_preview()
     spec = {
