@@ -140,10 +140,11 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
         levels = _audio_levels_brief(transcription)
         if levels:
             sections.append(levels)
-        sections += [
-            "\n## Transcription Data",
-            _compact_json(_slim_for_plan(transcription)),
-        ]
+        sections += (
+            ["\n## Transcription Data", COMPACT_HEADER, _compact_transcript(transcription)]
+            if _small_context() else
+            ["\n## Transcription Data", _compact_json(_slim_for_plan(transcription))]
+        )
 
     elif stage == "review":
         transcription = _read_json(workspace / "transcription.json")
@@ -198,7 +199,8 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
             f"- Context: {context or '(no context provided)'}",
             "\n## Transcription Data (word timestamps)",
             timeline,
-            _compact_json(_slim_for_overlay(transcription)),
+            *([COMPACT_HEADER, _compact_transcript(transcription, energy=False)] if _small_context()
+              else [_compact_json(_slim_for_overlay(transcription))]),
         ]
 
     elif stage == "evaluate":
@@ -391,6 +393,48 @@ def _channel_videos_section(video_type: str) -> str:
 
 
 # -- Transcription slimming ---------------------------------------------------
+
+
+# Agents with a small context window (a local Ollama model: 32k tokens by
+# default). Whisper's JSON spends ~4x the speech on keys, confidences and a
+# second copy of every word: a 10-minute long was ~80k tokens and refused.
+SMALL_CONTEXT = {"ollama"}
+PAUSE_MIN = 0.3  # gaps between words at least this long are written out
+
+COMPACT_HEADER = (
+    "Compact format: one line per transcript segment, `[start–end] word@start word@start …` "
+    "(seconds on the timeline above). Every gap of 0.3s or more between two words is written "
+    "`«pausa end–start»`: the previous word ends at the first number, the next one starts at "
+    "the second — that is where a silence can be cut. `energy_db` is the audio level, one value "
+    "per 0.5s from 0s."
+)
+
+
+def _small_context() -> bool:
+    from auto_edit import agents
+
+    return agents.normalize(os.environ.get("AUTO_EDIT_LLM") or "claude") in SMALL_CONTEXT
+
+
+def _compact_transcript(t: dict, energy: bool = True) -> str:
+    """The transcription as text lines, for agents with a small context."""
+    top = t.get("words") or []
+    lines = [f"duration: {t.get('duration', 0)}"]
+    if energy and t.get("energy_db"):
+        lines.append("energy_db: " + ",".join(f"{float(v):.1f}" for v in t["energy_db"]))
+    for seg in t.get("segments", []):
+        start, end = float(seg.get("start", 0)), float(seg.get("end", 0))
+        words = seg.get("words") or [w for w in top if start <= float(w.get("start", 0)) < end]
+        parts, prev_end = [], None
+        for w in words:
+            ws, we = float(w.get("start", 0)), float(w.get("end", 0))
+            if prev_end is not None and ws - prev_end >= PAUSE_MIN:
+                parts.append(f"«pausa {prev_end:.2f}–{ws:.2f}»")
+            parts.append(f"{str(w.get('word', '')).strip()}@{ws:.2f}")
+            prev_end = we
+        body = " ".join(parts) if parts else str(seg.get("text", "")).strip()
+        lines.append(f"[{start:.2f}–{end:.2f}]{' (partial)' if seg.get('partial') else ''} {body}")
+    return "\n".join(lines)
 
 
 def _slim_for_plan(t: dict) -> dict:

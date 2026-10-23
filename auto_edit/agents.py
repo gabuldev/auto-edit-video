@@ -192,8 +192,8 @@ def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None =
     needed = len(prompt) // 3 + 4096
     if needed > OLLAMA_CONTEXT:
         raise AgentError(
-            f"prompt de ~{needed} tokens não cabe no contexto de {OLLAMA_CONTEXT} do modelo local "
-            "(AUTO_EDIT_OLLAMA_CTX) — usando o fallback"
+            f"prompt de ~{needed} tokens não cabe no contexto de {OLLAMA_CONTEXT} do modelo local — "
+            "aumente AUTO_EDIT_OLLAMA_CTX ou escolha um fallback nas Configurações"
         )
     message: dict = {"role": "user", "content": prompt}
     if images:
