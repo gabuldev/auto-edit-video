@@ -633,3 +633,80 @@ def test_file_endpoint_with_relative_library_root(tmp_path, monkeypatch):
     (tmp_path / "workspace" / "output" / "clip_thumbnail.png").write_bytes(b"png")
     r = api.create_app().test_client().get("/api/videos/vid/file/thumbnail")
     assert r.status_code == 200 and r.data == b"png"
+
+
+# ── ajuste da legenda por vídeo ──────────────────────────────────────────────
+
+class TestVideoCaptions:
+    def _short(self, tmp_path, monkeypatch, **cs):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        ws = _mkws(tmp_path, "vid", type="short", caption_style=cs)
+        return ws
+
+    def _client(self):
+        pytest.importorskip("flask")
+        return api.create_app().test_client()
+
+    def test_put_saves_only_adjust_keys_and_keeps_legacy(self, tmp_path, monkeypatch):
+        ws = self._short(tmp_path, monkeypatch, font_size=14)
+        r = self._client().put("/api/videos/vid/captions", json={"position": "top", "offset": 12, "font": "bangers"})
+        assert r.status_code == 200
+        saved = json.loads((ws / "pipeline.json").read_text(encoding="utf-8"))["caption_style"]
+        assert saved == {"font_size": 14, "position": "top", "offset": 12}
+        body = r.get_json()
+        assert body["adjust"] == {"position": "top", "offset": 12}
+        assert body["captions"]["position"] == "top"
+        assert body["captions"]["font"] != "bangers"
+
+    def test_put_keeps_previous_adjust_of_absent_keys(self, tmp_path, monkeypatch):
+        self._short(tmp_path, monkeypatch, position="top", size=150)
+        out = engine.save_video_captions("vid", {"size": 80})
+        assert out["adjust"] == {"position": "top", "size": 80}
+
+    def test_get_reflects_adjust_and_fast(self, tmp_path, monkeypatch):
+        ws = self._short(tmp_path, monkeypatch, hidden=True)
+        client = self._client()
+        body = client.get("/api/videos/vid/captions").get_json()
+        assert body["adjust"] == {"hidden": True}
+        assert body["fast"] is False
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        assert client.get("/api/videos/vid/captions").get_json()["fast"] is True
+
+    def test_long_is_400_and_unknown_is_404(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
+        _mkws(tmp_path, "lng")
+        client = self._client()
+        assert client.get("/api/videos/lng/captions").status_code == 400
+        assert client.put("/api/videos/lng/captions", json={}).status_code == 400
+        assert client.post("/api/videos/lng/captions/preview", json={}).status_code == 400
+        assert client.get("/api/videos/nope/captions").status_code == 404
+        assert client.put("/api/videos/nope/captions", json={}).status_code == 404
+        assert client.post("/api/videos/nope/captions/preview", json={}).status_code == 404
+
+    def test_preview_returns_png(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render, styles
+        self._short(tmp_path, monkeypatch)
+        seen = {}
+
+        def fake(captions, frame, w, h):
+            seen.update(captions=captions, size=(w, h))
+            return b"\x89PNGfake"
+
+        monkeypatch.setattr(caption_render, "render_preview", fake)
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(styles, "preview_frame_vertical", lambda video=None: None)
+        r = self._client().post("/api/videos/vid/captions/preview", json={"position": "middle"})
+        assert r.status_code == 200 and r.mimetype == "image/png"
+        assert r.data == b"\x89PNGfake"
+        assert seen["captions"]["position"] == "middle" and seen["size"] == (540, 960)
+
+    def test_preview_render_failure_is_json_error(self, tmp_path, monkeypatch):
+        from auto_edit import caption_render
+        self._short(tmp_path, monkeypatch)
+
+        def boom():
+            raise RuntimeError("sem libass")
+
+        monkeypatch.setattr(caption_render, "resolve_ffmpeg", boom)
+        r = self._client().post("/api/videos/vid/captions/preview", json={})
+        assert r.status_code == 400 and "error" in r.get_json()

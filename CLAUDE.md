@@ -194,6 +194,9 @@ GET  /api/browse?dir=             # pastas + vídeos de um diretório (file pick
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
 GET  /api/videos/<id>/plan        # cortes + o que é dito em cada trecho
 PUT  /api/videos/<id>/plan        # {kept_segments: [{start, end, summary?}]}
+GET  /api/videos/<id>/captions    # legenda do short: estilo final, ajuste próprio, fast (tem edited_video)
+PUT  /api/videos/<id>/captions    # {position, offset, size, hidden}: só essas 4 chaves; ausente mantém o anterior
+POST /api/videos/<id>/captions/preview  # {ajuste} → PNG da legenda num frame do short (regravar: /resume from_stage=caption)
 GET  /api/videos/<id>/result      # metadata + arquivos finais
 GET  /api/videos/<id>/file/<kind> # video | thumbnail | captions | notes
 POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}

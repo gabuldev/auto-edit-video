@@ -305,6 +305,81 @@ def artifact_path(video_id: str, kind: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _short_workspace(video_id: str) -> tuple[Path, dict]:
+    """(workspace, pipeline) of a short; FileNotFoundError / ValueError otherwise."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        raise FileNotFoundError(f"workspace não encontrado: {video_id}")
+    p = pl.load(ws)
+    if p.get("type") != "short":
+        raise ValueError("só o short tem legenda queimada")
+    return ws, p
+
+
+def _adjust_of(p: dict) -> dict:
+    from auto_edit import caption_style as cs
+
+    saved = p.get("caption_style")
+    saved = saved if isinstance(saved, dict) else {}
+    return {k: saved[k] for k in cs.ADJUST_KEYS if k in saved}
+
+
+def video_captions(video_id: str) -> dict:
+    """The caption look a short will be burned with, plus its own adjust."""
+    from auto_edit import caption_style as cs
+
+    ws, p = _short_workspace(video_id)
+    return {
+        "captions": cs.resolve(p),
+        "adjust": _adjust_of(p),
+        "fast": (ws / "edited_video.mp4").is_file(),
+    }
+
+
+def save_video_captions(video_id: str, body: dict) -> dict:
+    """Save the per-video adjust (position/offset/size/hidden) only.
+
+    A key present in `body` gets its validated value; an absent key keeps its
+    previous adjust. Legacy `caption_style` keys (font_size...) are preserved.
+    """
+    from auto_edit import caption_style as cs
+
+    ws, p = _short_workspace(video_id)
+    body = body if isinstance(body, dict) else {}
+    valid = cs.validate(body)
+    saved = p.get("caption_style")
+    saved = dict(saved) if isinstance(saved, dict) else {}
+    for k in cs.ADJUST_KEYS:
+        if k in body:
+            saved[k] = valid[k]
+    p["caption_style"] = saved
+    pl.save(ws, p)
+    return video_captions(video_id)
+
+
+def video_caption_preview(video_id: str, adjust: dict) -> bytes:
+    """PNG of the caption over a frame of this short, with `adjust` applied
+    on top of what is saved. StyleError when the render isn't possible."""
+    from auto_edit import caption_render, caption_style as cs, styles
+
+    ws, p = _short_workspace(video_id)
+    adjust = adjust if isinstance(adjust, dict) else {}
+    valid = cs.validate(adjust)
+    saved = dict(p.get("caption_style") or {})
+    saved.update({k: valid[k] for k in cs.ADJUST_KEYS if k in adjust})
+    captions = cs.resolve({**p, "caption_style": saved})
+    try:
+        caption_render.resolve_ffmpeg()
+    except RuntimeError as exc:
+        raise styles.StyleError("ffmpeg sem libass: a prévia da legenda precisa do filtro subtitles") from exc
+    edited = ws / "edited_video.mp4"
+    frame = styles.preview_frame_vertical(edited if edited.is_file() else None)
+    try:
+        return caption_render.render_preview(captions, frame, styles.CAPTION_W, styles.CAPTION_H)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        raise styles.StyleError(f"falhou ao desenhar a prévia: {exc}") from exc
+
+
 def open_artifact(
     video_id: str,
     kind: str,

@@ -14,6 +14,9 @@ Endpoints
     GET  /api/videos/<id>
     GET  /api/videos/<id>/plan       (cortes + o que é dito em cada um)
     PUT  /api/videos/<id>/plan       {kept_segments: [{start, end, summary?}]}
+    GET  /api/videos/<id>/captions   (legenda do short: estilo final + ajuste + fast)
+    PUT  /api/videos/<id>/captions   {position, offset, size, hidden}
+    POST /api/videos/<id>/captions/preview  {ajuste} → PNG
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
     GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
     POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder
@@ -148,6 +151,42 @@ def create_app(jobs: engine.JobManager | None = None):
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify(data)
+
+    @app.get("/api/videos/<video_id>/captions")
+    def video_captions(video_id: str):
+        try:
+            return jsonify(engine.video_captions(video_id))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.put("/api/videos/<video_id>/captions")
+    def save_video_captions(video_id: str):
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(engine.save_video_captions(video_id, body))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/videos/<video_id>/captions/preview")
+    def video_caption_preview(video_id: str):
+        import io
+
+        from auto_edit import styles
+
+        body = request.get_json(silent=True) or {}
+        try:
+            png = engine.video_caption_preview(video_id, body)
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except styles.StyleError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return send_file(io.BytesIO(png), mimetype="image/png", max_age=0)
 
     @app.get("/api/videos/<video_id>/result")
     def video_result(video_id: str):
