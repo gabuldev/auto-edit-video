@@ -59,6 +59,8 @@ Whisper   Claude  Claude   Claude     FFmpeg    FFmpeg    FFmpeg    Claude
 ```
 
 - **short**: pula overlay, faz caption (legendas estilo CapCut) — planner = `agents/planner.md` (limpeza)
+
+A legenda do short faz parte do **estilo** (tokens `captions`: posição topo/meio/baixo + altura, tamanho, fonte, cores, destaque contorno/letra/caixa, contorno, fundo, palavras por vez, maiúsculas), validada em `auto_edit/caption_style.py` e desenhada por `auto_edit/caption_render.py` (ASS em pixels do vídeo, fonte do app via `fontsdir`, tamanho compensado pela métrica da fonte; a prévia `caption` da tela Estilos usa o mesmo libass). O `captions` do estilo ativo é gravado no `pipeline.json` ao iniciar a edição; vídeo antigo sem ele usa o padrão. `--font-size/--highlight-color/--highlight-border` só valem quando passados. Ajuste por vídeo (short pronto → "Ajustar legenda": arrastar, tamanho, esconder) fica em `caption_style`; "Regravar legenda" = `resume --from caption`, que refaz só a legenda (ou execute+caption se não houver `edited_video.mp4`, que o short agora mantém) e vai direto a `done`.
 - **long**: faz overlay (lower third + CTA; o agente lê a transcrição pós-corte e responde no tempo do vídeo editado), pula caption — planner = `agents/planner_long.md` (curadoria editorial: descarta blocos temáticos, define duração pela densidade do conteúdo, reporta `dropped_blocks`)
 
 O resumo da curadoria aparece em `auto-edit status <video>` e no `--dry-run`.
