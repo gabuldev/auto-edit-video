@@ -191,6 +191,14 @@ class TestResumeRecaption:
         assert p["caption_only"] is True
         assert p["current_stage"] == "caption"
 
+    def test_short_caption_without_edited_video_starts_at_execute(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws, _ = self._setup(tmp_path, monkeypatch, "short")
+        engine.JobManager().resume_edit("v", "caption")
+        p = pl.load(ws)
+        assert p["current_stage"] == "execute"
+        assert p["caption_only"] is True
+
     def test_short_caption_refused_while_job_running(self, tmp_path, monkeypatch):
         from auto_edit import pipeline as pl
         ws, _ = self._setup(tmp_path, monkeypatch, "short")

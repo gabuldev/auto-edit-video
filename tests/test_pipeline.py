@@ -171,6 +171,16 @@ class TestRecaption:
         assert p["stages"]["metadata"]["status"] == "complete"
         assert p["stages"]["thumbnail"]["status"] == "complete"
 
+    def test_failed_recaption_does_not_leak_into_normal_resume(self, workspace):
+        self._done_short(workspace, True)
+        pl.recaption(workspace)
+        pl.set_stage_status(workspace, "caption", "failed", "boom")
+        pl.set_stage(workspace, "plan")
+        assert "caption_only" not in pl.load(workspace)
+        for st in ["plan", "review", "evaluate", "execute", "caption"]:
+            p = pl.set_stage_status(workspace, st, "complete")
+        assert p["current_stage"] == "metadata"
+
     def test_finalize_short_keeps_edited_video(self, workspace):
         (workspace / "captioned_video.mp4").write_text("c")
         (workspace / "edited_video.mp4").write_text("e")

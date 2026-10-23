@@ -138,6 +138,7 @@ def loop_back(workspace: Path) -> dict:
         pipeline["evaluator_feedback"] = assessment.get("feedback_for_planner", "")
 
     pipeline["iteration"] += 1
+    pipeline.pop("caption_only", None)
 
     # Reset plan, review, execute, overlay, caption, evaluate to pending
     for stage in ["plan", "review", "execute", "overlay", "caption", "evaluate"]:
@@ -165,6 +166,7 @@ def set_stage(workspace: Path, stage: str) -> dict:
     if stage not in STAGES:
         raise ValueError(f"Unknown stage: {stage}. Valid: {STAGES}")
 
+    pipeline.pop("caption_only", None)  # a stale recaption must not skip metadata
     pipeline["current_stage"] = stage
     # Reset that stage and everything after it
     idx = STAGES.index(stage)
