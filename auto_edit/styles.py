@@ -834,7 +834,10 @@ def preview(tokens, kind: str) -> bytes:
     spec = {
         "kind": kind, "width": PREVIEW_W, "height": PREVIEW_H,
         "background": str(frame) if frame else None,
-        "style": tokens, "brand": brand, "fonts": overlay_fonts(tokens),
+        # Só a prévia da legenda depende de `captions`: fora do spec (e da
+        # chave do cache), mexer na legenda não redesenha lower third/CTA.
+        "style": {k: v for k, v in tokens.items() if k != "captions"},
+        "brand": brand, "fonts": overlay_fonts(tokens),
     }
     return _render_preview(spec, kind, brand)
 

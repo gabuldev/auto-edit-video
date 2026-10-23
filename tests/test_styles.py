@@ -131,6 +131,13 @@ class TestPreview:
         styles.preview({}, "lower_third")
         assert len((fake / "calls").read_text().splitlines()) == 1
 
+    def test_changing_only_captions_keeps_overlay_and_thumbnail_cached(self, fake):
+        for kind in ("cta", "lower_third", "thumbnail"):
+            styles.preview({"captions": {"font": "anton"}}, kind)
+            styles.preview({"captions": {"font": "bangers", "size": 150}}, kind)
+        assert len((fake / "calls").read_text().splitlines()) == 3
+        assert "captions" not in json.loads((fake / "spec.json").read_text()).get("style", {})
+
     def test_unknown_kind(self, fake):
         with pytest.raises(styles.StyleError):
             styles.preview({}, "intro")

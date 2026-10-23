@@ -331,3 +331,39 @@ def test_hidden_copies_the_cut_without_burning(tmp_path, monkeypatch):
     assert (tmp_path / "captioned_video.mp4").read_bytes() == b"cut video"
     assert (tmp_path / "captions.srt").exists()
     assert (tmp_path / "captions.ass").exists()
+
+
+# ── _burn_captions: .caption-fonts/ never stays in the workspace ────────────
+
+
+def _ass(tmp_path):
+    ass = tmp_path / "captions.ass"
+    ass.write_text("")
+    return ass
+
+
+def test_burn_cleans_fonts_when_ffmpeg_run_raises(tmp_path, monkeypatch):
+    import tools.captioner as c
+
+    monkeypatch.setattr(c, "_resolve_caption_ffmpeg", lambda: "ffmpeg")
+
+    def boom(*a, **k):
+        assert (tmp_path / ".caption-fonts").is_dir()
+        raise OSError("ffmpeg sumiu")
+
+    monkeypatch.setattr(c.subprocess, "run", boom)
+    with pytest.raises(OSError):
+        c._burn_captions(tmp_path / "v.mp4", _ass(tmp_path), tmp_path / "out.mp4", "montserrat")
+    assert not (tmp_path / ".caption-fonts").exists()
+
+
+def test_burn_creates_no_fonts_when_ffmpeg_resolve_raises(tmp_path, monkeypatch):
+    import tools.captioner as c
+
+    def no_libass():
+        raise RuntimeError("sem libass")
+
+    monkeypatch.setattr(c, "_resolve_caption_ffmpeg", no_libass)
+    with pytest.raises(RuntimeError):
+        c._burn_captions(tmp_path / "v.mp4", _ass(tmp_path), tmp_path / "out.mp4", "montserrat")
+    assert not (tmp_path / ".caption-fonts").exists()

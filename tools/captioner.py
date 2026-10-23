@@ -425,11 +425,14 @@ def _resolve_caption_ffmpeg() -> str:
 def _burn_captions(video: Path, ass: Path, output: Path, font: str) -> None:
     # cwd = the ASS folder, so the filter only sees relative names
     folder = ass.parent
+    ffmpeg = _resolve_caption_ffmpeg()  # before the fonts copy: nothing to clean if it raises
     fonts = caption_render.prepare_fonts(font, folder)
-    cmd = caption_render.burn_command(_resolve_caption_ffmpeg(), video, ass.name, str(fonts), output)
-    print("[captioner] Burning captions...")
-    result = subprocess.run(cmd, cwd=folder)
-    shutil.rmtree(folder / fonts, ignore_errors=True)
+    try:
+        cmd = caption_render.burn_command(ffmpeg, video, ass.name, str(fonts), output)
+        print("[captioner] Burning captions...")
+        result = subprocess.run(cmd, cwd=folder)
+    finally:
+        shutil.rmtree(folder / fonts, ignore_errors=True)
     if result.returncode != 0:
         raise RuntimeError("FFmpeg failed during caption burning")
 

@@ -167,7 +167,6 @@ export default {
   unmount() {
     unmountPublish();
     unmountCaptionAdjust();
-    state.capMounted = false;
     releaseMedia(el("res-video"));
   },
 };
