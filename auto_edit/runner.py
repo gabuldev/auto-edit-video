@@ -595,9 +595,41 @@ def _extract_json(raw: str) -> dict | None:
     return None
 
 
-def validate_and_save_llm_output(raw_file: Path, out_file: Path) -> bool:
+# Labels the prompts list as ready-made phrases ("silence — no speech
+# detected"): reusing them is the point, not a copied example.
+_LABEL_KEYS = {"reason", "type", "role"}
+
+
+def copied_example(obj, template: str, min_len: int = 30) -> list[str]:
+    """Free-text answers lifted word for word from the agent's prompt.
+
+    A small local model (qwen2.5:7b on a long's plan) fills the schema with
+    the example itself: "45min bruto, ~18min de conteúdo único…" for a 10-min
+    video. One match can be honest (a metadata example is a real title of the
+    channel), so the caller decides how many make it a copy."""
+    found: list[str] = []
+
+    def walk(o, key=None):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                walk(v, k)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v, key)
+        elif isinstance(o, str) and key not in _LABEL_KEYS:
+            text = o.strip()
+            if len(text) >= min_len and text in template and text not in found:
+                found.append(text)
+
+    walk(obj)
+    return found
+
+
+def validate_and_save_llm_output(raw_file: Path, out_file: Path, template: Path | None = None) -> bool:
     """Strip markdown fences, extract first JSON object from LLM output.
     Handles Cursor's {"type":"result","result":"..."} wrapper.
+    With `template` (the agent's prompt file), an answer that copied its
+    example is refused like invalid JSON, so it's retried or falls back.
     Returns True on success, False on failure."""
     raw = raw_file.read_text(encoding="utf-8")
 
@@ -620,6 +652,15 @@ def validate_and_save_llm_output(raw_file: Path, out_file: Path) -> bool:
     obj = _extract_json(raw)
     if obj is None:
         return False
+    if template is not None and template.is_file():
+        copied = copied_example(obj, template.read_text(encoding="utf-8"))
+        if len(copied) >= 2:
+            print(
+                f"[ralph] a resposta copiou o exemplo do prompt ({copied[0][:60]!r}…) — "
+                "modelo fraco pra essa tarefa; use um modelo maior ou outro agente",
+                file=sys.stderr,
+            )
+            return False
     out_file.write_text(
         json.dumps(obj, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -643,7 +684,8 @@ if __name__ == "__main__":
     elif cmd == "validate-json":
         raw_file = Path(sys.argv[2])
         out_file = Path(sys.argv[3])
-        if not validate_and_save_llm_output(raw_file, out_file):
+        template = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+        if not validate_and_save_llm_output(raw_file, out_file, template):
             sys.exit(1)
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)

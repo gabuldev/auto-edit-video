@@ -208,7 +208,7 @@ json.dump(p, open(path, "w"), indent=2, ensure_ascii=False)
     $PYTHON "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
         "$stage" "$WORKSPACE" "$prompt_file" > "$tmp_prompt"
 
-    _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file"
+    _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file" "$prompt_file"
 
     rm -f "$tmp_prompt" "$tmp_output"
     [ "$advance_mode" = "no-advance" ] || advance_stage "$stage"
@@ -230,7 +230,7 @@ run_standalone_agent() {
     $PYTHON "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
         "$stage" "$WORKSPACE" "$prompt_file" > "$tmp_prompt"
 
-    _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file"
+    _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file" "$prompt_file"
 
     rm -f "$tmp_prompt" "$tmp_output"
 }
@@ -295,12 +295,41 @@ _run_llm_print_backend() {
     esac
 }
 
+# An agent call is silent for minutes (a local model takes ~5min on a long's
+# plan): without a line now and then the app and the terminal look frozen.
+HEARTBEAT_SEC="${AUTO_EDIT_HEARTBEAT_SEC:-15}"
+
+_run_llm_with_heartbeat() {
+    local backend="$1" stage="$4"
+    (
+        elapsed=0
+        # sleep off the pipe: killing the loop leaves it to finish alone, and
+        # holding stdout would keep the app reading ralph for up to 15s more.
+        while sleep "$HEARTBEAT_SEC" >/dev/null 2>&1; do
+            elapsed=$((elapsed + HEARTBEAT_SEC))
+            if [ "$elapsed" -ge 60 ]; then
+                waited="$((elapsed / 60))min$(printf '%02d' $((elapsed % 60)))s"
+            else
+                waited="${elapsed}s"
+            fi
+            log "$stage: aguardando $backend responder… $waited"
+        done
+    ) &
+    local hb=$!
+    _run_llm_print_backend "$backend" "$2" "$3"
+    local rc=$?
+    kill "$hb" 2>/dev/null
+    wait "$hb" 2>/dev/null
+    return "$rc"
+}
+
 # Calls LLM CLI(s): up to 2 attempts per backend; then optional fallback backend.
 _call_llm() {
     local prompt_file="$1"
     local output_file="$2"
     local stage="$3"
     local final_output="$4"
+    local template="${5:-}"
 
     local backends="$LLM_BACKEND"
     [ -n "$LLM_BACKEND_FALLBACK" ] && backends="$LLM_BACKEND $LLM_BACKEND_FALLBACK"
@@ -314,12 +343,12 @@ _call_llm() {
         attempt=0
         while [ "$attempt" -lt 2 ]; do
             attempt=$((attempt + 1))
-            if ! _run_llm_print_backend "$be" "$prompt_file" "$output_file"; then
+            if ! _run_llm_with_heartbeat "$be" "$prompt_file" "$output_file" "$stage"; then
                 log "WARNING: LLM CLI '$be' failed for stage $stage (attempt $attempt)"
                 cat "$output_file" >&2
                 break
             fi
-            if _validate_and_save_json "$output_file" "$final_output"; then
+            if _validate_and_save_json "$output_file" "$final_output" "$template"; then
                 return 0
             fi
             if [ "$attempt" -lt 2 ]; then
@@ -334,10 +363,12 @@ _call_llm() {
 }
 
 # Strips markdown fences, extracts first JSON object if LLM added preamble (Cursor, etc.).
+# With the agent's prompt file, also refuses an answer that copied its example.
 _validate_and_save_json() {
     local raw_file="$1"
     local out_file="$2"
-    "$PYTHON" -m auto_edit.runner validate-json "$raw_file" "$out_file"
+    local template="${3:-}"
+    "$PYTHON" -m auto_edit.runner validate-json "$raw_file" "$out_file" ${template:+"$template"}
 }
 
 # ── Main Loop ─────────────────────────────────────────────────────────────────

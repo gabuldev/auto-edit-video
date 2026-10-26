@@ -1,5 +1,6 @@
 """Settings file: defaults, validation, env precedence, and the API; agent
 status/test/login (with fakes — no real CLI or terminal)."""
+import os
 import json
 import sys
 
@@ -58,6 +59,23 @@ class TestSettings:
         assert env["AUTO_EDIT_LLM_FALLBACK"] == "claude"
         assert env["AUTO_EDIT_OLLAMA_MODEL"] == "qwen2.5:7b"
         assert env["AUTO_EDIT_INBOX"] == str(inbox)
+
+    def test_switching_agent_takes_effect_without_restarting_the_engine(self, home, monkeypatch):
+        # `auto-edit serve` copies settings into os.environ at start-up; a
+        # later switch in Configurações must still reach the next edit.
+        # apply_to_process writes os.environ: give it a copy to write into
+        monkeypatch.setattr(os, "environ", {k: v for k, v in os.environ.items()
+                                            if k not in ("AUTO_EDIT_LLM", "AUTO_EDIT_OLLAMA_MODEL")})
+        monkeypatch.setattr(settings, "_FROM_SETTINGS", {})
+        settings.save({"agent": {"primary": "claude"}})
+        settings.apply_to_process()
+        assert os.environ["AUTO_EDIT_LLM"] == "claude"
+        settings.save({"agent": {"primary": "ollama", "models": {"ollama": "qwen2.5:7b"}}})
+        env = settings.env_from_settings()
+        assert env["AUTO_EDIT_LLM"] == "ollama" and env["AUTO_EDIT_OLLAMA_MODEL"] == "qwen2.5:7b"
+        # a variable the user really set still wins
+        monkeypatch.setenv("AUTO_EDIT_LLM", "cursor")
+        assert settings.env_from_settings()["AUTO_EDIT_LLM"] == "cursor"
 
     def test_engine_uses_the_saved_inbox(self, home, tmp_path):
         inbox = tmp_path / "gravacoes"

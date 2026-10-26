@@ -152,12 +152,24 @@ def _get(data: dict, keys: tuple) -> object:
     return data
 
 
+# Variables apply_to_process() copied from settings into os.environ. They are
+# a snapshot, not the user's override: the engine (`auto-edit serve`) lives on
+# while Configurações change, and an edit started after switching to Ollama
+# still ran on the agent saved at start-up.
+_FROM_SETTINGS: dict[str, str] = {}
+
+
 def env_from_settings(base: dict | None = None) -> dict:
     """`base` (default: os.environ) with the gaps filled from settings.
 
     Variables already set win; agent models fill AUTO_EDIT_<AGENT>_MODEL.
     """
-    env = dict(os.environ if base is None else base)
+    if base is None:
+        # Drop what the start-up snapshot put there (unless changed since), so
+        # the settings as saved now decide.
+        env = {k: v for k, v in os.environ.items() if _FROM_SETTINGS.get(k) != v}
+    else:
+        env = dict(base)
     data = load()
     for keys, var in ENV.items():
         value = _get(data, keys)
@@ -172,4 +184,6 @@ def env_from_settings(base: dict | None = None) -> dict:
 
 def apply_to_process() -> None:
     """Fill os.environ from settings (CLI and engine start-up)."""
-    os.environ.update({k: v for k, v in env_from_settings().items() if k not in os.environ})
+    added = {k: v for k, v in env_from_settings().items() if k not in os.environ}
+    os.environ.update(added)
+    _FROM_SETTINGS.update(added)

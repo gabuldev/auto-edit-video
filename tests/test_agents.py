@@ -104,6 +104,17 @@ class _Ollama(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         _Ollama.seen.append(body)
+        if body.get("stream"):
+            # NDJSON, one token per line, like the real /api/chat
+            lines = [{"message": {"content": c}, "done": False} for c in ('{"ok"', ': ', 'true}')]
+            lines.append({"message": {"content": ""}, "done": True})
+            data = "".join(json.dumps(x) + "\n" for x in lines).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         self._send({"message": {"content": '{"ok": true}'}})
 
 
@@ -136,6 +147,27 @@ class TestOllama:
         # Says what to do; never promises a fallback that may not be set.
         assert "usando o fallback" not in str(err.value) and "Configurações" in str(err.value)
 
+    def test_streams_and_reports_progress_when_asked(self, ollama, monkeypatch):
+        # A long's plan takes minutes on a local model: the pipeline asks for
+        # progress so the app shows it writing instead of looking frozen.
+        lines = []
+        monkeypatch.setattr(agents, "OLLAMA_PROGRESS_EVERY", 0)
+        assert agents.run_ollama("oi", model="qwen2.5:7b", progress=lines.append) == '{"ok": true}'
+        assert ollama.seen[0]["stream"] is True
+        assert lines[0].endswith("1 token em 0s") and "3 tokens" in lines[-1]
+
+    def test_stream_error_is_an_agent_error(self, monkeypatch):
+        class Resp:
+            def __enter__(self):
+                return iter([b'{"error": "model not found"}\n'])
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: Resp())
+        with pytest.raises(agents.AgentError, match="model not found"):
+            agents.run_ollama("oi", model="x", progress=lambda line: None)
+
     def test_server_down(self, monkeypatch):
         monkeypatch.setattr(agents, "OLLAMA_URL", "http://127.0.0.1:9")
         with pytest.raises(agents.AgentError, match="não está rodando"):
@@ -163,6 +195,21 @@ def test_invoke_writes_the_text_or_the_error(tmp_path, monkeypatch):
     monkeypatch.setitem(agents.RUNNERS, "ollama", boom)
     assert agents.invoke("ollama", prompt, out) == 1
     assert out.read_text(encoding="utf-8") == "falhou"
+
+
+def test_invoke_reports_ollama_progress_on_stderr(tmp_path, monkeypatch, capsys):
+    prompt = tmp_path / "p.txt"
+    prompt.write_text("x", encoding="utf-8")
+
+    def runner(p, progress=None, **kw):
+        progress("ollama: escrevendo a resposta… 12 tokens em 20s")
+        return "{}"
+
+    monkeypatch.setitem(agents.RUNNERS, "ollama", runner)
+    assert agents.invoke("ollama", prompt, tmp_path / "o.txt") == 0
+    # stderr goes to ralph's log, which the app shows; the answer stays clean
+    assert "[ralph] ollama: escrevendo" in capsys.readouterr().err
+    assert (tmp_path / "o.txt").read_text(encoding="utf-8") == "{}"
 
 
 def test_model_comes_from_the_env(tmp_path, monkeypatch):
