@@ -154,7 +154,7 @@ class TestOllama:
         monkeypatch.setattr(agents, "OLLAMA_PROGRESS_EVERY", 0)
         assert agents.run_ollama("oi", model="qwen2.5:7b", progress=lines.append) == '{"ok": true}'
         assert ollama.seen[0]["stream"] is True
-        assert lines and "tokens" in lines[0]
+        assert lines[0].endswith("1 token em 0s") and "3 tokens" in lines[-1]
 
     def test_stream_error_is_an_agent_error(self, monkeypatch):
         class Resp:

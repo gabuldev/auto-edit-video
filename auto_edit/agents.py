@@ -207,7 +207,7 @@ def _ollama_stream(body: dict, timeout: float | None, progress: Callable[[str], 
                 now = time.monotonic()
                 if now - last >= OLLAMA_PROGRESS_EVERY and not event.get("done"):
                     last = now
-                    progress(f"ollama: escrevendo a resposta… {chunks} tokens em {now - started:.0f}s")
+                    progress(f"ollama: escrevendo a resposta… {chunks} token{'s' if chunks != 1 else ''} em {now - started:.0f}s")
     except urllib.error.HTTPError as exc:
         raise AgentError(f"Ollama: {exc.read().decode('utf-8', 'replace')[:300]}") from None
     except (urllib.error.URLError, OSError) as exc:
