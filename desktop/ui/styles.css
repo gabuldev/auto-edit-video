@@ -48,6 +48,17 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .btn-primary { background: var(--accent); color: #06231f; font-weight: 700; border: none; }
 
 .banner { margin: 16px 28px 0; padding: 12px 16px; border-radius: 10px; background: rgba(248,113,113,.08); border: 1px solid #3a2530; color: #f3b0af; font-size: 13px; }
+/* Versão nova (js/update.js) */
+.update-bar { position: fixed; bottom: 18px; right: 24px; z-index: 50; width: 380px; max-width: calc(100vw - 48px); padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid #1f4a44; box-shadow: 0 8px 28px rgba(0,0,0,.45); font-size: 13px; }
+.update-head { display: flex; align-items: center; gap: 8px; }
+.update-head b { flex: 1; }
+.update-head .btn { height: 32px; padding: 0 12px; font-size: 13px; }
+.update-head .btn:disabled { opacity: .45; cursor: default; }
+.update-bar details { margin-top: 8px; color: var(--dim); }
+.update-bar summary { cursor: pointer; font-size: 12px; }
+#update-notes { margin-top: 6px; max-height: 180px; overflow: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.45; }
+.update-msg { margin-top: 6px; color: var(--dim); font-size: 12px; }
+.update-msg:empty { display: none; }
 .banner code { background: #0f141b; padding: 1px 6px; border-radius: 5px; color: var(--text); }
 
 .content { flex: 1; padding: 22px 28px; overflow: auto; }

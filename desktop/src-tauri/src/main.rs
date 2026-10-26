@@ -19,7 +19,14 @@ use tauri::{Manager, RunEvent};
 const ENGINE_ADDR: &str = "127.0.0.1:8760";
 
 /// The engine process this app spawned (None if we reused an existing one).
-struct Engine(Mutex<Option<Child>>);
+static ENGINE: Mutex<Option<Child>> = Mutex::new(None);
+
+fn stop_engine() {
+    if let Some(mut child) = ENGINE.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
 
 fn engine_listening() -> bool {
     let addr: SocketAddr = ENGINE_ADDR.parse().unwrap();
@@ -184,9 +191,20 @@ fn start_engine(log_dir: &Path, embedded: Option<&Embedded>) -> Result<Child, St
     Ok(child)
 }
 
+/// Called by the UI between downloading an update and installing it. On
+/// Windows the installer runs after the app exits without a RunEvent::Exit, and
+/// an engine still running from the install dir would lock its files.
+#[tauri::command]
+fn stop_engine_for_update() {
+    stop_engine();
+}
+
 fn main() {
     let app = tauri::Builder::default()
-        .manage(Engine(Mutex::new(None)))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![stop_engine_for_update])
         .setup(|app| {
             if engine_listening() {
                 eprintln!("[auto-edit] engine already running on {ENGINE_ADDR}, reusing it");
@@ -198,7 +216,7 @@ fn main() {
                 .unwrap_or_else(|_| std::env::temp_dir().join("auto-edit"));
             let embedded = embedded_engine(app.path().resource_dir().ok());
             match start_engine(&log_dir, embedded.as_ref()) {
-                Ok(child) => *app.state::<Engine>().0.lock().unwrap() = Some(child),
+                Ok(child) => *ENGINE.lock().unwrap() = Some(child),
                 // Not fatal: the UI shows the offline banner and keeps polling.
                 Err(e) => eprintln!("[auto-edit] could not start engine: {e}"),
             }
@@ -207,12 +225,9 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while running Auto-Edit");
 
-    app.run(|handle, event| {
+    app.run(|_, event| {
         if let RunEvent::Exit = event {
-            if let Some(mut child) = handle.state::<Engine>().0.lock().unwrap().take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
+            stop_engine();
         }
     });
 }
