@@ -35,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from typing import Callable
 from pathlib import Path
 
 
@@ -175,12 +176,51 @@ def _ollama(path: str, body: dict | None = None, timeout: float | None = 10) -> 
         raise AgentError(f"Ollama não está rodando em {OLLAMA_URL} ({exc})") from None
 
 
+OLLAMA_PROGRESS_EVERY = 20.0  # seconds between "still writing" lines
+
+
+def _ollama_stream(body: dict, timeout: float | None, progress: Callable[[str], None]) -> str:
+    """/api/chat streamed, reporting every OLLAMA_PROGRESS_EVERY s how much the model
+    wrote — a long's plan takes minutes on a local model, and a line saying it
+    is still writing tells "slow" apart from "stuck"."""
+    import time
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(f"{OLLAMA_URL}/api/chat", data=json.dumps({**body, "stream": True}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    parts: list[str] = []
+    chunks = 0
+    started = last = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for raw in resp:
+                if not raw.strip():
+                    continue
+                event = json.loads(raw.decode("utf-8"))
+                if event.get("error"):
+                    raise AgentError(f"Ollama: {str(event['error'])[:300]}")
+                piece = (event.get("message") or {}).get("content") or ""
+                if piece:
+                    parts.append(piece)
+                    chunks += 1
+                now = time.monotonic()
+                if now - last >= OLLAMA_PROGRESS_EVERY and not event.get("done"):
+                    last = now
+                    progress(f"ollama: escrevendo a resposta… {chunks} tokens em {now - started:.0f}s")
+    except urllib.error.HTTPError as exc:
+        raise AgentError(f"Ollama: {exc.read().decode('utf-8', 'replace')[:300]}") from None
+    except (urllib.error.URLError, OSError) as exc:
+        raise AgentError(f"Ollama não está rodando em {OLLAMA_URL} ({exc})") from None
+    return "".join(parts)
+
+
 def ollama_models() -> list[str]:
     return [m["name"] for m in _ollama("/api/tags").get("models", [])]
 
 
 def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None = None, binary: str | None = None,
-               images: list[Path] | None = None) -> str:
+               images: list[Path] | None = None, progress: Callable[[str], None] | None = None) -> str:
     if not model:
         models = ollama_models()
         if not models:
@@ -201,13 +241,16 @@ def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None =
         if "vision" not in caps:
             raise AgentError(f"o modelo {model} do Ollama não enxerga imagens")
         message["images"] = [_b64(p) for p in images]
-    resp = _ollama("/api/chat", {
+    body = {
         "model": model,
         "messages": [message],
         "stream": False,
         "format": "json",  # every LLM stage answers a JSON object
         "options": {"num_ctx": OLLAMA_CONTEXT, "temperature": 0.2},
-    }, timeout=timeout)
+    }
+    if progress is not None:
+        return _ollama_stream(body, timeout, progress)
+    resp = _ollama("/api/chat", body, timeout=timeout)
     return (resp.get("message") or {}).get("content") or ""
 
 
@@ -377,8 +420,12 @@ def invoke(name: str, prompt_file: Path, output_file: Path, timeout: float | Non
     prompt = prompt_file.read_text(encoding="utf-8")
     if name in AGENTIC:
         prompt = TEXT_ONLY + prompt
+    extra = {}
+    if name == "ollama":
+        # stderr reaches ralph's log, which the app shows live
+        extra["progress"] = lambda line: print(f"[ralph] {line}", file=sys.stderr, flush=True)
     try:
-        text = RUNNERS[name](prompt, model=os.environ.get(agent.model_env) or None, timeout=timeout)
+        text = RUNNERS[name](prompt, model=os.environ.get(agent.model_env) or None, timeout=timeout, **extra)
     except AgentError as exc:
         output_file.write_text(str(exc), encoding="utf-8")
         return 1

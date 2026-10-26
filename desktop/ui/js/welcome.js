@@ -24,7 +24,7 @@ function agentRow(a, recommended) {
   else if (!a.installed && a.api_key) meta = `<span class="meta">precisa de uma chave da API</span>`;
   else if (!a.installed) meta = `<span class="meta">não instalado</span>`;
   else if (a.name === "ollama" && !(a.models || []).length) meta = `<span class="meta">instalado — falta baixar um modelo (Configurações)</span>`;
-  else meta = `<span class="meta">instalado ${escapeHtml(a.version || "")} — falta testar</span>`;
+  else meta = `<span class="meta">instalado ${escapeHtml(a.version || "")} — falta testar${a.name === "ollama" ? " · lento e impreciso em vídeo longo com modelo pequeno" : ""}</span>`;
   const note = state.notes[a.name];
   return `
     <div class="wagent">

@@ -42,6 +42,10 @@ function keyForm(a) {
     <span class="meta">crie uma em <a href="#" data-docs="${escapeHtml(a.docs)}">openrouter.ai/settings/keys</a> — fica só no seu computador.</span>`;
 }
 
+// A 7B local model took ~5 min on a 10-min long's plan alone (an edit calls
+// the agent 6+ times) and filled it with the prompt's example.
+const OLLAMA_SLOW = `<span class="meta">modelo local é lento (minutos por etapa) e modelos pequenos (7B) erram em vídeo longo — prefira um de 14B+ ou use o Ollama como fallback</span>`;
+
 function agentMeta(a) {
   if (a.api_key) {
     if (!a.installed) return `<span class="meta bad">sem chave da API</span>${keyForm(a)}`;
@@ -52,7 +56,7 @@ function agentMeta(a) {
   if (!a.installed) return `<span class="meta bad">não instalado · <a href="#" data-docs="${escapeHtml(a.docs)}">como instalar</a></span>`;
   if (a.name === "ollama") {
     if (!a.server) return `<span class="meta bad">instalado, mas o servidor não está rodando (abra o app do Ollama)</span>`;
-    return `<span class="meta">${escapeHtml(a.version || "")} · ${a.models.length} modelo(s)</span>`;
+    return `<span class="meta">${escapeHtml(a.version || "")} · ${a.models.length} modelo(s)</span>${OLLAMA_SLOW}`;
   }
   return `<span class="meta">${escapeHtml(a.version || "instalado")}</span>`;
 }
