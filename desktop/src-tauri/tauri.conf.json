@@ -18,8 +18,9 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:8760 http://localhost:8760; media-src 'self' http://127.0.0.1:8760 http://localhost:8760; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:8760 http://localhost:8760"
-    }
+      "csp": "default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:8760 http://localhost:8760; media-src 'self' http://127.0.0.1:8760 http://localhost:8760; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com http://127.0.0.1:8760 http://localhost:8760"
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -33,6 +34,14 @@
     ],
     "macOS": {
       "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZCMkZCODRERDVGQUQyODkKUldTSjB2clZUYmd2YTR6dkdnWUk4b3FZdWlQeHRsUWlCUGFINnJoNzVoajA0L2RISWxhUzBXeUYK",
+      "endpoints": [
+        "https://github.com/gabuldev/auto-edit-video/releases/latest/download/latest.json"
+      ]
     }
   }
 }

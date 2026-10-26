@@ -65,6 +65,9 @@ jobs:
       # secrets live in Doppler (see docs/macos-signing.md). Without
       # DOPPLER_TOKEN, and on pull requests, ad-hoc signed.
       NOTARIZE: ${{ inputs.tag != '' && secrets.DOPPLER_TOKEN != '' && startsWith(matrix.os, 'macos') }}
+      # Releases sign the in-app updates (latest.json + .sig) with the key in
+      # Doppler (TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]); see docs/auto-update.md.
+      RELEASE_SECRETS: ${{ inputs.tag != '' && secrets.DOPPLER_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,8 +110,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/stage_engine.py --target ${{ matrix.target }} --out desktop/src-tauri/engine
 
-      - name: Fetch the Apple secrets from Doppler (macOS release)
-        if: env.NOTARIZE == 'true'
+      - name: Fetch the release secrets from Doppler (Apple + updater key)
+        if: env.RELEASE_SECRETS == 'true'
         uses: dopplerhq/secrets-fetch-action@v1.3.0
         with:
           doppler-token: ${{ secrets.DOPPLER_TOKEN }}
@@ -167,13 +170,28 @@ jobs:
         shell: bash
         run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ matrix.bundles }}
 
-      - name: Release id
+      - name: Release id, notes and updater signing
         if: inputs.tag != ''
         id: rel
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<RELEASE_BODY_EOF"
+            gh release view "$TAG" --json body -q .body
+            echo "RELEASE_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+          # No key: the installers still ship, only the in-app update is skipped.
+          # Linux (.deb/.rpm) has no in-app install: the app links to the release.
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            :
+          elif [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "updater=--config src-tauri/tauri.release.conf.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY missing in Doppler: this release has no in-app update"
+          fi
 
       - name: Build and attach to the release
         if: inputs.tag != ''
@@ -183,4 +201,6 @@ jobs:
         with:
           projectPath: desktop
           releaseId: ${{ steps.rel.outputs.id }}
-          args: --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ matrix.bundles }}
+          releaseBody: ${{ steps.rel.outputs.body }}  # "o que mudou" in latest.json
+          updaterJsonPreferNsis: true
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.engine.conf.json ${{ steps.rel.outputs.updater }} ${{ matrix.bundles }}

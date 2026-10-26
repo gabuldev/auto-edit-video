@@ -11,6 +11,7 @@ import shorts from "./shorts.js";
 import config from "./settings.js";
 import stylesScreen from "./styles.js";
 import welcome, { checkSetup } from "./welcome.js";
+import { startUpdateCheck } from "./update.js";
 
 route("/", library);
 route("/novo", newEdit);
@@ -28,3 +29,4 @@ document.querySelectorAll("[data-retry]").forEach((a) =>
 
 start();
 checkSetup(); // a machine that can't edit yet goes to the first-run setup
+startUpdateCheck(); // no app instalado: avisa de versão nova (nunca atualiza sem clique)
