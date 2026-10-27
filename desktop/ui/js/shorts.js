@@ -174,7 +174,7 @@ async function cut() {
   try {
     await api.cutShorts(state.id, pick, maxDur());
     state.picked.clear();
-    go("/"); // os shorts aparecem na biblioteca, em fila
+    go("/"); // os shorts aparecem nas Edições, em fila
   } catch (err) {
     setError(String(err.message || err));
   } finally {

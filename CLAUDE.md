@@ -142,7 +142,8 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_END_PADDING` | `0.2` | Segundos adicionados ao final de cada segmento mantido |
 | `AUTO_EDIT_LANGUAGE` | `pt` | Idioma do áudio para transcrição |
 | `AUTO_EDIT_HOME` | `~/.auto-edit` | Diretório de profile + plans (fora do repo) |
-| `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
+| `AUTO_EDIT_INBOX` | — | Pasta das gravações: onde o seletor de vídeos do app abre (sem ela: `workspace/input`, criada ao subir o motor junto com `workspace/output`) e a pasta padrão pra `auto-edit plan ingest` |
+| `AUTO_EDIT_OUTPUT` | `workspace/output` | Pasta onde o `finalize` entrega os vídeos prontos (app: Configurações → Pastas → Pasta de saída). Cada workspace grava no `pipeline.json` (`output_dir`) onde entregou, então trocar a pasta não perde os vídeos já feitos; workspace antigo sem esse campo continua em `workspace/output` |
 | `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
 | `AUTO_EDIT_THUMB_RENDERER` | — | `pillow` desenha a thumbnail com o layout antigo (Pillow) em vez do React (`renderer/`) |
@@ -194,6 +195,10 @@ fica em `auto_edit/engine.py` (fachada pura sobre `ralph.sh` + `pipeline.py` +
 GET  /api/health
 GET  /api/library                 # lista workspaces + status derivado
 GET  /api/browse?dir=             # pastas + vídeos de um diretório
+GET  /api/recordings              # Biblioteca: vídeos da pasta de entrada (subpastas até 3 níveis), com duração/resolução (ffprobe em cache) e as edições de cada
+GET  /api/recordings/thumb?path=  # miniatura de um vídeo da pasta de entrada (só dela)
+GET  /api/folders                 # {inbox, output}: {path, custom} como o pipeline usa agora
+POST /api/folders/<inbox|output>/open  # abre a pasta no gerenciador de arquivos (só essas duas)
 GET  /api/video-file?path=        # nome/tamanho de um vídeo escolhido ou arrastado (404 se não for vídeo)
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
 GET  /api/videos/<id>/plan        # cortes + o que é dito em cada trecho

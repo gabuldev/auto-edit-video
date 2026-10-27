@@ -106,6 +106,18 @@ export const deleteVideo = (id) => json(`/api/videos/${encodeURIComponent(id)}`,
 
 export const settings = () => json("/api/settings");
 
+/** Biblioteca: os vídeos da pasta de entrada (com subpastas) e as edições de cada um. */
+export const recordings = () => json("/api/recordings");
+
+/** Miniatura de um vídeo da pasta de entrada (o motor só serve as de lá). */
+export const recordingThumbUrl = (path) => `${API}/api/recordings/thumb?path=${encodeURIComponent(path)}`;
+
+/** Pasta de entrada e de saída como o pipeline usa agora: {inbox, output}: {path, custom}. */
+export const folders = () => json("/api/folders");
+
+/** Abre uma das duas pastas ("inbox" | "output") no gerenciador de arquivos. */
+export const openFolder = (which) => json(`/api/folders/${which}/open`, { method: "POST" });
+
 export const saveSettings = (data) =>
   json("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
 

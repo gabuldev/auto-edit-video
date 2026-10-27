@@ -28,9 +28,23 @@ function setError(msg) {
   el("cfg-error").textContent = msg || "";
 }
 
+// Everything on this screen saves itself, a moment after the last change (so
+// typing a model name isn't a save per key); the top bar says how it went.
+let saveTimer = null;
+let statusTimer = null;
+
+function setStatus(text, kind = "") {
+  clearTimeout(statusTimer);
+  el("cfg-save-status").textContent = text;
+  el("cfg-save-status").className = `save-status ${kind}`;
+  if (kind === "ok") statusTimer = setTimeout(() => setStatus("Salvo automaticamente"), 2500);
+}
+
 function syncSave() {
-  el("btn-cfg-save").disabled = !dirty();
-  el("btn-cfg-save").textContent = dirty() ? "Salvar alterações" : "Salvo";
+  if (!dirty()) return;
+  clearTimeout(saveTimer);
+  setStatus("Salvando…");
+  saveTimer = setTimeout(save, 600);
 }
 
 // OpenRouter: no CLI, just an API key pasted here.
@@ -117,9 +131,49 @@ function renderOllama() {
   state.poll = pulling.some(([, st]) => st === "downloading") ? setInterval(loadAgents, 4000) : null;
 }
 
+// Pastas: shown as the pipeline uses them (the engine resolves the defaults);
+// chosen in the OS dialog and saved right away, never typed.
+const FOLDER_KEY = { inbox: "inbox", output: "output_dir" };
+
+async function renderFolders() {
+  let f;
+  try { f = await api.folders(); } catch { return; }
+  for (const which of Object.keys(FOLDER_KEY)) {
+    el(`cfg-${which}`).textContent = `\u200E${f[which].path}\u200E`; // LRMs: the path keeps its order in the rtl cut
+    el(`cfg-${which}`).title = f[which].path;
+    el(`cfg-${which}-default`).hidden = f[which].custom;
+    el(`cfg-${which}-reset`).hidden = !f[which].custom;
+    el(`cfg-${which}`).classList.toggle("missing", f[which].exists === false);
+  }
+  // A chosen inbox can be deleted later: say so, Trocar fixes it.
+  el("cfg-inbox-missing").hidden = f.inbox.exists !== false;
+}
+
+// Saves just this folder setting: other unsaved edits on the screen stay pending.
+async function saveFolder(which, path) {
+  setError("");
+  const key = FOLDER_KEY[which];
+  try {
+    const s = await api.saveSettings({ ...state.saved, [key]: path });
+    state.saved = s;
+    state.draft[key] = s[key];
+    renderFolders();
+    setStatus("Salvo", "ok");
+  } catch (err) { setError(String(err.message || err)); }
+}
+
+async function pickFolder(which) {
+  const dialog = window.__TAURI__?.dialog;
+  if (!dialog) { setError("Escolher pasta só funciona no app instalado."); return; }
+  let path;
+  try {
+    path = await dialog.open({ directory: true, multiple: false, defaultPath: el(`cfg-${which}`).title || undefined });
+  } catch (err) { setError(String(err.message || err)); return; }
+  if (path) saveFolder(which, path);
+}
+
 function renderForm() {
   const d = state.draft;
-  el("cfg-inbox").value = d.inbox || "";
   el("cfg-language").value = d.language;
   el("cfg-whisper").value = d.whisper_model;
   el("cfg-coldopen").checked = d.cold_open;
@@ -136,13 +190,34 @@ async function renderYoutube() {
   el("btn-cfg-yt").dataset.connected = a.connected ? "1" : "";
 }
 
+// Checking every agent CLI takes a few seconds: until the first answer, a
+// skeleton in the list's own shape says so (later refreshes keep the list up).
+const SKELETON_ROWS = 7;
+
+function renderAgentsLoading() {
+  const row = `
+  <div class="cfg-agent skel" aria-hidden="true">
+    <span class="skel-dot"></span>
+    <span class="who"><span class="skel-bar" style="width: 38%"></span><span class="skel-bar sm" style="width: 22%"></span></span>
+    <span></span>
+  </div>`;
+  el("cfg-agents").innerHTML =
+    `<div class="cfg-loading" role="status"><span class="mini-spin"></span>Verificando os agentes de IA instalados no seu computador… leva alguns segundos.</div>` +
+    row.repeat(SKELETON_ROWS);
+  el("cfg-fallback").innerHTML = `<option>Carregando…</option>`;
+  el("cfg-fallback").disabled = true;
+}
+
 async function loadAgents() {
+  if (!state.agents.length) renderAgentsLoading();
   try {
     state.agents = await api.agents();
   } catch (err) {
     setError(String(err.message || err));
+    if (!state.agents.length) el("cfg-agents").innerHTML = `<div class="empty small">Não deu pra verificar os agentes de IA.</div>`;
     return;
   }
+  el("cfg-fallback").disabled = false;
   renderAgents();
   renderOllama();
 }
@@ -160,22 +235,30 @@ async function load() {
   }
   renderForm();
   syncSave();
+  renderFolders();
   renderYoutube();
   await loadAgents();
 }
 
 async function save() {
+  clearTimeout(saveTimer);
   setError("");
+  const sent = JSON.stringify(state.draft);
   try {
-    const s = await api.saveSettings(state.draft);
+    const s = await api.saveSettings(JSON.parse(sent));
     state.saved = s;
+    if (JSON.stringify(state.draft) !== sent) { syncSave(); return; } // changed meanwhile: save that too
+    const agentsBefore = JSON.stringify(state.draft.agent);
     state.draft = clone(s);
     renderForm();
-    renderAgents();
+    // Only when saving changed them (e.g. a fallback equal to the primary is
+    // cleared): re-rendering every time steals the focus from a model being typed.
+    if (JSON.stringify(s.agent) !== agentsBefore) renderAgents();
+    setStatus("Salvo", "ok");
   } catch (err) {
     setError(String(err.message || err));
+    setStatus("Não salvo", "err");
   }
-  syncSave();
 }
 
 async function test(name) {
@@ -242,6 +325,12 @@ function wire() {
     const a = e.target.closest("[data-docs]");
     // The webview won't follow links: the engine opens them in the browser.
     if (a) { e.preventDefault(); api.openUrl(a.dataset.docs).catch((err) => setError(String(err.message || err))); }
+    const open = e.target.closest("[data-folder-open]");
+    if (open) api.openFolder(open.dataset.folderOpen).catch((err) => setError(String(err.message || err)));
+    const pick = e.target.closest("[data-folder-pick]");
+    if (pick) pickFolder(pick.dataset.folderPick);
+    const reset = e.target.closest("[data-folder-reset]");
+    if (reset) { e.preventDefault(); saveFolder(reset.dataset.folderReset, null); } // back to workspace/input|output
   });
   el("cfg-fallback").addEventListener("change", (e) => {
     state.draft.agent.fallback = e.target.value || null;
@@ -250,12 +339,10 @@ function wire() {
   });
   const bind = (id, key, get = (x) => x.value.trim() || null) =>
     el(id).addEventListener("input", (e) => { state.draft[key] = get(e.target); syncSave(); });
-  bind("cfg-inbox", "inbox");
   el("cfg-language").addEventListener("change", (e) => { state.draft.language = e.target.value; syncSave(); });
   el("cfg-whisper").addEventListener("change", (e) => { state.draft.whisper_model = e.target.value; syncSave(); });
   el("cfg-coldopen").addEventListener("change", (e) => { state.draft.cold_open = e.target.checked; syncSave(); });
   el("cfg-reorder").addEventListener("change", (e) => { state.draft.reorder = e.target.checked; syncSave(); });
-  el("btn-cfg-save").addEventListener("click", save);
   el("btn-ollama-pull").addEventListener("click", async () => {
     const model = el("cfg-ollama-pull-model").value.trim() || "qwen2.5:7b";
     try { await api.pullOllama(model); } catch (err) { setError(String(err.message || err)); }
@@ -277,9 +364,11 @@ export default {
   mount() {
     if (!state.wired) { wire(); state.wired = true; }
     setError("");
+    if (!state.agents.length) renderAgentsLoading(); // before the first byte arrives
     load();
   },
   unmount() {
+    if (dirty()) save(); // a change still waiting its moment is saved on the way out
     clearInterval(state.poll);
     state.poll = null;
   },

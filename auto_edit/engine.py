@@ -53,17 +53,33 @@ def library_root() -> Path:
     return workspace_root()
 
 
+def default_inbox() -> Path:
+    """The inbox when none was chosen: <workspace root>/input, next to output/.
+    Created, so the app works without anyone setting folders."""
+    folder = (library_root() / "input").resolve()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # the screens say it doesn't exist; a folder can still be chosen
+    return folder
+
+
+def ensure_default_folders() -> None:
+    """The input and output folders the app works with out of the box."""
+    default_inbox()
+    try:
+        (library_root() / "output").mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+
 def inbox_root() -> Path:
-    """Default folder the "new edit" picker browses (same one `plan ingest` uses)."""
-    env = os.environ.get("AUTO_EDIT_INBOX")
-    if env:
-        return Path(env).expanduser()
+    """The inbox: where the app's video picker opens (and what `plan ingest`
+    reads through AUTO_EDIT_INBOX). Chosen in Configurações, else default_inbox()."""
     from auto_edit import settings
 
-    saved = settings.load().get("inbox")
-    if saved:
-        return Path(saved).expanduser()
-    return repo_root() / "upload"
+    chosen = settings.env_from_settings().get("AUTO_EDIT_INBOX")  # as saved now; a set variable wins
+    return Path(chosen).expanduser() if chosen else default_inbox()
 
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mts", ".m2ts"}
@@ -171,8 +187,7 @@ def _output_file(ws: Path, pipeline: dict) -> Path | None:
     Absolute: the library root is usually relative ("workspace"), and the app
     shows this path to the person, who needs to find the file.
     """
-    output_dir = ws.parent / "output"
-    candidate = output_dir / f"{pipeline.get('video_name', ws.name)}_final.mp4"
+    candidate = pl.delivered_dir(ws, pipeline) / f"{pipeline.get('video_name', ws.name)}_final.mp4"
     return candidate.resolve() if candidate.exists() else None
 
 
@@ -197,7 +212,7 @@ def _title(ws: Path) -> str | None:
 
 def _thumbnail_file(ws: Path, pipeline: dict) -> Path | None:
     name = pipeline.get("video_name", ws.name)
-    candidate = ws.parent / "output" / f"{name}_thumbnail.png"
+    candidate = pl.delivered_dir(ws, pipeline) / f"{name}_thumbnail.png"
     return candidate if candidate.is_file() else None
 
 
@@ -298,7 +313,7 @@ def detail(
 
 # ── Finished artifacts ────────────────────────────────────────────────────────
 
-# What `pipeline.finalize()` drops in <workspace root>/output/, by kind.
+# What `pipeline.finalize()` drops in the output folder, by kind.
 ARTIFACT_SUFFIXES = {
     "video": "_final.mp4",
     "thumbnail": "_thumbnail.png",
@@ -316,8 +331,8 @@ ARTIFACT_MIME = {
 def artifact_path(video_id: str, kind: str) -> Path | None:
     """Absolute path of one finished artifact, or None when it isn't there.
 
-    Only the four known kinds resolve, and always inside the library's own
-    output folder — this is what the API serves to the player.
+    Only the four known kinds resolve, and only from the folder this
+    workspace delivered to — this is what the API serves to the player.
     """
     suffix = ARTIFACT_SUFFIXES.get(kind)
     if suffix is None:
@@ -325,16 +340,17 @@ def artifact_path(video_id: str, kind: str) -> Path | None:
     ws = library_root() / video_id
     if not (ws / "pipeline.json").exists():
         return None
-    name = pl.load(ws).get("video_name", video_id)
+    p = pl.load(ws)
+    name = p.get("video_name", video_id)
     # Absolute: the library root is usually relative ("workspace"), and Flask's
     # send_file resolves a relative path against the package, not the cwd.
-    candidate = (ws.parent / "output" / f"{name}{suffix}").resolve()
+    candidate = (pl.delivered_dir(ws, p) / f"{name}{suffix}").resolve()
     return candidate if candidate.is_file() else None
 
 
 def delete_video(video_id: str) -> dict:
     """Remove a video from the library: its workspace and its delivered files
-    in output/. The source video is never touched. Stop it first (Jobs.stop).
+    in its output folder. The source video is never touched. Stop it first (Jobs.stop).
 
     FileNotFoundError for an unknown id or one that points outside the library.
     """
@@ -342,16 +358,20 @@ def delete_video(video_id: str) -> dict:
     ws = (root / video_id).resolve()
     if ws.parent != root or not (ws / "pipeline.json").is_file():
         raise FileNotFoundError(f"no workspace for: {video_id}")
-    name = pl.load(ws).get("video_name", video_id)
-    # Another workspace with the same video name delivers to the same files.
-    shared = any(
-        pj.parent != ws and pl.load(pj.parent).get("video_name", pj.parent.name) == name
-        for pj in root.glob("*/pipeline.json")
-    )
+    p = pl.load(ws)
+    name = p.get("video_name", video_id)
+    out_dir = pl.delivered_dir(ws, p).resolve()
+
+    def same_files(other: Path) -> bool:
+        q = pl.load(other)
+        return q.get("video_name", other.name) == name and pl.delivered_dir(other, q).resolve() == out_dir
+
+    # Another workspace with the same name delivered to the same files.
+    shared = any(pj.parent != ws and same_files(pj.parent) for pj in root.glob("*/pipeline.json"))
     removed: list[str] = []
     if not shared:
         for suffix in ARTIFACT_SUFFIXES.values():
-            out = root / "output" / f"{name}{suffix}"
+            out = out_dir / f"{name}{suffix}"
             if out.is_file():
                 out.unlink()
                 removed.append(str(out))
@@ -494,6 +514,75 @@ def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subpr
     else:  # no portable "select in folder" on Linux: open the folder instead
         cmd = ["xdg-open", str(path.parent if reveal else path)]
     run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def recordings_view(library: list[dict]) -> dict:
+    """The Biblioteca: the recordings in the inbox, each with the edits made
+    from it (newest first), matched by the source video path."""
+    from auto_edit import recordings
+
+    edits: dict[str, list[dict]] = {}
+    for v in sorted(library, key=lambda v: v.get("created_at") or "", reverse=True):
+        key = recordings.source_key(v.get("video_path"))
+        if key:
+            edits.setdefault(key, []).append(
+                {"id": v["id"], "name": v.get("name") or v.get("title"), "status": v.get("status")}
+            )
+    return recordings.listing(inbox_root(), edits)
+
+
+def recording_thumbnail(path: str) -> Path | None:
+    """A recording's thumbnail — only for a video inside the inbox, so this
+    never becomes a way to read any file on the machine."""
+    from auto_edit import recordings
+
+    if not path:
+        return None
+    try:
+        p = Path(path).resolve()
+        inbox = inbox_root().resolve()
+    except OSError:
+        return None
+    if p.suffix.lower() not in recordings.VIDEO_EXTS or inbox not in p.parents or not p.is_file():
+        return None
+    return recordings.thumbnail(p)
+
+
+FOLDERS = ("inbox", "output")
+
+
+def folders() -> dict:
+    """The folders Configurações shows, as the pipeline will use them now:
+    the inbox (where recordings are) and where finished videos go. `custom`
+    is False when nothing was chosen and the default applies."""
+    from auto_edit import settings
+
+    env = settings.env_from_settings()  # settings as saved now; a set variable wins
+    inbox = env.get("AUTO_EDIT_INBOX")
+    output = env.get("AUTO_EDIT_OUTPUT")
+    inbox_path = (Path(inbox).expanduser() if inbox else default_inbox()).resolve()
+    output_path = Path(output).expanduser() if output else (library_root() / "output").resolve()
+    return {
+        # exists: a chosen folder can be deleted later — the screen says so.
+        # The output folder is created when missing (finalize writes there).
+        "inbox": {"path": str(inbox_path), "custom": bool(inbox), "exists": inbox_path.is_dir()},
+        "output": {"path": str(output_path), "custom": bool(output), "exists": True},
+    }
+
+
+def open_folder(which: str, *, run: Callable[..., object] = subprocess.Popen) -> Path | None:
+    """Show one of FOLDERS in the file manager. Only those two, never a path
+    from the request: opening an arbitrary path would run it. None when it
+    doesn't exist (the output folder is created, it's where finalize writes)."""
+    if which not in FOLDERS:
+        return None
+    path = Path(folders()[which]["path"])
+    if which == "output":
+        path.mkdir(parents=True, exist_ok=True)
+    if not path.is_dir():
+        return None
+    os_open(path, run=run)
+    return path
 
 
 def downloads_dir() -> Path:

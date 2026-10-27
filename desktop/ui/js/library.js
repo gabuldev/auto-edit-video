@@ -1,4 +1,4 @@
-// Biblioteca — the list of workspaces, with live per-row progress over SSE.
+// Edições — the list of workspaces (the edits), with live per-row progress over SSE.
 
 import * as api from "./api.js";
 import { el, escapeHtml, setEngine } from "./shell.js";
@@ -188,7 +188,7 @@ function render(videos) {
   el("lib-noresults").hidden = !(videos.length && !shown.length);
   el("lib-noresults").textContent = `Nada encontrado pra “${query}”.`;
   el("lib-sub").textContent =
-    (query ? `${shown.length} de ${videos.length} vídeos · ` : `${videos.length} vídeo${videos.length === 1 ? "" : "s"} · `) +
+    (query ? `${shown.length} de ${videos.length} edições · ` : `${videos.length} ${videos.length === 1 ? "edição" : "edições"} · `) +
     `${videos.filter((v) => v.status === "running").length} em andamento`;
   videos.filter((v) => v.status === "running").forEach(subscribe);
 }

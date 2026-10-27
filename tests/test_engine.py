@@ -994,3 +994,95 @@ class TestEditName:
         video.write_bytes(b"x")
         job = engine.JobManager().start_edit(str(video), "short", name="Review do fone")
         assert pl.load(engine.library_root() / job.video_id)["name"] == "Review do fone"
+
+
+# ── output folder setting (where finished videos go) ──────────────────────────
+
+class TestOutputFolder:
+    def _setup(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path / "lib"))
+        monkeypatch.delenv("AUTO_EDIT_OUTPUT", raising=False)
+        monkeypatch.delenv("AUTO_EDIT_INBOX", raising=False)
+
+    def test_files_are_found_where_each_video_was_delivered(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        self._setup(tmp_path, monkeypatch)
+        old = _mkws(tmp_path / "lib", "antigo", video_name="antigo")  # before the setting: <lib>/output
+        (tmp_path / "lib" / "output").mkdir()
+        (tmp_path / "lib" / "output" / "antigo_final.mp4").write_bytes(b"x")
+        new = _mkws(tmp_path / "lib", "novo", video_name="novo")
+        chosen = tmp_path / "Saída escolhida"
+        chosen.mkdir()
+        (chosen / "novo_final.mp4").write_bytes(b"x")
+        p = pl.load(new)
+        p["output_dir"] = str(chosen)
+        pl.save(new, p)
+        assert engine.artifact_path("antigo", "video") == (tmp_path / "lib" / "output" / "antigo_final.mp4").resolve()
+        assert engine.artifact_path("novo", "video") == (chosen / "novo_final.mp4").resolve()
+        assert engine.summarize(old)["output"] and engine.summarize(new)["output"].startswith(str(chosen.resolve()))
+        engine.delete_video("novo")
+        assert not (chosen / "novo_final.mp4").exists()
+        assert (tmp_path / "lib" / "output" / "antigo_final.mp4").exists()
+
+    def test_folders_show_defaults_then_the_choice(self, tmp_path, monkeypatch):
+        from auto_edit import settings
+        self._setup(tmp_path, monkeypatch)
+        f = engine.folders()
+        assert f["output"] == {"path": str((tmp_path / "lib" / "output").resolve()), "custom": False, "exists": True}
+        assert f["inbox"]["custom"] is False
+        out = tmp_path / "prontos"
+        out.mkdir()
+        settings.save({"output_dir": str(out), "inbox": str(tmp_path)})
+        f = engine.folders()
+        assert f["output"] == {"path": str(out), "custom": True, "exists": True} and f["inbox"]["path"] == str(tmp_path.resolve())
+        with pytest.raises(settings.SettingsError):
+            settings.save({"output_dir": str(tmp_path / "nao-existe")})
+
+    def test_a_deleted_inbox_does_not_block_saving(self, tmp_path, monkeypatch):
+        """The inbox chosen earlier was deleted: changing the output folder (or
+        anything else) must still save; the screen flags the missing folder."""
+        from auto_edit import settings
+        self._setup(tmp_path, monkeypatch)
+        inbox = tmp_path / "novo"
+        inbox.mkdir()
+        settings.save({"inbox": str(inbox)})
+        inbox.rmdir()
+        out = tmp_path / "prontos"
+        out.mkdir()
+        saved = settings.save({**settings.load(), "output_dir": str(out)})
+        assert saved["output_dir"] == str(out) and saved["inbox"] == str(inbox)
+        assert engine.folders()["inbox"]["exists"] is False
+        # choosing a folder that doesn't exist is still refused
+        with pytest.raises(settings.SettingsError):
+            settings.save({"inbox": str(tmp_path / "outra-que-nao-existe")})
+
+    def test_open_folder_only_opens_the_two_folders(self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch)
+        calls = []
+        opened = engine.open_folder("output", run=lambda cmd, **k: calls.append(cmd))
+        assert opened == (tmp_path / "lib" / "output").resolve() and opened.is_dir() and len(calls) == 1
+        assert engine.open_folder("../etc", run=lambda cmd, **k: calls.append(cmd)) is None
+        assert len(calls) == 1
+
+    def test_folder_endpoints(self, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
+        self._setup(tmp_path, monkeypatch)
+        monkeypatch.setattr(engine, "os_open", lambda path, reveal=False, run=None: None)
+        client = api.create_app().test_client()
+        assert client.get("/api/folders").get_json()["output"]["custom"] is False
+        assert client.post("/api/folders/output/open").status_code == 200
+        assert client.post("/api/folders/qualquer/open").status_code == 404
+
+    def test_default_folders_are_created_in_the_workspace(self, tmp_path, monkeypatch):
+        """Nobody has to set folders: input/ and output/ sit in the workspace
+        root, created when the engine starts."""
+        self._setup(tmp_path, monkeypatch)
+        engine.ensure_default_folders()
+        lib = (tmp_path / "lib").resolve()
+        assert (lib / "input").is_dir() and (lib / "output").is_dir()
+        f = engine.folders()
+        assert f["inbox"] == {"path": str(lib / "input"), "custom": False, "exists": True}
+        assert f["output"]["path"] == str(lib / "output") and f["output"]["custom"] is False
+        assert engine.inbox_root() == lib / "input"
+        assert engine.open_folder("inbox", run=lambda cmd, **k: None) == lib / "input"

@@ -206,6 +206,24 @@ class TestRecaption:
         assert (workspace / "edited_video.mp4").exists()
         assert not (workspace / "overlaid_video.mp4").exists()
 
+    def test_finalize_delivers_to_the_chosen_output_folder(self, workspace, tmp_path, monkeypatch):
+        out = tmp_path / "Meus vídeos prontos"
+        monkeypatch.setenv("AUTO_EDIT_OUTPUT", str(out))
+        (workspace / "captioned_video.mp4").write_text("c")
+        final = pl.finalize(workspace)
+        assert final == out / "test_final.mp4" and final.exists()
+        # recorded: the app finds the files here even if the setting changes later
+        assert pl.delivered_dir(workspace) == out.resolve()
+
+    def test_finalize_without_a_choice_keeps_output_beside_the_workspaces(self, workspace, monkeypatch):
+        monkeypatch.delenv("AUTO_EDIT_OUTPUT", raising=False)
+        (workspace / "captioned_video.mp4").write_text("c")
+        assert pl.finalize(workspace) == workspace.parent / "output" / "test_final.mp4"
+
+    def test_workspaces_from_before_the_setting_read_from_output(self, workspace):
+        assert "output_dir" not in pl.load(workspace)
+        assert pl.delivered_dir(workspace) == workspace.parent / "output"
+
 
 # ── _merge_target ────────────────────────────────────────────────────────────
 

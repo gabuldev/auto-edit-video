@@ -56,6 +56,9 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .lib-search { position: relative; display: flex; align-items: center; width: min(340px, 34vw); }
 .lib-search svg { position: absolute; left: 12px; width: 16px; height: 16px; fill: none; stroke: var(--faint); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
 .lib-search .input { height: 40px; padding-left: 36px; }
+.titles { min-width: 0; }
+#rec-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rec-sub b { font-weight: 600; color: var(--dim); }
 .page-title { font-size: 19px; font-weight: 700; }
 .page-sub { font-size: 12.5px; color: var(--faint); }
 .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; font-size: 14px; font-family: inherit; cursor: pointer; border: 1px solid var(--border); background: #1b212b; color: var(--text); }
@@ -80,6 +83,7 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .table-head { display: grid; grid-template-columns: minmax(0, 1fr) 80px 220px 120px 190px; gap: 16px; padding: 0 16px 10px; font-size: 11px; letter-spacing: .6px; text-transform: uppercase; color: #5b6472; font-weight: 600; }
 .rows { display: flex; flex-direction: column; gap: 8px; }
 .empty { padding: 40px; text-align: center; color: var(--faint); }
+.empty-link { display: block; width: fit-content; margin: 8px auto 0; }
 
 /* Row */
 .row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 220px 120px 190px; gap: 16px; align-items: center; padding: 12px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
@@ -104,6 +108,20 @@ a { color: var(--accent); cursor: pointer; text-decoration: none; }
 .stage-name { font-size: 11px; margin-left: 6px; }
 
 .row-acts { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+
+/* Biblioteca (the recordings in the inbox): Edições' row look, its own columns */
+.table-head.rec-grid, .rec-row { display: grid; grid-template-columns: minmax(0, 1fr) 70px 230px 80px 130px 210px; gap: 16px; align-items: center; }
+.rec-row { padding: 12px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.rec-row .thumb { object-fit: cover; }
+.rec-row > .mono { font-size: 12px; color: var(--dim); }
+.rec-shape { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rec-shape .mono { font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-row .chip { text-decoration: none; }
+.rec-row.skel .thumb { display: block; background: #222b37; animation: skel-pulse 1.4s ease-in-out infinite; }
+@media (max-width: 1300px) {
+  .table-head.rec-grid, .rec-row { grid-template-columns: minmax(0, 1fr) 64px 200px 76px 200px; gap: 12px; }
+  .rec-grid .rec-date, .rec-row .thumb, .rec-row.skel .thumb { display: none; }
+}
 .row-acts .btn { white-space: nowrap; }
 .row-acts .btn-icon { width: 30px; }
 .row-acts .btn svg { width: 15px; height: 15px; }
@@ -170,7 +188,10 @@ select.input:not([multiple]) {
 .dz-size { margin-left: 9px; font-size: 11.5px; color: var(--faint); }
 
 /* Empty Biblioteca: the first video starts here */
-.lib-empty { max-width: 720px; margin: 40px auto 0; }
+/* Centred both ways in what's left of the screen (banners stay on top). */
+.main[data-screen="library"] .content:has(> #empty:not([hidden])) { display: flex; flex-direction: column; }
+.lib-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
+.lib-empty .drop-zone { width: min(720px, 100%); }
 .lib-empty .dz-empty { padding: 56px 24px; gap: 8px; }
 .lib-empty .dz-empty svg { width: 38px; height: 38px; }
 .lib-empty .dz-empty b { font-size: 17px; }
@@ -397,6 +418,27 @@ select.input:not([multiple]) {
 
 /* ── Configurações ──────────────────────────────────────────────────────────── */
 .cfg-agents { display: flex; flex-direction: column; gap: 8px; }
+/* Pastas: side by side; the path is shown (never typed), cut from the left so the folder's name stays. */
+.folders { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 20px; }
+.folder-row { display: flex; align-items: center; gap: 8px; }
+.folder-path { flex: 1; min-width: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; cursor: default; }
+.folder-path.missing { border-color: rgba(248, 113, 113, .55); }
+.folder-warn { font-size: 12px; color: #f6bcbb; }
+.save-status { font-size: 12.5px; color: var(--faint); white-space: nowrap; }
+.save-status.ok { color: var(--ok); }
+.save-status.err { color: var(--err); }
+a.field-link { color: var(--accent); }
+@media (max-width: 1080px) { .folders { grid-template-columns: minmax(0, 1fr); } }
+/* Loading the agent list: a status line, then rows in the list's own shape. */
+.cfg-loading { display: flex; align-items: center; gap: 10px; padding: 4px 2px 6px; font-size: 13px; color: var(--dim); }
+.mini-spin { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.14); border-top-color: var(--accent); animation: sty-spin .8s linear infinite; }
+.cfg-agent.skel { align-items: center; }
+.cfg-agent.skel .who { gap: 8px; }
+.skel-dot, .skel-bar { display: block; background: #222b37; animation: skel-pulse 1.4s ease-in-out infinite; }
+.skel-dot { width: 16px; height: 16px; border-radius: 50%; }
+.skel-bar { height: 12px; border-radius: 6px; }
+.skel-bar.sm { height: 9px; }
+@keyframes skel-pulse { 50% { opacity: .45; } }
 .cfg-agent { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 11px; background: var(--panel-2); }
 .cfg-agent.primary { border-color: var(--accent); background: rgba(46,230,198,.05); }
 .cfg-agent input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin-top: 3px; }
@@ -438,17 +480,39 @@ select.input:not([multiple]) {
 .cfg-row .grow { flex: 1; }
 
 /* ── Estilos ─────────────────────────────────────────────────────────────── */
-.sty-brand { display: flex; gap: 22px; align-items: flex-start; }
+.sty-brand { display: flex; gap: 22px; align-items: center; }
 .sty-logo { flex: none; position: relative; width: 92px; height: 92px; border-radius: 50%; border: 2px dashed var(--border); background: var(--panel-2); color: var(--dim); font-size: 34px; font-weight: 700; cursor: pointer; overflow: hidden; display: grid; place-items: center; padding: 0; }
 .sty-logo:hover { border-color: var(--accent); }
+/* + to add a logo, × to remove it: a badge on the circle's lower right */
+.sty-logo-wrap { position: relative; flex: none; }
+.sty-logo-badge { position: absolute; right: -2px; bottom: -2px; width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 3px solid var(--panel); background: var(--accent); color: #06231f; cursor: pointer; }
+.sty-logo-badge svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+.sty-logo-badge.remove { background: #3a2530; color: #f6bcbb; }
+.sty-logo-badge.remove:hover { background: var(--err); color: #1a0606; }
 .sty-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.sty-brand-fields { flex: 1; min-width: 0; }
-.sty-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
-.sty-logo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: 12.5px; }
-.sty-logo-bg { display: inline-flex; align-items: center; gap: 10px; color: var(--dim); }
-.sty-logo-bg .check { margin: 0; }
-.sty-logo-bg input[type=color] { width: 40px; height: 26px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: transparent; cursor: pointer; }
-.sty-logo-bg input[type=color]:disabled { opacity: .35; }
+.sty-brand-fields { flex: 1; min-width: 0; container-type: inline-size; }
+.sty-brand-saved { font-size: 12.5px; }
+/* Nome, @ and Fundo da logo side by side: each is title / description /
+   control on shared rows (subgrid), so the controls line up even when a
+   description wraps. Fundo da logo only exists with a logo. */
+.sty-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.sty-row:has(#sty-logo-bg-wrap:not([hidden])) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sty-row > .field { display: grid; grid-row: span 3; grid-template-rows: subgrid; gap: 4px; align-content: start; }
+.field-desc { font-size: 12px; line-height: 1.4; color: var(--faint); margin-bottom: 4px; }
+@container (max-width: 760px) {
+  .sty-row:has(#sty-logo-bg-wrap:not([hidden])) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sty-row > .sty-logo-bg { grid-column: 1 / -1; }
+}
+/* two options side by side, the chosen one lit: no toggle to understand */
+.sty-logo-bg-opts { position: relative; display: flex; padding: 3px; gap: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.sty-logo-bg-opts button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--dim); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.sty-logo-bg-opts button:hover { color: var(--text); }
+.sty-logo-bg-opts button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px #2f3c4c; }
+.sty-logo-bg-opts .sw { width: 16px; height: 16px; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+/* no color of one's own yet: a rainbow says "pick one" */
+.sty-logo-bg-opts .sw.unset { background: conic-gradient(#f87171, #fbbf24, #4ade80, #38bdf8, #a78bfa, #f87171) !important; }
+/* the picker opens from "Outra cor"; the input itself stays out of sight */
+.sty-logo-bg-opts input[type=color] { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
 .sty-h { font-size: 13px; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); margin: 26px 0 12px; }
 .sty-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
 .sty-card { text-align: left; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; overflow: hidden; transition: border-color .15s, transform .15s; }

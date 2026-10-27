@@ -5,6 +5,7 @@ import * as api from "./api.js";
 import { el, setEngine } from "./shell.js";
 import { route, start } from "./router.js";
 import library, { refresh } from "./library.js";
+import recordings from "./recordings.js";
 import newEdit from "./new-edit.js";
 import pipeline from "./pipeline.js";
 import cuts from "./cuts.js";
@@ -16,6 +17,7 @@ import welcome, { checkSetup } from "./welcome.js";
 import { startUpdateCheck } from "./update.js";
 
 route("/", library);
+route("/biblioteca", recordings);
 route("/novo", newEdit);
 route("/video/:id", pipeline);
 route("/video/:id/cortes", cuts);

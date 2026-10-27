@@ -29,6 +29,8 @@ DEFAULTS: dict = {
     "language": "pt",
     "whisper_model": "small",
     "inbox": None,
+    # Where finished videos go. None → <workspace root>/output (as always).
+    "output_dir": None,
     "overlays_dir": None,
     "cold_open": True,
     "reorder": True,
@@ -47,6 +49,7 @@ ENV = {
     ("agent", "fallback"): "AUTO_EDIT_LLM_FALLBACK",
     ("language",): "AUTO_EDIT_LANGUAGE",
     ("inbox",): "AUTO_EDIT_INBOX",
+    ("output_dir",): "AUTO_EDIT_OUTPUT",
     ("overlays_dir",): "AUTO_EDIT_ASSETS_OVERLAYS",
 }
 
@@ -80,7 +83,8 @@ def load() -> dict:
 
 def validate(data: dict) -> dict:
     """The full settings after a partial update, or SettingsError."""
-    merged = _merge(load(), data or {})
+    current = load()
+    merged = _merge(current, data or {})
     agent = merged["agent"]
     primary = agents.normalize(agent.get("primary") or "")
     if primary is None:
@@ -98,11 +102,14 @@ def validate(data: dict) -> dict:
     }
     if merged["whisper_model"] not in WHISPER_MODELS:
         raise SettingsError(f"modelo do Whisper inválido: {merged['whisper_model']!r}")
-    for key in ("inbox", "overlays_dir"):
+    for key in ("inbox", "output_dir", "overlays_dir"):
         value = merged.get(key)
         if value:
             p = Path(value).expanduser()
-            if not p.is_dir():
+            # Only a folder being chosen now must exist: one saved earlier and
+            # deleted since must not block saving anything else (the screens
+            # say it's gone and offer to pick another).
+            if not p.is_dir() and value != current.get(key):
                 raise SettingsError(f"pasta não existe: {value}")
             merged[key] = str(p)
         else:

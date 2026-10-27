@@ -49,8 +49,10 @@ export function resolve() {
   document.querySelectorAll("[data-screen]").forEach((s) => {
     s.hidden = s.dataset.screen !== screen.id;
   });
+  // data-also: a screen with no menu item of its own lights up the one it's
+  // reached from (Novo edit → Edições).
   document.querySelectorAll(".nav-item").forEach((n) => {
-    n.classList.toggle("active", n.dataset.route === path);
+    n.classList.toggle("active", n.dataset.route === path || n.dataset.also === path);
   });
 
   screen.mount?.(params);

@@ -11,6 +11,10 @@ Endpoints
     GET  /api/health
     GET  /api/library
     GET  /api/browse?dir=            (folders + videos of a directory)
+    GET  /api/recordings             Biblioteca: vídeos da pasta de entrada (subpastas até 3 níveis) + edições de cada
+    GET  /api/recordings/thumb?path= miniatura JPEG de um vídeo da pasta de entrada (só dela)
+    GET  /api/folders                {inbox, output}: {path, custom} — as the pipeline uses them now
+    POST /api/folders/<inbox|output>/open   abre a pasta no gerenciador de arquivos
     GET  /api/video-file?path=       (nome/tamanho de um vídeo escolhido ou arrastado)
     GET  /api/videos/<id>
     GET  /api/videos/<id>/plan       (cortes + o que é dito em cada um)
@@ -394,6 +398,35 @@ def create_app(jobs: engine.JobManager | None = None):
 
         return jsonify(settings.load())
 
+    @app.get("/api/recordings")
+    def list_recordings():
+        """The Biblioteca: the videos in the inbox, each with its edits."""
+        library = engine.list_library(
+            active_ids=jobs.active_ids(), failed_ids=jobs.failed_ids(), queued_ids=jobs.queued_ids()
+        )
+        return jsonify(engine.recordings_view(library))
+
+    @app.get("/api/recordings/thumb")
+    def recording_thumb():
+        path = engine.recording_thumbnail(request.args.get("path") or "")
+        if path is None:
+            return jsonify({"error": "not_found"}), 404
+        return send_file(path, mimetype="image/jpeg", max_age=3600)
+
+    @app.get("/api/folders")
+    def get_folders():
+        return jsonify(engine.folders())
+
+    @app.post("/api/folders/<which>/open")
+    def open_folder(which: str):
+        """Open the inbox or the output folder in the file manager."""
+        if which not in engine.FOLDERS:
+            return jsonify({"error": "not_found", "folder": which}), 404
+        path = engine.open_folder(which)
+        if path is None:
+            return jsonify({"error": f"a pasta não existe: {engine.folders()[which]['path']}"}), 404
+        return jsonify({"opened": str(path)})
+
     @app.put("/api/settings")
     def put_settings():
         from auto_edit import settings
@@ -708,5 +741,6 @@ def create_app(jobs: engine.JobManager | None = None):
 
 def serve(host: str = "127.0.0.1", port: int = 8760) -> None:
     """Start the API server (blocking). threaded=True so SSE streams don't block."""
+    engine.ensure_default_folders()  # workspace/input and workspace/output, ready on first launch
     app = create_app()
     app.run(host=host, port=port, threaded=True)

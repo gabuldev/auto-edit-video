@@ -1,8 +1,10 @@
 // Getting a video's path from the person: the app's open dialog and files
-// dropped on the window. Shared by Novo edit and the empty Biblioteca.
+// dropped on the window. Shared by Novo edit and the empty Edições.
 //
 // Both come from Tauri with real paths. A browser never exposes where a file
 // is, so the browser preview can only say so.
+
+import * as api from "./api.js";
 
 const T = window.__TAURI__;
 
@@ -11,13 +13,17 @@ export const isVideo = (path) => VIDEO_EXTS.includes(path.split(".").pop().toLow
 export const NOT_VIDEO = "Isso não é um vídeo que o pipeline abre (mp4, mov, mkv, webm…).";
 const BROWSER = "O navegador não informa onde o arquivo está: escolha o vídeo no app instalado.";
 
-/** The OS open dialog, filtered to videos. The path, or null when cancelled. */
+/** The OS open dialog, filtered to videos and opening in the inbox
+ * (Configurações → Pastas). The path, or null when cancelled. */
 export async function chooseVideo() {
   if (!T?.dialog) throw new Error(BROWSER);
+  let inbox;
+  try { inbox = (await api.folders()).inbox.path; } catch { /* engine offline: the OS decides */ }
   return T.dialog.open({
     title: "Escolher vídeo",
     multiple: false,
     directory: false,
+    defaultPath: inbox,
     filters: [{ name: "Vídeos", extensions: VIDEO_EXTS }],
   });
 }

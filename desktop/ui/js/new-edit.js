@@ -7,11 +7,12 @@ import { go } from "./router.js";
 import { chooseVideo, isVideo, NOT_VIDEO, onVideoDrop } from "./video-pick.js";
 
 const state = { video: null, busy: false, picking: false };
-let pending = null; // a path chosen on the empty Biblioteca, picked up on mount
+let pending = null; // a video chosen on Biblioteca or the empty Edições, picked up on mount
 
-/** Open Novo edit with this video already chosen. */
-export function openWithVideo(path) {
-  pending = path;
+/** Open Novo edit with this video already chosen — and, when the caller
+ * knows the shape (Biblioteca), the matching type ticked. */
+export function openWithVideo(path, { type = null } = {}) {
+  pending = { path, type };
   go("/novo");
 }
 
@@ -151,7 +152,13 @@ export default {
         if (cfg.overlays_dir && !el("f-overlays").value) el("f-overlays").value = cfg.overlays_dir;
       } catch { /* engine offline: keep the form's own defaults */ }
     }
-    if (pending) { const path = pending; pending = null; await usePath(path); }
+    if (pending) {
+      const { path, type } = pending;
+      pending = null;
+      await usePath(path);
+      const radio = type && document.querySelector(`input[name="vtype"][value="${type}"]`);
+      if (radio) radio.checked = true;
+    }
     validate();
   },
 };
