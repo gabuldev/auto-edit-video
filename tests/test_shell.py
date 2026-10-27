@@ -43,4 +43,5 @@ class TestNativePath:
         assert shell.native_path("\\\\?\\UNC\\srv\\share\\v.mp4") == "\\\\srv\\share\\v.mp4"
 
     def test_plain_path_unchanged(self):
-        assert shell.native_path(Path("/videos/v.mp4")) == "/videos/v.mp4"
+        p = Path("/videos/v.mp4")
+        assert shell.native_path(p) == str(p)
