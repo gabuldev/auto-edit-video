@@ -164,10 +164,14 @@ def main(engine: Path) -> None:
             "video_path": str(wav), "video_name": "smoke", "type": "short", "language": "pt",
             "current_stage": "done", "iteration": 1, "max_iterations": 1, "stages": {},
         }))
-        out = run([str(python), "-c",
+        # Windows: the installed app handed the engine \\?\C:\... paths (Tauri's
+        # canonical resource_dir) and the Git bash exited silently. Run it
+        # with those, like v0.42.1 did.
+        x_python, x_env = app_env(Path("\\\\?\\" + str(engine))) if WIN else (python, env)
+        out = run([str(x_python), "-c",
                    "import sys, json; from pathlib import Path; from auto_edit import engine; evs = []; "
                    "engine.run_workspace(Path(sys.argv[1]), emit=evs.append); print(json.dumps(evs))",
-                   str(ws)], {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "engine runs ralph.sh", timeout=120)
+                   str(ws)], {**x_env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "engine runs ralph.sh", timeout=120)
         evs = json.loads(out.strip().splitlines()[-1])
         if not any("Starting pipeline" in e.get("line", "") for e in evs):
             raise SystemExit(f"FAIL the engine's bash never ran ralph.sh:\n{json.dumps(evs)[-1500:]}")

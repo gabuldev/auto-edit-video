@@ -1335,7 +1335,7 @@ def _ralph_env(ralph: Path, language: str) -> dict:
     env["AUTO_EDIT_LANGUAGE"] = language
     env.setdefault("AUTO_EDIT_LLM", "claude")
     env["PYTHON"] = os.environ.get("PYTHON", sys.executable)
-    return env
+    return shell.native_env(env)
 
 
 def run_clipper(
@@ -1360,11 +1360,11 @@ def run_clipper(
     env["AUTO_EDIT_CLIP_MAX_DUR"] = f"{max_duration:g}"
     proc = popen(
         [
-            shell.bash(env), str(ralph), "--agent", shell.native_path(ws.resolve()),
+            shell.bash(env), shell.native_path(ralph), "--agent", shell.native_path(ws.resolve()),
             "clip", str((ws / sh.CLIPS_PLAN_NAME).resolve()),
             str(ralph.parent / "agents" / "clipper.md"),
         ],
-        cwd=str(ralph.parent),
+        cwd=shell.native_path(ralph.parent),
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1417,8 +1417,8 @@ def run_workspace(
         env["AUTO_EDIT_ASSETS_OVERLAYS"] = str(Path(overlays_dir).expanduser().resolve())
 
     proc = popen(
-        [shell.bash(env), str(ralph), shell.native_path(ws.resolve())],
-        cwd=str(ralph.parent),
+        [shell.bash(env), shell.native_path(ralph), shell.native_path(ws.resolve())],
+        cwd=shell.native_path(ralph.parent),
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1448,7 +1448,7 @@ def run_workspace(
     if rc == 0 and not said_anything:
         # ralph always logs "Starting pipeline"; silence means bash never ran
         # it (on Windows: the WSL launcher instead of the bundled Git bash).
-        msg = f"o bash não rodou o pipeline ({shell.bash(env)})"
+        msg = f"o bash não rodou o pipeline ({shell.bash(env)}): {shell.probe_bash(env)}"
         emit({"type": "log", "line": msg})
         emit({"type": "error", "status": "failed", "message": msg, "stage": _current_stage(ws)})
         return 1
