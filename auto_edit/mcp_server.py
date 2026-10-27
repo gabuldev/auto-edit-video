@@ -26,6 +26,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from auto_edit import pipeline as pl
+from auto_edit import shell
 from auto_edit.workspace import get_workspace, get_status_table
 
 mcp = FastMCP(
@@ -92,7 +93,7 @@ def _run_pipeline(
         env["AUTO_EDIT_DRY_RUN"] = "1"
 
     result = subprocess.run(
-        ["bash", str(ralph), str(ws.resolve())],
+        [shell.bash(env), str(ralph), shell.native_path(ws.resolve())],
         cwd=ralph.parent,
         env=env,
         capture_output=True,
