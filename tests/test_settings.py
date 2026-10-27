@@ -164,6 +164,11 @@ class TestApi:
         assert c.post("/api/agents/ollama/pull", json={}).status_code == 400
 
 
+def _oem_codepage() -> int:
+    import ctypes
+    return ctypes.windll.kernel32.GetOEMCP()
+
+
 class TestCliOutput:
     """A CLI on Windows can print cmd.exe's own error in cp850 ("O sistema não
     pode encontrar…"): reading it as UTF-8 crashed /api/agents with a 500 and
@@ -181,7 +186,8 @@ class TestCliOutput:
         out = agents.decode_output(self.CP850)
         assert out.startswith("O sistema n") and out.endswith("especificado.")
 
-    @pytest.mark.skipif(sys.platform != "win32", reason="the 'oem' codec is Windows-only")
+    @pytest.mark.skipif(sys.platform != "win32" or _oem_codepage() != 850,
+                        reason="needs a Windows console on code page 850 (pt-BR); CI runners use 437")
     def test_reads_the_accent_right_on_windows(self):
         assert agents.decode_output(self.CP850) == "O sistema não pode encontrar o caminho especificado."
 
