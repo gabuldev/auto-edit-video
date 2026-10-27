@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -95,15 +96,7 @@ def browse(directory: str | None = None) -> dict:
                 if not entry.name.startswith("."):
                     dirs.append({"name": entry.name, "path": str(entry)})
             elif entry.suffix.lower() in VIDEO_EXTS:
-                stat = entry.stat()
-                videos.append(
-                    {
-                        "name": entry.name,
-                        "path": str(entry),
-                        "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                    }
-                )
+                videos.append(_video_entry(entry))
         except OSError:
             continue
 
@@ -111,6 +104,34 @@ def browse(directory: str | None = None) -> dict:
     videos.sort(key=lambda v: v["modified"], reverse=True)
     parent = str(root.parent) if root.parent != root else None
     return {"dir": str(root), "parent": parent, "exists": True, "dirs": dirs, "videos": videos}
+
+
+def _video_entry(path: Path) -> dict:
+    stat = path.stat()
+    return {
+        "name": path.name,
+        "path": str(path),
+        "size": stat.st_size,
+        "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+    }
+
+
+def video_file(path: str | None) -> dict | None:
+    """A video picked or dropped in "new edit", as the card shows it.
+
+    None when the path isn't a file the pipeline can open (missing, a folder,
+    or not a video extension).
+    """
+    if not path:
+        return None
+    p = Path(path).expanduser()
+    if p.suffix.lower() not in VIDEO_EXTS:
+        return None
+    try:
+        return _video_entry(p) if p.is_file() else None
+    except OSError:
+        return None
+
 
 
 # ── Status derivation ─────────────────────────────────────────────────────────
@@ -145,10 +166,14 @@ def overall_status(
 
 
 def _output_file(ws: Path, pipeline: dict) -> Path | None:
-    """The finalized output for a done workspace, if present on disk."""
+    """The finalized output for a done workspace, if present on disk.
+
+    Absolute: the library root is usually relative ("workspace"), and the app
+    shows this path to the person, who needs to find the file.
+    """
     output_dir = ws.parent / "output"
     candidate = output_dir / f"{pipeline.get('video_name', ws.name)}_final.mp4"
-    return candidate if candidate.exists() else None
+    return candidate.resolve() if candidate.exists() else None
 
 
 def _read_json(path: Path) -> dict | list | None:
@@ -186,6 +211,7 @@ def summarize(
     out = _output_file(ws, p)
     return {
         "id": ws.name,
+        "name": p.get("name"),  # the edit's own name, when given (else the screens fall back)
         "video_name": p.get("video_name", ws.name),
         "video_path": p.get("video_path"),
         "type": p.get("type"),
@@ -306,6 +332,34 @@ def artifact_path(video_id: str, kind: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def delete_video(video_id: str) -> dict:
+    """Remove a video from the library: its workspace and its delivered files
+    in output/. The source video is never touched. Stop it first (Jobs.stop).
+
+    FileNotFoundError for an unknown id or one that points outside the library.
+    """
+    root = library_root().resolve()
+    ws = (root / video_id).resolve()
+    if ws.parent != root or not (ws / "pipeline.json").is_file():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    name = pl.load(ws).get("video_name", video_id)
+    # Another workspace with the same video name delivers to the same files.
+    shared = any(
+        pj.parent != ws and pl.load(pj.parent).get("video_name", pj.parent.name) == name
+        for pj in root.glob("*/pipeline.json")
+    )
+    removed: list[str] = []
+    if not shared:
+        for suffix in ARTIFACT_SUFFIXES.values():
+            out = root / "output" / f"{name}{suffix}"
+            if out.is_file():
+                out.unlink()
+                removed.append(str(out))
+    shutil.rmtree(ws)
+    removed.append(str(ws))
+    return {"id": video_id, "removed": removed}
+
+
 def _short_workspace(video_id: str) -> tuple[Path, dict]:
     """(workspace, pipeline) of a short; FileNotFoundError / ValueError otherwise."""
     ws = library_root() / video_id
@@ -408,12 +462,23 @@ def open_artifact(
 
     The engine runs on the user's own machine, so this is how a frontend gets
     a file onto the screen — a webview (Tauri) won't follow a download link.
+    `kind="source"` is the recording the edit started from.
     """
-    path = artifact_path(video_id, kind)
+    path = source_path(video_id) if kind == "source" else artifact_path(video_id, kind)
     if path is None:
         return None
     os_open(path, reveal, run)
     return path
+
+
+def source_path(video_id: str) -> Path | None:
+    """The video this workspace was edited from, when it is still on disk."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    source = pl.load(ws).get("video_path")
+    path = Path(source).resolve() if source else None
+    return path if path and path.is_file() else None
 
 
 def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subprocess.Popen) -> None:
@@ -422,7 +487,10 @@ def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subpr
     if sys.platform == "darwin":
         cmd = ["open", "-R", str(path)] if reveal else ["open", str(path)]
     elif sys.platform == "win32":
-        cmd = ["explorer", f"/select,{path}"] if reveal else ["cmd", "/c", "start", "", str(path)]
+        # A command line, not a list: with a space in the path, a list quotes
+        # the whole `"/select,D:\a b\x.mp4"`, which Explorer ignores (it opens
+        # Documents). It wants only the path quoted. Windows paths can't hold ".
+        cmd = f'explorer /select,"{path}"' if reveal else ["cmd", "/c", "start", "", str(path)]
     else:  # no portable "select in folder" on Linux: open the folder instead
         cmd = ["xdg-open", str(path.parent if reveal else path)]
     run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -481,6 +549,7 @@ def result(video_id: str) -> dict | None:
         }
     return {
         "id": video_id,
+        "name": p.get("name"),
         "video_name": p.get("video_name", video_id),
         "type": p.get("type"),
         "status": overall_status(p),
@@ -573,6 +642,7 @@ def read_plan(video_id: str) -> dict | None:
 
     return {
         "id": video_id,
+        "name": pl.load(ws).get("name"),
         "source": path.name,
         "editable": path.name == "reviewed_plan.json",
         "duration": duration,
@@ -644,6 +714,7 @@ def shorts_state(video_id: str, max_duration: float = sh.DEFAULT_MAX_DURATION) -
 
     state: dict = {
         "id": video_id,
+        "name": pl.load(ws).get("name"),
         "eligible": False,
         "reason": None,
         "has_plan": False,
@@ -1134,6 +1205,7 @@ class JobManager:
         caption_style: dict | None = None,
         cold_open: bool = False,
         reorder: bool = False,
+        name: str | None = None,
     ) -> Job:
         video = Path(shell.native_path(Path(video_path).resolve()))
         if not video.exists():
@@ -1147,6 +1219,8 @@ class JobManager:
             caption_style=caption_style or {},
             language=language,
         )
+        if name:
+            pl.set_name(ws, name)
         if cold_open:
             pl.set_cold_open(ws)
         if reorder:

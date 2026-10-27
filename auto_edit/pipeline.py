@@ -92,6 +92,21 @@ def set_reorder(workspace: Path, enabled: bool = True) -> None:
     save(workspace, p)
 
 
+NAME_MAX = 120
+
+
+def set_name(workspace: Path, name: str | None) -> None:
+    """The edit's own name, which the app shows instead of the file name.
+    Display only: the workspace and output files keep the file's name. Blank clears it."""
+    p = load(workspace)
+    name = " ".join((name or "").split())[:NAME_MAX]
+    if name:
+        p["name"] = name
+    else:
+        p.pop("name", None)
+    save(workspace, p)
+
+
 def set_cold_open(workspace: Path, enabled: bool = True) -> None:
     """Ask the execute stage for a cold open (kept across `resume`)."""
     p = load(workspace)

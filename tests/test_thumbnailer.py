@@ -387,6 +387,20 @@ class TestCoverMuxCmd:
         assert f"comment={COVER_TAG}" in cmd
 
 
+class TestEmbedCoverSkipsNon8Bit:
+    def test_a_10bit_body_gets_no_cover(self, tmp_path, monkeypatch):
+        """The 8-bit cover spliced (stream copy) in front of a 10-bit body gave
+        a file with one format in its header and another in its frames: the
+        app's player failed with a decode error. No cover beats that."""
+        (tmp_path / "captioned_video.mp4").write_bytes(b"x")
+        monkeypatch.setattr(thumbnailer.probe, "video_specs", lambda _p: (1080, 1920, "30/1"))
+        monkeypatch.setattr(thumbnailer.probe, "video_pix_fmt", lambda _p: "yuv420p10le")
+        ran = []
+        monkeypatch.setattr(thumbnailer.subprocess, "run", lambda *a, **k: ran.append(a))
+        thumbnailer._embed_cover_frame(tmp_path, tmp_path / "thumbnail.png")
+        assert ran == [] and not (tmp_path / "cover_video.mp4").exists()
+
+
 class TestAssertFrameRatePreserved:
     def test_raises_when_the_concat_stretched_the_timestamps(self, monkeypatch):
         monkeypatch.setattr(thumbnailer.probe, "video_fps", lambda _p: "10000/1001")

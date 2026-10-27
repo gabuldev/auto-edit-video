@@ -425,7 +425,7 @@ def _run_ffmpeg_overlay(
     ]
     if _has_audio_stream(video):
         cmd += ["-map", "0:a", "-c:a", "copy"]
-    cmd += ["-c:v", codec, *codec_flags]
+    cmd += ["-c:v", codec, *codec_flags, "-pix_fmt", "yuv420p"]  # 8-bit: see executor.PIX_FMT
     if fps:
         # Constant frame rate on the way out, so the muxed duration matches audio.
         cmd += ["-r", fps, "-fps_mode", "cfr"]

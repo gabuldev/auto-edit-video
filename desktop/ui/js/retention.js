@@ -114,7 +114,7 @@ function render(s) {
   el("ret-empty").hidden = true;
   el("ret-body").hidden = false;
   const when = d.fetched_at ? new Date(d.fetched_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "";
-  el("ret-sub").textContent = `onde o público saiu, com o que era dito · atualizado ${when}`;
+  el("ret-sub").textContent = `Onde o público saiu, com o que era dito · atualizado ${when}`;
   el("ret-stats").innerHTML = [
     ["aos 30s", d.at_30s], ["aos 60s", d.at_60s], ["na metade", d.at_half],
   ].map(([k, v]) => `<div class="ret-stat"><b>${pct(v)}</b><span>${k}</span></div>`).join("");

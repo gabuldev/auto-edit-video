@@ -331,3 +331,34 @@ class TestResolveReframe:
         from tools.executor import _resolve_reframe
         monkeypatch.setenv("AUTO_EDIT_NO_REFRAME", "0")
         assert _resolve_reframe("short", 1920, 1080) == (1080, 1920)
+
+
+# ── 8-bit output (phone HDR is 10-bit) ────────────────────────────────────────
+
+def test_a_10bit_recording_comes_out_8bit(tmp_path):
+    """iPhones record 10-bit HDR. The edit must come out 8-bit yuv420p: H.264
+    High 10 doesn't play on iPhone/Safari, and the 8-bit cover frame spliced in
+    front of a 10-bit body made a file the app's player failed to decode."""
+    import shutil
+    import subprocess
+    from tools import executor
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    src = tmp_path / "phone.mp4"
+    made = subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=30",
+         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p10le", "-c:a", "aac", str(src)],
+        capture_output=True,
+    )
+    if made.returncode != 0:
+        pytest.skip("this ffmpeg can't encode 10-bit H.264")
+    out = tmp_path / "edited.mp4"
+    executor._run_ffmpeg_cuts(src, [(0.0, 0.6)], out)
+    pix = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt",
+         "-of", "default=nw=1:nk=1", str(out)],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    assert pix == "yuv420p"

@@ -10,7 +10,8 @@ module never requires it — only `create_app()` / `serve()` do.
 Endpoints
     GET  /api/health
     GET  /api/library
-    GET  /api/browse?dir=            (folders + videos, for the picker)
+    GET  /api/browse?dir=            (folders + videos of a directory)
+    GET  /api/video-file?path=       (nome/tamanho de um vídeo escolhido ou arrastado)
     GET  /api/videos/<id>
     GET  /api/videos/<id>/plan       (cortes + o que é dito em cada um)
     PUT  /api/videos/<id>/plan       {kept_segments: [{start, end, summary?}]}
@@ -19,12 +20,13 @@ Endpoints
     POST /api/videos/<id>/captions/preview  {ajuste} → PNG
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
     GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
-    POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder
+    POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder (kind source = o vídeo original)
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run, cold_open, reorder,
-                                    overlays_dir}
+                                    overlays_dir, name}  (name: só exibição; vazio = nome do arquivo)
     POST /api/videos/<id>/resume   {from_stage, overlays_dir, caption_only?}
     POST /api/videos/<id>/stop     para o que está rodando (job, ralph avulso, fila)
+    DELETE /api/videos/<id>        para e apaga o workspace + os arquivos em output/ (nunca o vídeo original)
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
     POST /api/videos/<id>/shorts       {max_dur}  roda o clipper (job, SSE)
     POST /api/videos/<id>/shorts/cut   {pick: [1, 3], max_dur}  corta em fila
@@ -118,6 +120,15 @@ def create_app(jobs: engine.JobManager | None = None):
     def browse():
         """Folders + video files of a directory (default: the inbox) for the picker."""
         return jsonify(engine.browse(request.args.get("dir") or None))
+
+    @app.get("/api/video-file")
+    def video_file_info():
+        """Name/size of a path the app got from its dialog or a drop — and a check it's a video."""
+        path = request.args.get("path") or ""
+        info = engine.video_file(path)
+        if info is None:
+            return jsonify({"error": "não é um vídeo que o pipeline abre (mp4, mov, mkv…)", "path": path}), 404
+        return jsonify(info)
 
     @app.get("/api/videos/<video_id>")
     def video_detail(video_id: str):
@@ -239,6 +250,7 @@ def create_app(jobs: engine.JobManager | None = None):
                 cold_open=bool(body.get("cold_open", saved["cold_open"])),
                 reorder=bool(body.get("reorder", saved["reorder"])),
                 overlays_dir=body.get("overlays_dir") or saved["overlays_dir"],
+                name=body.get("name") or None,
             )
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -657,6 +669,18 @@ def create_app(jobs: engine.JobManager | None = None):
         if not engine.open_url(body.get("url")):
             return jsonify({"error": "só links do YouTube e das CLIs de agente"}), 400
         return jsonify({"opened": body["url"]})
+
+    @app.delete("/api/videos/<video_id>")
+    def delete_video(video_id: str):
+        """Stop whatever runs on it, then remove the workspace and its output
+        files (never the source video)."""
+        try:
+            jobs.stop(video_id)
+            return jsonify(engine.delete_video(video_id))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except OSError as exc:  # Windows: a file still open (player, ffmpeg)
+            return jsonify({"error": f"não deu pra apagar tudo: {exc}"}), 409
 
     @app.post("/api/videos/<video_id>/stop")
     def stop(video_id: str):

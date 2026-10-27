@@ -40,8 +40,8 @@ export const resume = (id, from_stage, { captionOnly = false } = {}) =>
     body: JSON.stringify(captionOnly ? { from_stage, caption_only: true } : { from_stage }),
   });
 
-export const browse = (dir) =>
-  json(`/api/browse${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`);
+/** Nome/tamanho de um caminho vindo do diálogo ou de um arquivo arrastado (404 se não for vídeo). */
+export const videoFile = (path) => json(`/api/video-file?path=${encodeURIComponent(path)}`);
 
 export const startEdit = (payload) =>
   json("/api/edit", {
@@ -100,6 +100,9 @@ export const openUrl = (url) =>
   });
 
 export const stop = (id) => json(`/api/videos/${encodeURIComponent(id)}/stop`, { method: "POST" });
+
+/** Para o que estiver rodando e apaga o workspace e os arquivos finais (nunca o vídeo original). */
+export const deleteVideo = (id) => json(`/api/videos/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 export const settings = () => json("/api/settings");
 

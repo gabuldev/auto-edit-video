@@ -86,7 +86,7 @@ function renderBody(d) {
 
 function render(d) {
   state.data = d;
-  el("sh-title").textContent = `Shorts — ${d.id}`;
+  el("sh-title").textContent = `Shorts — ${d.name || d.id}`;
   if (d.job?.status === "running") { show("running"); openStream(); return; }
   if (!d.eligible) {
     show("ineligible");
@@ -96,7 +96,7 @@ function render(d) {
   }
   if (!d.has_plan) {
     show("start");
-    el("sh-sub").innerHTML = `<span class="mono dim">ainda sem candidatos</span>`;
+    el("sh-sub").innerHTML = `<span class="mono dim">Ainda sem candidatos</span>`;
     return;
   }
   show("body");

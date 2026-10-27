@@ -21,10 +21,10 @@ function show({ connect = false, form = false, progress = false } = {}) {
 }
 
 function accountLine(a) {
-  if (a.connecting) return "aguardando você autorizar no navegador…";
-  if (a.needs_reconnect) return "reconecte pra liberar retenção e legendas (permissões novas)";
-  if (!a.connected) return "conta não conectada";
-  return a.channel ? `conectado como ${escapeHtml(a.channel)}` : "conta conectada";
+  if (a.connecting) return "Aguardando você autorizar no navegador…";
+  if (a.needs_reconnect) return "Reconecte pra liberar retenção e legendas (permissões novas)";
+  if (!a.connected) return "Conta não conectada";
+  return a.channel ? `Conectado como ${escapeHtml(a.channel)}` : "Conta conectada";
 }
 
 function historyHTML(items) {
@@ -146,7 +146,7 @@ async function load() {
 }
 
 function setProgress(pct) {
-  el("pub-bar").style.width = `${pct}%`;
+  el("pub-bar").style.transform = `scaleX(${pct / 100})`;
   el("pub-pct").textContent = `${pct}%`;
 }
 

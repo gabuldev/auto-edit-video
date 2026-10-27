@@ -1454,6 +1454,15 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
         print("[thumbnailer] Unknown frame rate — skipping cover frame")
         return
 
+    # The cover is spliced in with a stream copy, so it must share the body's
+    # format. It's encoded 8-bit; in front of a 10-bit body (an old phone-HDR
+    # edit) the file gets one format in its header and another in its frames,
+    # and the app's player fails to decode it. Better no cover than that.
+    pix_fmt = probe.video_pix_fmt(video_path)
+    if pix_fmt not in ("yuv420p", "yuvj420p"):
+        print(f"[thumbnailer] Video is {pix_fmt or 'unknown'}, not 8-bit yuv420p — skipping cover frame")
+        return
+
     timescale = probe.video_timescale(video_path)
 
     strip_at = _cover_strip_point(_probe_video_packets(video_path))

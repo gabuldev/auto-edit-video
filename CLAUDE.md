@@ -193,7 +193,8 @@ fica em `auto_edit/engine.py` (fachada pura sobre `ralph.sh` + `pipeline.py` +
 ```
 GET  /api/health
 GET  /api/library                 # lista workspaces + status derivado
-GET  /api/browse?dir=             # pastas + vídeos de um diretório (file picker)
+GET  /api/browse?dir=             # pastas + vídeos de um diretório
+GET  /api/video-file?path=        # nome/tamanho de um vídeo escolhido ou arrastado (404 se não for vídeo)
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
 GET  /api/videos/<id>/plan        # cortes + o que é dito em cada trecho
 PUT  /api/videos/<id>/plan        # {kept_segments: [{start, end, summary?}]}
@@ -202,15 +203,16 @@ PUT  /api/videos/<id>/captions    # {position, offset, size, hidden}: só essas 
 POST /api/videos/<id>/captions/preview  # {ajuste} → PNG da legenda num frame do short (regravar: /resume from_stage=caption, caption_only)
 GET  /api/videos/<id>/result      # metadata + arquivos finais
 GET  /api/videos/<id>/file/<kind> # video | thumbnail | captions | notes
-POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}
+POST /api/edit                    # {video_path, type, context, language, overlays_dir, name?, ...} (name: nome da edição, só exibição)
 POST /api/videos/<id>/resume      # {from_stage, caption_only?} (caption_only: short regrava só a legenda)
+DELETE /api/videos/<id>           # para o que roda e apaga workspace + arquivos em output/ (nunca o vídeo original)
 GET  /api/videos/<id>/shorts      # candidatos a short de um long pronto
 POST /api/videos/<id>/shorts      # {max_dur} roda o clipper (job + SSE)
 POST /api/videos/<id>/shorts/cut  # {pick: [1, 3]} semeia os _shortN e corta em fila
 GET  /api/publish/youtube         # conta conectada? (POST .../connect abre o OAuth)
 GET  /api/videos/<id>/publish     # defaults do metadata + histórico (publish.json)
 POST /api/videos/<id>/publish/youtube  # {title, description, tags, privacy, publish_at, force}
-POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder
+POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder (kind `source` = o vídeo original)
 GET  /api/videos/<id>/retention   # análise salva (POST busca a curva no YouTube)
 GET  /api/styles                  # estilos (presets + seus), o ativo, fontes, marca
 PUT  /api/styles/active           # {id}

@@ -64,7 +64,7 @@ function renderTotals() {
 
 function render(p) {
   state.plan = p;
-  el("cuts-title").textContent = p.id;
+  el("cuts-title").textContent = p.name || p.id;
   el("cuts-list").innerHTML = p.kept_segments.map(segmentHTML).join("");
   el("cuts-empty").hidden = p.kept_segments.length > 0;
 

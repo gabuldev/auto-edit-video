@@ -2,86 +2,71 @@
 // takes (`auto-edit short|long`) is here; the extras live under "Opções".
 
 import * as api from "./api.js";
-import { el, escapeHtml, humanSize, setEngine } from "./shell.js";
+import { el, humanSize, setEngine } from "./shell.js";
 import { go } from "./router.js";
+import { chooseVideo, isVideo, NOT_VIDEO, onVideoDrop } from "./video-pick.js";
 
-const state = { dir: null, data: null, selected: null, loaded: false, busy: false };
+const state = { video: null, busy: false, picking: false };
+let pending = null; // a path chosen on the empty Biblioteca, picked up on mount
 
-// Case- and accent-insensitive, so "cinque" finds "Cinque Terre" and "balanca" finds "balança".
-const fold = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-
-function fileRowHTML(v) {
-  const when = v.modified ? new Date(v.modified).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "";
-  return `
-  <button class="pick-item${state.selected === v.path ? " sel" : ""}" data-path="${escapeHtml(v.path)}" type="button">
-    <span class="pick-ico film"></span>
-    <span class="pick-name">${escapeHtml(v.name)}</span>
-    <span class="pick-meta mono">${humanSize(v.size)}${when ? ` · ${when}` : ""}</span>
-  </button>`;
+/** Open Novo edit with this video already chosen. */
+export function openWithVideo(path) {
+  pending = path;
+  go("/novo");
 }
 
-function dirRowHTML(d) {
-  return `
-  <button class="pick-item dir" data-dir="${escapeHtml(d.path)}" type="button">
-    <span class="pick-ico folder"></span>
-    <span class="pick-name">${escapeHtml(d.name)}</span>
-    <span class="pick-meta mono">pasta</span>
-  </button>`;
-}
+const onScreen = () => !el("drop-zone").closest("[data-screen]").hidden;
 
-async function loadDir(dir) {
-  const list = el("pick-list");
-  list.innerHTML = `<div class="pick-empty">carregando…</div>`;
-  let data;
-  try {
-    data = await api.browse(dir);
-  } catch {
-    setEngine(false);
-    list.innerHTML = `<div class="pick-empty">motor offline — não dá pra listar arquivos.</div>`;
-    return;
+function setVideo(v) {
+  state.video = v;
+  el("dz-empty").hidden = Boolean(v);
+  el("dz-file").hidden = !v;
+  if (v) {
+    el("dz-name").textContent = v.name;
+    el("dz-size").textContent = humanSize(v.size);
+    // The path is cut from the left (rtl); the LRMs keep its own order intact.
+    el("dz-meta").textContent = `\u200E${v.path}\u200E`;
+    el("dz-meta").title = v.path;
   }
-  state.dir = data.dir;
-  state.loaded = true;
-  el("pick-path").textContent = data.dir;
-  el("pick-up").disabled = !data.parent;
-  el("pick-up").dataset.dir = data.parent || "";
-  state.data = data;
-  el("pick-search").value = "";
-  renderList();
-}
-
-// The matches for the search box, folders first.
-function matches() {
-  const { dirs, videos } = state.data;
-  const q = fold(el("pick-search").value.trim());
-  const hit = (x) => !q || fold(x.name).includes(q);
-  return { dirs: dirs.filter(hit), videos: videos.filter(hit) };
-}
-
-function renderList() {
-  const data = state.data;
-  if (!data) return;
-  const { dirs, videos } = matches();
-  const items = [...dirs.map(dirRowHTML), ...videos.map(fileRowHTML)];
-  let empty = data.exists ? "nenhum vídeo nesta pasta." : "esta pasta não existe.";
-  if (data.dirs.length + data.videos.length) empty = "nada encontrado.";
-  el("pick-list").innerHTML = items.length ? items.join("") : `<div class="pick-empty">${empty}</div>`;
-}
-
-function select(path) {
-  state.selected = path;
-  document.querySelectorAll("#pick-list .pick-item").forEach((b) => {
-    b.classList.toggle("sel", b.dataset.path === path);
-  });
-  el("sel-path").textContent = path || "nenhum vídeo escolhido";
-  el("sel-path").classList.toggle("muted", !path);
+  // Left blank, the edit keeps the file's name: show which one.
+  el("f-name").placeholder = v ? `Sem nome, usa “${v.name.replace(/\.[^.]+$/, "")}”` : "Sem nome, usa o nome do arquivo";
   validate();
 }
+
+// A path from the app's dialog or a drop: the engine checks it's a video and
+// fills in the size.
+async function usePath(path) {
+  setError("");
+  if (!isVideo(path)) { setError(NOT_VIDEO); return; }
+  try {
+    setVideo(await api.videoFile(path));
+  } catch (err) {
+    setError(String(err.message || err));
+  }
+}
+
+async function pickVideo() {
+  if (state.picking) return;
+  state.picking = true;
+  el("drop-zone").classList.add("busy");
+  setError("");
+  try {
+    const path = await chooseVideo();
+    if (path) await usePath(path);
+  } catch (err) {
+    setError(String(err.message || err));
+  } finally {
+    state.picking = false;
+    el("drop-zone").classList.remove("busy");
+  }
+}
+
+const dragging = (on) => el("drop-zone").classList.toggle("over", on);
 
 function readForm() {
   const type = document.querySelector('input[name="vtype"]:checked')?.value;
   return {
-    video_path: state.selected || el("manual-path").value.trim(),
+    video_path: state.video?.path || "",
     type,
     context: el("f-context").value.trim(),
     language: el("f-language").value,
@@ -91,6 +76,7 @@ function readForm() {
     cold_open: el("f-coldopen").checked,
     reorder: el("f-reorder").checked,
     overlays_dir: type === "long" ? el("f-overlays").value.trim() || null : null,
+    name: el("f-name").value.trim() || null,
   };
 }
 
@@ -129,37 +115,18 @@ async function submit() {
 }
 
 function reset() {
-  state.selected = null;
-  el("manual-path").value = "";
   el("f-context").value = "";
-  select(null);
+  el("f-name").value = "";
+  setError("");
+  setVideo(null);
 }
 
 function wire() {
-  el("pick-list").addEventListener("click", (e) => {
-    const item = e.target.closest(".pick-item");
-    if (!item) return;
-    if (item.dataset.dir) loadDir(item.dataset.dir);
-    else select(item.dataset.path);
-  });
-  el("pick-up").addEventListener("click", (e) => {
-    const dir = e.currentTarget.dataset.dir;
-    if (dir) loadDir(dir);
-  });
-  el("pick-reload").addEventListener("click", () => loadDir(state.dir));
-  el("pick-search").addEventListener("input", renderList);
-  // Enter opens the first folder match (or picks the video, if that's all there is); Esc clears.
-  el("pick-search").addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.currentTarget.value = ""; renderList(); return; }
-    if (e.key !== "Enter" || !state.data) return;
-    e.preventDefault();
-    const { dirs, videos } = matches();
-    if (dirs.length) loadDir(dirs[0].path);
-    else if (videos.length) select(videos[0].path);
-  });
-  el("manual-path").addEventListener("input", () => {
-    if (el("manual-path").value.trim()) select(null);
-    validate();
+  el("dz-empty").addEventListener("click", pickVideo);
+  el("dz-change").addEventListener("click", pickVideo);
+  // Dropping anywhere on this screen counts.
+  onVideoDrop(el("drop-zone").closest("[data-screen]"), {
+    active: onScreen, over: dragging, path: usePath, fail: setError,
   });
   document.querySelectorAll('input[name="vtype"]').forEach((r) =>
     r.addEventListener("change", validate)
@@ -174,7 +141,7 @@ export default {
     if (!state.wired) { wire(); state.wired = true; }
     setEngine(await api.health());
     // Defaults from Configurações, once per visit, without clobbering a form in progress.
-    if (!state.selected && !el("f-context").value) {
+    if (!state.video && !el("f-context").value) {
       try {
         const cfg = await api.settings();
         el("f-language").value = cfg.language;
@@ -184,7 +151,7 @@ export default {
         if (cfg.overlays_dir && !el("f-overlays").value) el("f-overlays").value = cfg.overlays_dir;
       } catch { /* engine offline: keep the form's own defaults */ }
     }
-    if (!state.loaded) await loadDir(null); // defaults to the inbox
+    if (pending) { const path = pending; pending = null; await usePath(path); }
     validate();
   },
 };

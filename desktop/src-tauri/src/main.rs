@@ -177,7 +177,9 @@ fn engine_command(embedded: Option<&Embedded>) -> Result<(Command, String), Stri
         "`auto-edit` não encontrado. Instale o CLI ou aponte AUTO_EDIT_BIN pro executável.",
     )?;
     let mut cmd = Command::new(&bin);
-    cmd.arg("serve");
+    // stdout goes to engine.log, not a console: without this Windows encodes
+    // it as cp1252 and the engine dies on its first "→".
+    cmd.arg("serve").env("PYTHONUTF8", "1");
     Ok((cmd, bin.display().to_string()))
 }
 
@@ -218,6 +220,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![stop_engine_for_update])
         .setup(|app| {
             if engine_listening() {

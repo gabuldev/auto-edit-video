@@ -1,14 +1,17 @@
-// Ajustar legenda — o card da tela Resultado de um short pronto. Prévia vertical
-// (PNG do motor) com uma faixa tracejada que se arrasta na vertical; tamanho e
-// esconder. Nada é salvo até "Regravar legenda": soltar a faixa só atualiza o
-// ajuste local e pede uma prévia nova (debounce). Regravar faz PUT e depois
-// resume(id, "caption", {captionOnly}), e segue pra tela do pipeline.
+// Ajustar legenda — no próprio player da tela Resultado de um short pronto.
+// "Ajustar legenda" pausa o vídeo e cobre-o com a prévia (PNG do motor: um
+// quadro do short com a legenda onde ela vai ficar) e uma faixa tracejada que
+// se arrasta na vertical; tamanho e esconder ficam no painel ao lado. Nada é
+// salvo até "Regravar legenda": soltar a faixa só atualiza o ajuste local e pede
+// uma prévia nova (debounce); "Cancelar" volta ao que estava salvo e ao vídeo.
+// Regravar faz PUT e depois resume(id, "caption", {captionOnly}), e segue pra
+// tela do pipeline.
 
 import * as api from "./api.js";
 import { el } from "./shell.js";
 import { go } from "./router.js";
 
-const state = { grab: 0, startY: 0, id: null, adjust: {}, fast: true, sourceOk: true, blocked: "", seq: 0, timer: null, url: null, wired: false, drag: null };
+const state = { grab: 0, startY: 0, id: null, adjust: {}, saved: {}, fast: true, sourceOk: true, blocked: "", seq: 0, timer: null, url: null, wired: false, drag: null };
 
 const OLD_WARN = "Esse vídeo é de antes desta versão: vai recortar de novo (alguns minutos)";
 
@@ -38,6 +41,7 @@ function placeBand(top = topY(state.adjust)) {
   const a = state.adjust;
   el("cap-band").hidden = Boolean(a.hidden);
   el("cap-band").style.top = `${top * 100}%`;
+  el("cap-band").classList.toggle("grip-below", top < 0.08); // the "drag" tag would leave the frame
   el("cap-band").style.height = `${bandH(a) * 100}%`;
 }
 
@@ -100,15 +104,36 @@ async function load() {
     state.blocked = state.sourceOk ? "" : missingSource(d.video_path);
     el("btn-cap-redo").disabled = !state.sourceOk;
     el("btn-cap-redo").title = state.blocked || el("btn-cap-redo").title;
+    state.saved = { ...state.adjust };
     setError("");
     el("cap-card").hidden = false;
     syncControls();
-    requestPreview(true);
   } catch (err) {
     if (id !== state.id) return;
     // Sem rota/sem legenda: o card simplesmente não aparece.
     el("cap-card").hidden = true;
   }
+}
+
+// Adjusting covers the paused video with the preview; leaving brings it back.
+function startEditing() {
+  const video = el("res-video");
+  video.pause();
+  video.controls = false;
+  el("cap-stage").classList.add("adjusting");
+  el("btn-cap-edit").hidden = true;
+  el("cap-controls").hidden = false;
+  syncControls();
+  requestPreview(true);
+}
+
+function stopEditing({ restore = true } = {}) {
+  if (restore) state.adjust = { ...state.saved };
+  el("res-video").controls = true;
+  el("cap-stage").classList.remove("adjusting", "loading");
+  el("btn-cap-edit").hidden = false;
+  el("cap-controls").hidden = true;
+  setError("");
 }
 
 const missingSource = (path) =>
@@ -171,18 +196,22 @@ function wire() {
     requestPreview();
   });
   el("btn-cap-redo").addEventListener("click", regravar);
+  el("btn-cap-edit").addEventListener("click", startEditing);
+  el("btn-cap-cancel").addEventListener("click", () => stopEditing());
 }
 
 export function mountCaptionAdjust(id) {
   if (!state.wired) { wire(); state.wired = true; }
   state.id = id;
   state.blocked = "";
+  stopEditing({ restore: false });
   el("cap-card").hidden = true;
   setError("");
   load();
 }
 
 export function unmountCaptionAdjust() {
+  stopEditing({ restore: false });
   clearTimeout(state.timer);
   state.seq++;
   if (state.url) URL.revokeObjectURL(state.url);

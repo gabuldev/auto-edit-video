@@ -253,6 +253,9 @@ def burn_command(ffmpeg: str, video: Path, ass_name: str, fonts_name: str, outpu
         ffmpeg, "-y",
         "-i", str(Path(video).absolute()),
         "-vf", _subtitles_filter(ass_name, fonts_name),
+        # 8-bit even from a 10-bit (phone HDR) edit: High 10 doesn't play on
+        # iPhone, and the 8-bit cover frame spliced later must match it.
+        "-pix_fmt", "yuv420p",
         "-c:a", "copy",
         "-movflags", "+faststart", "-brand", "mp42",
         str(Path(output).absolute()),
@@ -368,10 +371,12 @@ def resolve_ffmpeg() -> str:
         candidates.append(env)
 
     seen = set(candidates)
+    # which() per folder, not a bare "<dir>/ffmpeg": on Windows the file is
+    # ffmpeg.exe, and missing it made every libass build look absent.
     on_path = [
-        os.path.join(d, "ffmpeg")
+        found
         for d in os.environ.get("PATH", "").split(os.pathsep)
-        if d
+        if d and (found := shutil.which("ffmpeg", path=d))
     ]
     for p in on_path + _known_ffmpeg_locations():
         if p not in seen and os.path.isfile(p) and os.access(p, os.X_OK):

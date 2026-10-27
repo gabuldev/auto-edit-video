@@ -266,16 +266,18 @@ class TestResolveCaptionFfmpeg:
     def test_falls_back_to_path_binary(self, monkeypatch, tmp_path):
         from auto_edit import caption_render as c
 
-        # a fake ffmpeg on PATH that "has" libass
+        # a fake ffmpeg on PATH that "has" libass — ffmpeg.exe on Windows,
+        # which a lookup for a bare "ffmpeg" missed ("sem libass" with libass)
         bindir = tmp_path / "bin"
         bindir.mkdir()
-        fake = bindir / "ffmpeg"
+        fake = bindir / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
         fake.write_text("#!/bin/sh\n")
         fake.chmod(0o755)
         monkeypatch.delenv("AUTO_EDIT_FFMPEG", raising=False)
         monkeypatch.setenv("PATH", str(bindir))
-        monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: b == str(fake))
-        assert _resolve_caption_ffmpeg() == str(fake)
+        monkeypatch.setattr(c, "_known_ffmpeg_locations", lambda: [])
+        monkeypatch.setattr(c, "_ffmpeg_has_subtitles", lambda b: Path(b).parent == bindir)
+        assert Path(_resolve_caption_ffmpeg()).name.lower() == fake.name
 
     def test_falls_back_to_known_locations_off_path(self, monkeypatch, tmp_path):
         """The desktop engine runs from the .venv: PATH only has Homebrew's

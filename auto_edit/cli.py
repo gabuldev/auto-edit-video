@@ -706,7 +706,7 @@ def merge(
         codec, codec_flags = _get_merge_codec()
         cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex,
                "-map", "[outv]", "-map", "[outa]",
-               "-c:v", codec, *codec_flags,
+               "-c:v", codec, *codec_flags, "-pix_fmt", "yuv420p",  # 8-bit, plays everywhere
                "-c:a", "aac", "-b:a", "192k",
                str(merged_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)

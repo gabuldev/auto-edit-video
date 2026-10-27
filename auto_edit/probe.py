@@ -107,6 +107,15 @@ def video_specs(path: Path | str) -> tuple[int, int, str | None]:
     return width, height, parse_fps(payload)
 
 
+def video_pix_fmt(path: Path | str) -> str | None:
+    """Pixel format of the first video stream, e.g. "yuv420p"."""
+    try:
+        streams = parse_streams(_run_probe(path, "v:0", "stream=pix_fmt"))
+    except ProbeError:
+        return None
+    return streams[0].get("pix_fmt") if streams else None
+
+
 def has_audio_stream(path: Path | str) -> bool:
     """Whether the file carries at least one audio stream."""
     try:

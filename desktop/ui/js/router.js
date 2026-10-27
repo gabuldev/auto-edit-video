@@ -4,6 +4,13 @@
 
 const routes = [];
 let current = null;
+let currentPath = null;
+let previous = null; // the path we came from, so a back button can return there
+
+/** The path shown before the current one (null right after the app opens). */
+export function previousPath() {
+  return previous;
+}
 
 export function route(pattern, screen) {
   routes.push({ parts: pattern.split("/").filter(Boolean), screen });
@@ -30,6 +37,7 @@ function match(path) {
 
 export function resolve() {
   const path = location.hash.replace(/^#/, "") || "/";
+  if (path !== currentPath) { previous = currentPath; currentPath = path; }
   const { screen, params } = match(path);
   // Always unmount, even when the next route is the same screen (another
   // video on Pipeline, or go() to the current path): mount() starts timers and
