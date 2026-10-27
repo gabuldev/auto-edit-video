@@ -107,6 +107,13 @@ def test_burn_command_uses_only_relative_paths(tmp_path):
     assert cmd[0] == "ffmpeg" and str(tmp_path / "o.mp4") == cmd[-1]
 
 
+def test_burn_comes_out_8bit(tmp_path):
+    # From a 10-bit (phone HDR) edit too: High 10 doesn't play on iPhone, and
+    # the 8-bit cover frame spliced in later has to match it.
+    cmd = caption_render.burn_command("ffmpeg", tmp_path / "v.mp4", "captions.ass", ".caption-fonts", tmp_path / "o.mp4")
+    assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
+
+
 def test_prepare_fonts_has_only_the_chosen_file(tmp_path):
     name = caption_render.prepare_fonts("montserrat", tmp_path)
     assert str(name) == ".caption-fonts"

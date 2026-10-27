@@ -306,6 +306,136 @@ class TestPublishJob:
         assert yt.read_record(ws)["youtube"][0]["video_id"] == "xyz"
 
 
+class _FakeVideos:
+    def __init__(self, items):
+        self.items, self.calls = items, []
+
+    def videos(self):
+        return self
+
+    def list(self, part, id, maxResults):
+        self.calls.append(id)
+        ids = id.split(",")
+        found = [i for i in self.items if i["id"] in ids]
+        return type("R", (), {"execute": lambda _self: {"items": found}})()
+
+
+def test_live_status_reads_the_status_of_each_video():
+    service = _FakeVideos([
+        {"id": "a", "status": {"privacyStatus": "public", "uploadStatus": "processed"}},
+        {"id": "b", "status": {"privacyStatus": "private", "publishAt": "2026-10-28T19:51:00Z", "uploadStatus": "uploaded"}},
+    ])
+    live = yt.live_status(["a", "b", "gone"], service=service)
+    assert live == {
+        "a": {"privacy": "public", "publish_at": None, "upload_status": "processed"},
+        "b": {"privacy": "private", "publish_at": "2026-10-28T19:51:00Z", "upload_status": "uploaded"},
+    }  # "gone" (deleted on YouTube) just isn't there
+    assert yt.live_status([], service=service) == {} and len(service.calls) == 1
+
+
+def test_live_status_asks_50_at_a_time():
+    service = _FakeVideos([])
+    yt.live_status([f"v{i}" for i in range(120)], service=service)
+    assert [len(c.split(",")) for c in service.calls] == [50, 50, 20]
+
+
+class TestPublishLive:
+    def test_unknown(self, lib):
+        assert engine.publish_live("nope") is None
+
+    def test_nothing_sent_or_not_connected(self, lib, monkeypatch):
+        ws = _done_ws(lib)
+        assert engine.publish_live("vid") == {"checked": False, "videos": {}}
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u"})
+        monkeypatch.setattr(yt, "is_connected", lambda: False)
+        assert engine.publish_live("vid", fetch=lambda ids: pytest.fail("asked")) == {"checked": False, "videos": {}}
+
+    def test_asks_youtube_for_the_sent_ids(self, lib, monkeypatch):
+        ws = _done_ws(lib)
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u"})
+        yt.add_record(ws, "youtube", {"video_id": "b", "url": "u"})
+        monkeypatch.setattr(yt, "is_connected", lambda: True)
+        asked = []
+        live = engine.publish_live("vid", fetch=lambda ids: asked.append(ids) or {"a": {"privacy": "public"}})
+        assert asked == [["a", "b"]]
+        assert live == {"checked": True, "videos": {"a": {"privacy": "public"}}}
+
+    def test_deleted_on_youtube_gets_marked(self, lib, monkeypatch):
+        """Both deleted in Studio: publish.json says so, and "Publicado" goes."""
+        ws = _done_ws(lib)
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u"})
+        yt.add_record(ws, "youtube", {"video_id": "b", "url": "u"})
+        monkeypatch.setattr(yt, "is_connected", lambda: True)
+        assert engine.summarize(ws)["published"]["count"] == 2
+        engine.publish_live("vid", fetch=lambda ids: {"b": {"privacy": "private"}})
+        assert [bool(r.get("removed")) for r in yt.read_record(ws)["youtube"]] == [True, False]
+        assert engine.summarize(ws)["published"]["count"] == 1
+        engine.publish_live("vid", fetch=lambda ids: {})
+        assert engine.summarize(ws)["published"] is None
+        # one that shows up again (another account was connected) loses the mark
+        engine.publish_live("vid", fetch=lambda ids: {"a": {}})
+        assert [bool(r.get("removed")) for r in yt.read_record(ws)["youtube"]] == [False, True]
+
+    def test_failure_keeps_the_record(self, lib, monkeypatch):
+        ws = _done_ws(lib)
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u"})
+        monkeypatch.setattr(yt, "is_connected", lambda: True)
+
+        def offline(ids):
+            raise OSError("sem rede")
+        live = engine.publish_live("vid", fetch=offline)
+        assert live["checked"] is False and "sem rede" in live["error"]
+
+
+class TestRefreshPublished:
+    """Edições asks YouTube once (all workspaces together) when it opens."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh(self, monkeypatch):
+        monkeypatch.setattr(engine, "_published_checked_at", None)
+        monkeypatch.setattr(yt, "is_connected", lambda: True)
+
+    def _sent(self, lib, name, *ids):
+        ws = lib / name
+        ws.mkdir()
+        (ws / "pipeline.json").write_text("{}")
+        for i in ids:
+            yt.add_record(ws, "youtube", {"video_id": i, "url": "u"})
+        return ws
+
+    def test_one_call_for_everything_and_marks_the_deleted(self, lib):
+        a = self._sent(lib, "A", "a1", "a2")
+        b = self._sent(lib, "B", "b1")
+        calls = []
+        out = engine.refresh_published(fetch=lambda ids: calls.append(ids) or {"a2": {}, "b1": {}})
+        assert calls == [["a1", "a2", "b1"]] and out == {"checked": True, "changed": True}
+        assert [bool(r.get("removed")) for r in yt.read_record(a)["youtube"]] == [True, False]
+        assert not yt.read_record(b)["youtube"][0].get("removed")
+
+    def test_at_most_once_a_minute(self, lib):
+        self._sent(lib, "A", "a1")
+        clock = iter([100.0, 130.0, 170.0, 170.0])
+        now = lambda: next(clock)  # noqa: E731
+        calls = []
+        fetch = lambda ids: calls.append(ids) or {"a1": {}}  # noqa: E731
+        assert engine.refresh_published(fetch=fetch, now=now)["checked"] is True
+        assert engine.refresh_published(fetch=fetch, now=now) == {"checked": False, "changed": False}
+        assert engine.refresh_published(fetch=fetch, now=now) == {"checked": True, "changed": False}
+        assert len(calls) == 2
+
+    def test_nothing_sent_offline_or_disconnected(self, lib, monkeypatch):
+        assert engine.refresh_published(fetch=lambda ids: pytest.fail("asked"))["checked"] is False
+        self._sent(lib, "A", "a1")
+
+        def offline(ids):
+            raise OSError("sem rede")
+        out = engine.refresh_published(fetch=offline)
+        assert out["checked"] is False and "sem rede" in out["error"]
+        assert not yt.read_record(lib / "A")["youtube"][0].get("removed")  # nothing guessed
+        monkeypatch.setattr(yt, "is_connected", lambda: False)
+        assert engine.refresh_published(fetch=lambda ids: pytest.fail("asked"))["checked"] is False
+
+
 def test_connect_youtube_runs_in_background(monkeypatch, tmp_path):
     monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path))
     import threading
@@ -327,6 +457,32 @@ def test_connect_youtube_runs_in_background(monkeypatch, tmp_path):
     assert acct["connecting"] is False and acct["error"] == "cancelado"
 
 
+def test_cancelled_connect_is_not_an_error(monkeypatch, tmp_path):
+    """Cancelling the wait for the browser leaves it idle, with no error shown."""
+    monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path))
+    import threading
+    release = threading.Event()
+
+    def waiting():
+        release.wait(5)
+        raise RuntimeError("access_denied")
+
+    def cancel():
+        release.set()
+        return True
+    monkeypatch.setattr(yt, "cancel_consent", cancel)
+    assert engine.connect_youtube(connect=waiting)["connecting"] is True
+    acct = engine.cancel_youtube_connect()
+    assert acct["connecting"] is False and acct["error"] is None
+    # the next attempt's real failure still shows (the cancel was that attempt's)
+    engine.connect_youtube(connect=lambda: (_ for _ in ()).throw(RuntimeError("sem rede")))
+    for _ in range(200):
+        if not engine.youtube_account()["connecting"]:
+            break
+        time.sleep(0.01)
+    assert engine.youtube_account()["error"] == "sem rede"
+
+
 def test_open_url_only_youtube():
     calls = []
     run = lambda cmd, **k: calls.append(cmd)  # noqa: E731
@@ -334,7 +490,10 @@ def test_open_url_only_youtube():
     assert engine.open_url("https://studio.youtube.com/video/x/edit", run=run)
     assert not engine.open_url("https://evil.example/youtube.com/", run=run)
     assert not engine.open_url("file:///etc/passwd", run=run)
-    assert len(calls) == 2
+    # Configurações → YouTube links to the Google Cloud console, only there
+    assert engine.open_url("https://console.cloud.google.com/auth/clients", run=run)
+    assert not engine.open_url("https://console.cloud.google.com.evil.example/", run=run)
+    assert len(calls) == 3
 
 
 # ── HTTP ──────────────────────────────────────────────────────────────────────
@@ -355,6 +514,14 @@ class TestPublishEndpoints:
         r = self._client().post("/api/videos/vid/publish/youtube", json={"title": "T"})
         assert r.status_code == 409
 
+    def test_deleted_on_youtube_is_not_already_published(self, lib):
+        """All sends deleted on YouTube: sending again needs no force."""
+        ws = _done_ws(lib)
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u"})
+        yt.mark_gone(ws, {"a"}, set())
+        r = self._client().post("/api/videos/vid/publish/youtube", json={"title": "T"})
+        assert r.status_code == 400 and "conectado" in r.get_json()["error"]  # past the 409
+
     def test_400_when_not_connected(self, lib):
         _done_ws(lib)
         r = self._client().post("/api/videos/vid/publish/youtube", json={"title": "T"})
@@ -362,6 +529,38 @@ class TestPublishEndpoints:
 
     def test_open_url_rejects_other_hosts(self):
         r = self._client().post("/api/open-url", json={"url": "https://example.com"})
+        assert r.status_code == 400
+
+    def test_client_json_picked_in_the_app(self, lib, monkeypatch):
+        """Configurações → YouTube: choosing the JSON is enough to connect."""
+        monkeypatch.delenv("AUTO_EDIT_YT_CLIENT_SECRET", raising=False)
+        c = self._client()
+        assert c.get("/api/publish/youtube").get_json()["has_client_secret"] is False
+        f = lib / "client_secret_123.apps.googleusercontent.com.json"
+        f.write_text(json.dumps({"installed": {"client_id": "123.apps.googleusercontent.com", "client_secret": "s"}}))
+        body = c.put("/api/publish/youtube/client", json={"path": str(f)}).get_json()
+        assert body["has_client_secret"] is True and body["client_id"] == "123.apps.googleusercontent.com"
+
+    def test_client_json_from_the_browser(self, lib, monkeypatch):
+        monkeypatch.delenv("AUTO_EDIT_YT_CLIENT_SECRET", raising=False)
+        raw = json.dumps({"installed": {"client_id": "b.apps.googleusercontent.com", "client_secret": "s"}})
+        body = self._client().put("/api/publish/youtube/client", json={"content": raw}).get_json()
+        assert body["client_id"] == "b.apps.googleusercontent.com"
+
+    @pytest.mark.parametrize("name, data, message", [
+        ("web.json", {"web": {"client_id": "w", "client_secret": "s"}}, "Aplicativo da Web"),
+        ("video.mp4", {"installed": {"client_id": "x", "client_secret": "s"}}, ".json"),
+    ])
+    def test_client_json_refused(self, lib, monkeypatch, name, data, message):
+        monkeypatch.delenv("AUTO_EDIT_YT_CLIENT_SECRET", raising=False)
+        f = lib / name
+        f.write_text(json.dumps(data))
+        r = self._client().put("/api/publish/youtube/client", json={"path": str(f)})
+        assert r.status_code == 400 and message in r.get_json()["error"]
+        assert self._client().get("/api/publish/youtube").get_json()["has_client_secret"] is False
+
+    def test_client_json_missing_file(self, lib):
+        r = self._client().put("/api/publish/youtube/client", json={"path": str(lib / "nope.json")})
         assert r.status_code == 400
 
 

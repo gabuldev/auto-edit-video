@@ -567,6 +567,23 @@ class TestBrowse:
         assert len(out["videos"]) == 2
 
 
+# ── picking / dropping a video in "new edit" ──────────────────────────────────
+
+class TestVideoFile:
+    def test_describes_a_video(self, tmp_path):
+        (tmp_path / "Viagem Itália.MOV").write_bytes(b"x" * 42)
+        out = engine.video_file(str(tmp_path / "Viagem Itália.MOV"))
+        assert out["name"] == "Viagem Itália.MOV" and out["size"] == 42 and out["modified"]
+
+    def test_rejects_what_the_pipeline_cant_open(self, tmp_path):
+        (tmp_path / "notes.txt").write_text("nope")
+        (tmp_path / "dir.mp4").mkdir()
+        assert engine.video_file(str(tmp_path / "notes.txt")) is None
+        assert engine.video_file(str(tmp_path / "dir.mp4")) is None
+        assert engine.video_file(str(tmp_path / "missing.mp4")) is None
+        assert engine.video_file("") is None
+
+
 # ── HTTP surface (skipped where Flask isn't installed, e.g. CI) ───────────────
 
 class TestBrowseEndpoint:
@@ -581,6 +598,14 @@ class TestBrowseEndpoint:
         body = self._client().get("/api/browse").get_json()
         assert body["exists"] is True
         assert [v["name"] for v in body["videos"]] == ["clip.mp4"]
+
+    def test_video_file(self, tmp_path):
+        (tmp_path / "clip.mp4").write_bytes(b"xy")
+        client = self._client()
+        r = client.get("/api/video-file", query_string={"path": str(tmp_path / "clip.mp4")})
+        assert r.status_code == 200 and r.get_json()["size"] == 2
+        r = client.get("/api/video-file", query_string={"path": str(tmp_path / "nope.mp4")})
+        assert r.status_code == 404 and "error" in r.get_json()
 
     def test_plan_404_before_planning(self, tmp_path, monkeypatch):
         monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path))
@@ -644,6 +669,58 @@ def test_sse_formats_events():
 
 # ── open_artifact (abrir no sistema) ──────────────────────────────────────────
 
+class TestDeleteVideo:
+    def _setup(self, tmp_path, monkeypatch, wid="vid", name="clip"):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path / "lib")
+        source = tmp_path / "raw" / f"{name}.mp4"
+        source.parent.mkdir(exist_ok=True)
+        source.write_bytes(b"original")
+        ws = _mkws(tmp_path / "lib", wid, video_name=name, video_path=str(source))
+        (ws / "edited_video.mp4").write_bytes(b"x")
+        out = tmp_path / "lib" / "output"
+        out.mkdir(exist_ok=True)
+        for suffix in ("_final.mp4", "_thumbnail.png", ".srt", ".txt"):
+            (out / f"{name}{suffix}").write_bytes(b"x")
+        return ws, out, source
+
+    def test_removes_workspace_and_outputs_but_not_the_source(self, tmp_path, monkeypatch):
+        ws, out, source = self._setup(tmp_path, monkeypatch)
+        result = engine.delete_video("vid")
+        assert not ws.exists() and list(out.iterdir()) == []
+        assert source.read_bytes() == b"original"
+        assert result["id"] == "vid" and len(result["removed"]) == 5
+
+    def test_keeps_outputs_another_workspace_delivers_to(self, tmp_path, monkeypatch):
+        ws, out, _ = self._setup(tmp_path, monkeypatch)
+        _mkws(tmp_path / "lib", "plano_clip", video_name="clip")
+        engine.delete_video("vid")
+        assert not ws.exists() and (out / "clip_final.mp4").exists()
+
+    def test_unknown_or_outside_the_library(self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch)
+        _mkws(tmp_path, "fora")  # a sibling of the library, not inside it
+        with pytest.raises(FileNotFoundError):
+            engine.delete_video("nope")
+        with pytest.raises(FileNotFoundError):
+            engine.delete_video("../fora")
+        assert (tmp_path / "fora").exists()
+
+    def test_endpoint_stops_then_deletes(self, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
+        ws, _, _ = self._setup(tmp_path, monkeypatch)
+        stopped = []
+
+        class FakeJobs:
+            def stop(self, video_id):
+                stopped.append(video_id)
+                return {}
+
+        client = api.create_app(jobs=FakeJobs()).test_client()
+        assert client.delete("/api/videos/vid").status_code == 200
+        assert stopped == ["vid"] and not ws.exists()
+        assert client.delete("/api/videos/vid").status_code == 404
+
+
 class TestOpenArtifact:
     def _setup(self, tmp_path, monkeypatch):
         monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
@@ -672,7 +749,39 @@ class TestOpenArtifact:
         monkeypatch.setattr(engine.sys, "platform", "win32")
         calls = []
         engine.open_artifact("vid", "video", reveal=True, run=lambda cmd, **k: calls.append(cmd))
-        assert calls == [["explorer", f"/select,{video}"]]
+        assert calls == [f'explorer /select,"{video}"']
+
+    def test_windows_reveal_quotes_only_the_path(self, monkeypatch):
+        # A list would quote the whole "/select,D:\Flutter Projects\..." and
+        # Explorer would open Documents instead of the file's folder.
+        monkeypatch.setattr(engine.sys, "platform", "win32")
+        calls = []
+        path = Path(r"D:\Flutter Projects\out\clip_final.mp4")
+        engine.os_open(path, reveal=True, run=lambda cmd, **k: calls.append(cmd))
+        assert calls == [f'explorer /select,"{path}"']
+
+    def test_output_path_is_absolute(self, tmp_path, monkeypatch):
+        # The library root is usually relative ("workspace"); the app shows
+        # this path so the person can find the file.
+        monkeypatch.chdir(tmp_path)
+        ws = _mkws(Path("workspace"), "vid", video_name="clip")
+        (Path("workspace") / "output").mkdir()
+        (Path("workspace") / "output" / "clip_final.mp4").write_bytes(b"x")
+        out = engine._output_file(ws, {"video_name": "clip"})
+        assert out.is_absolute() and out == (tmp_path / "workspace" / "output" / "clip_final.mp4").resolve()
+
+    def test_reveals_the_source_video(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path / "lib")
+        source = tmp_path / "raw" / "IMG_1.MOV"
+        source.parent.mkdir()
+        source.write_bytes(b"x")
+        _mkws(tmp_path / "lib", "vid", video_path=str(source))
+        monkeypatch.setattr(engine.sys, "platform", "win32")
+        calls = []
+        assert engine.open_artifact("vid", "source", reveal=True, run=lambda cmd, **k: calls.append(cmd)) == source.resolve()
+        assert calls == [f'explorer /select,"{source.resolve()}"']
+        source.unlink()  # moved or deleted since the edit
+        assert engine.open_artifact("vid", "source", run=lambda cmd, **k: calls.append(cmd)) is None
 
     def test_missing_file_opens_nothing(self, tmp_path, monkeypatch):
         monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
@@ -828,3 +937,162 @@ class TestVideoCaptions:
         monkeypatch.setattr(caption_render, "resolve_ffmpeg", boom)
         r = self._client().post("/api/videos/vid/captions/preview", json={})
         assert r.status_code == 400 and "error" in r.get_json()
+
+
+# ── the edit's own name (display only) ────────────────────────────────────────
+
+class TestEditName:
+    def _ws(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path / "lib"))
+        from auto_edit import workspace as ws_mod
+        video = tmp_path / "IMG_3725.MOV"
+        video.write_bytes(b"x")
+        return ws_mod.init_workspace(video, "short", "ctx")
+
+    def test_named_edit_shows_its_name_everywhere(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws = self._ws(tmp_path, monkeypatch)
+        pl.set_name(ws, "  Abrindo   boosters  ")
+        assert engine.summarize(ws)["name"] == "Abrindo boosters"
+        assert engine.result(ws.name)["name"] == "Abrindo boosters"
+        assert engine.shorts_state(ws.name)["name"] == "Abrindo boosters"
+        # display only: the workspace and file name stay the file's
+        assert ws.name == "IMG_3725" and engine.summarize(ws)["video_name"] == "IMG_3725"
+
+    def test_published_says_what_was_last_sent(self, tmp_path, monkeypatch):
+        """Edições shows "Publicado" once publish.json has a YouTube upload."""
+        from auto_edit.publish import youtube as yt
+        ws = self._ws(tmp_path, monkeypatch)
+        assert engine.summarize(ws)["published"] is None  # never sent (or from before publishing existed)
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u", "privacy": "private"})
+        yt.add_record(ws, "youtube", {"video_id": "b", "url": "u", "privacy": "private", "publish_at": "2026-10-28T19:51:00Z"})
+        pub = engine.summarize(ws)["published"]
+        assert pub["count"] == 2 and pub["publish_at"] == "2026-10-28T19:51:00Z" and pub["published_at"]
+
+    def test_blank_or_missing_name_falls_back(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws = self._ws(tmp_path, monkeypatch)
+        assert engine.summarize(ws)["name"] is None
+        pl.set_name(ws, "Algo")
+        pl.set_name(ws, "   ")
+        assert "name" not in pl.load(ws)
+
+    def test_long_names_are_capped(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        ws = self._ws(tmp_path, monkeypatch)
+        pl.set_name(ws, "x" * 500)
+        assert len(pl.load(ws)["name"]) == pl.NAME_MAX
+
+    def test_endpoint_passes_the_name(self, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
+        video = tmp_path / "v.mp4"
+        video.write_bytes(b"x")
+        seen = {}
+        mgr = engine.JobManager()
+        monkeypatch.setattr(mgr, "start_edit", lambda *a, **kw: seen.update(kw) or type("J", (), {"id": "j", "video_id": "v"})())
+        client = api.create_app(mgr).test_client()
+        client.post("/api/edit", json={"video_path": str(video), "type": "short", "name": "Meu vídeo"})
+        assert seen["name"] == "Meu vídeo"
+        client.post("/api/edit", json={"video_path": str(video), "type": "short", "name": ""})
+        assert seen["name"] is None
+
+    def test_start_edit_saves_the_name(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path / "lib"))
+        monkeypatch.setattr(engine, "run_workspace", lambda *a, **k: 0)  # no ralph
+        video = tmp_path / "IMG_9.MOV"
+        video.write_bytes(b"x")
+        job = engine.JobManager().start_edit(str(video), "short", name="Review do fone")
+        assert pl.load(engine.library_root() / job.video_id)["name"] == "Review do fone"
+
+
+# ── output folder setting (where finished videos go) ──────────────────────────
+
+class TestOutputFolder:
+    def _setup(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("AUTO_EDIT_WORKSPACE", str(tmp_path / "lib"))
+        monkeypatch.delenv("AUTO_EDIT_OUTPUT", raising=False)
+        monkeypatch.delenv("AUTO_EDIT_INBOX", raising=False)
+
+    def test_files_are_found_where_each_video_was_delivered(self, tmp_path, monkeypatch):
+        from auto_edit import pipeline as pl
+        self._setup(tmp_path, monkeypatch)
+        old = _mkws(tmp_path / "lib", "antigo", video_name="antigo")  # before the setting: <lib>/output
+        (tmp_path / "lib" / "output").mkdir()
+        (tmp_path / "lib" / "output" / "antigo_final.mp4").write_bytes(b"x")
+        new = _mkws(tmp_path / "lib", "novo", video_name="novo")
+        chosen = tmp_path / "Saída escolhida"
+        chosen.mkdir()
+        (chosen / "novo_final.mp4").write_bytes(b"x")
+        p = pl.load(new)
+        p["output_dir"] = str(chosen)
+        pl.save(new, p)
+        assert engine.artifact_path("antigo", "video") == (tmp_path / "lib" / "output" / "antigo_final.mp4").resolve()
+        assert engine.artifact_path("novo", "video") == (chosen / "novo_final.mp4").resolve()
+        assert engine.summarize(old)["output"] and engine.summarize(new)["output"].startswith(str(chosen.resolve()))
+        engine.delete_video("novo")
+        assert not (chosen / "novo_final.mp4").exists()
+        assert (tmp_path / "lib" / "output" / "antigo_final.mp4").exists()
+
+    def test_folders_show_defaults_then_the_choice(self, tmp_path, monkeypatch):
+        from auto_edit import settings
+        self._setup(tmp_path, monkeypatch)
+        f = engine.folders()
+        assert f["output"] == {"path": str((tmp_path / "lib" / "output").resolve()), "custom": False, "exists": True}
+        assert f["inbox"]["custom"] is False
+        out = tmp_path / "prontos"
+        out.mkdir()
+        settings.save({"output_dir": str(out), "inbox": str(tmp_path)})
+        f = engine.folders()
+        assert f["output"] == {"path": str(out), "custom": True, "exists": True} and f["inbox"]["path"] == str(tmp_path.resolve())
+        with pytest.raises(settings.SettingsError):
+            settings.save({"output_dir": str(tmp_path / "nao-existe")})
+
+    def test_a_deleted_inbox_does_not_block_saving(self, tmp_path, monkeypatch):
+        """The inbox chosen earlier was deleted: changing the output folder (or
+        anything else) must still save; the screen flags the missing folder."""
+        from auto_edit import settings
+        self._setup(tmp_path, monkeypatch)
+        inbox = tmp_path / "novo"
+        inbox.mkdir()
+        settings.save({"inbox": str(inbox)})
+        inbox.rmdir()
+        out = tmp_path / "prontos"
+        out.mkdir()
+        saved = settings.save({**settings.load(), "output_dir": str(out)})
+        assert saved["output_dir"] == str(out) and saved["inbox"] == str(inbox)
+        assert engine.folders()["inbox"]["exists"] is False
+        # choosing a folder that doesn't exist is still refused
+        with pytest.raises(settings.SettingsError):
+            settings.save({"inbox": str(tmp_path / "outra-que-nao-existe")})
+
+    def test_open_folder_only_opens_the_two_folders(self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch)
+        calls = []
+        opened = engine.open_folder("output", run=lambda cmd, **k: calls.append(cmd))
+        assert opened == (tmp_path / "lib" / "output").resolve() and opened.is_dir() and len(calls) == 1
+        assert engine.open_folder("../etc", run=lambda cmd, **k: calls.append(cmd)) is None
+        assert len(calls) == 1
+
+    def test_folder_endpoints(self, tmp_path, monkeypatch):
+        pytest.importorskip("flask")
+        self._setup(tmp_path, monkeypatch)
+        monkeypatch.setattr(engine, "os_open", lambda path, reveal=False, run=None: None)
+        client = api.create_app().test_client()
+        assert client.get("/api/folders").get_json()["output"]["custom"] is False
+        assert client.post("/api/folders/output/open").status_code == 200
+        assert client.post("/api/folders/qualquer/open").status_code == 404
+
+    def test_default_folders_are_created_in_the_workspace(self, tmp_path, monkeypatch):
+        """Nobody has to set folders: input/ and output/ sit in the workspace
+        root, created when the engine starts."""
+        self._setup(tmp_path, monkeypatch)
+        engine.ensure_default_folders()
+        lib = (tmp_path / "lib").resolve()
+        assert (lib / "input").is_dir() and (lib / "output").is_dir()
+        f = engine.folders()
+        assert f["inbox"] == {"path": str(lib / "input"), "custom": False, "exists": True}
+        assert f["output"]["path"] == str(lib / "output") and f["output"]["custom"] is False
+        assert engine.inbox_root() == lib / "input"
+        assert engine.open_folder("inbox", run=lambda cmd, **k: None) == lib / "input"

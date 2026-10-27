@@ -39,6 +39,11 @@ def _segment_threshold() -> int:
     except ValueError:
         return DEFAULT_SEGMENT_THRESHOLD
 
+# 8-bit 4:2:0 on every encode. A phone records 10-bit HDR, and without this the
+# edit stays 10-bit: H.264 High 10 doesn't play on iPhone/Safari, and the cover
+# frame (8-bit) spliced in front of it made a file the app's player can't decode.
+PIX_FMT = ["-pix_fmt", "yuv420p"]
+
 _CODEC_PREFERENCE = [
     ("h264_videotoolbox", ["-q:v", "50"]),
     ("libx264",           ["-crf", "23", "-preset", "fast"]),
@@ -363,7 +368,7 @@ def _run_ffmpeg_cuts_segmented(
                    "-ss", f"{start:.3f}", "-i", str(video), "-t", f"{end - start:.3f}"]
             if vf:
                 cmd += ["-vf", vf]
-            cmd += ["-fps_mode", "cfr", "-r", fps, "-c:v", codec, *codec_flags]
+            cmd += ["-fps_mode", "cfr", "-r", fps, "-c:v", codec, *codec_flags, *PIX_FMT]
             if has_audio:
                 cmd += ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
             else:
@@ -422,7 +427,7 @@ def _run_ffmpeg_cuts(
     base_cmd = [
         "ffmpeg", "-y", "-i", str(video),
         "-map", "[outv]", "-map", "[outa]",
-        "-c:v", codec, *codec_flags,
+        "-c:v", codec, *codec_flags, *PIX_FMT,
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", "-brand", "mp42",
         str(output),

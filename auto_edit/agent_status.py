@@ -26,10 +26,11 @@ TEST_TIMEOUT = 120.0
 
 def _version(binary: str) -> str | None:
     try:
-        out = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=10)
+        out = subprocess.run([binary, "--version"], capture_output=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    text = (out.stdout or out.stderr).strip().splitlines()
+    # bytes, decoded leniently: one broken CLI must not take the whole list down
+    text = (agents.decode_output(out.stdout) or agents.decode_output(out.stderr)).strip().splitlines()
     return text[-1][:60] if text else None
 
 
@@ -194,7 +195,7 @@ def pull(model: str, run=subprocess.run) -> None:
     _pulls[model] = "downloading"
 
     def _go() -> None:
-        proc = run([binary, "pull", model], capture_output=True, text=True)
-        _pulls[model] = "done" if proc.returncode == 0 else f"error: {(proc.stderr or '').strip()[-200:]}"
+        proc = run([binary, "pull", model], capture_output=True)
+        _pulls[model] = "done" if proc.returncode == 0 else f"error: {agents.decode_output(proc.stderr).strip()[-200:]}"
 
     threading.Thread(target=_go, name=f"ollama-pull-{model}", daemon=True).start()

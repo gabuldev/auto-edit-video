@@ -8,16 +8,17 @@ import { go } from "./router.js";
 const STAGES = ["extract", "plan", "review", "evaluate", "execute", "overlay", "caption", "metadata", "thumbnail"];
 const STAGE_HINT = {
   extract: "Whisper transcreve o áudio",
-  plan: "o planner decide os cortes",
-  review: "o reviewer confere o plano",
+  plan: "O planner decide os cortes",
+  review: "O reviewer confere o plano",
   execute: "FFmpeg corta o vídeo",
-  overlay: "aplica overlays (só long)",
-  caption: "legendas estilo CapCut (só short)",
-  evaluate: "julga o corte planejado (antes de renderizar) e aprova ou devolve pro plan",
-  metadata: "título, descrição e tags",
-  thumbnail: "escolhe o frame de capa",
+  overlay: "Lower third e CTA na tela",
+  caption: "Legenda animada estilo CapCut",
+  evaluate: "Julga o corte planejado (antes de renderizar) e aprova ou devolve pro plan",
+  metadata: "Título, descrição e tags",
+  thumbnail: "Escolhe o frame de capa",
 };
-const STATUS_LABEL = { complete: "ok", running: "rodando", failed: "falhou", skip: "pulado", pending: "aguardando" };
+// The dot says the state (a spinner while running); read aloud, not printed.
+const STATUS_LABEL = { complete: "concluído", running: "rodando", failed: "falhou", pending: "aguardando" };
 const MAX_LOG_LINES = 500;
 
 const state = { id: null, data: null, stream: null, timer: null, lines: [], pinned: true };
@@ -31,25 +32,33 @@ function stageRow(name, info, current, overall) {
     else if (overall === "running") status = "running";
   }
   const active = name === current && status !== "complete";
+  // Only when it finished; a failure is the one state worth spelling out.
   const when = info?.completed_at ? new Date(info.completed_at).toLocaleTimeString("pt-BR") : "";
+  const right = status === "complete" ? when : status === "failed" ? "falhou" : "";
   return `
   <div class="stage ${status}${active ? " active" : ""}">
-    <span class="stage-dot"></span>
+    <span class="stage-dot" role="img" aria-label="${STATUS_LABEL[status] || status}"></span>
     <span class="stage-label">${name}</span>
     <span class="stage-hint">${STAGE_HINT[name] || ""}</span>
-    <span class="stage-status mono">${STATUS_LABEL[status] || status}${when ? ` · ${when}` : ""}</span>
+    <span class="stage-status mono">${right}</span>
   </div>`;
+}
+
+// The stages this video runs: a short never overlays, a long never captions.
+function stagesOf(d) {
+  const detail = d.stage_detail || {};
+  return STAGES.filter((s) => detail[s]?.status !== "skip");
 }
 
 function renderStages(d) {
   const detail = d.stage_detail || {};
-  el("pipe-stages").innerHTML = STAGES
+  el("pipe-stages").innerHTML = stagesOf(d)
     .map((s) => stageRow(s, detail[s], d.current_stage, d.status))
     .join("");
 }
 
 function renderHead(d) {
-  el("pipe-title").textContent = d.video_name || d.id;
+  el("pipe-title").textContent = d.name || d.video_name || d.id;
   el("pipe-sub").innerHTML =
     `<span class="badge ${d.type === "short" ? "short" : "long"}">${d.type || "?"}</span>` +
     `<span class="chip ${d.status}"><span class="d"></span>${
@@ -58,25 +67,29 @@ function renderHead(d) {
     `<span class="mono dim">iteração ${d.iteration || 1}/${d.max_iterations || 3}</span>` +
     (d.estimated_tokens ? `<span class="mono dim">~${Number(d.estimated_tokens).toLocaleString("pt-BR")} tokens</span>` : "");
 
+  // [label, value, kind to show in its folder (the engine's open/<kind>)]
   const facts = [
-    ["vídeo", d.video_path],
+    ["vídeo original", d.video_path, "source"],
+    ["output", d.output, "video"],
     ["contexto", d.context],
     ["idioma", d.language],
     ["cortes mantidos", d.plan?.kept_segments != null ? String(d.plan.kept_segments) : null],
-    ["output", d.output],
   ].filter(([, v]) => v);
   el("pipe-facts").innerHTML = facts
-    .map(([k, v]) => `<div class="fact"><span>${k}</span><span class="mono">${escapeHtml(v)}</span></div>`)
+    .map(([k, v, kind]) => `<div class="fact"><span>${k}</span>${kind
+      ? `<button class="fact-link mono" type="button" data-reveal="${kind}" title="Mostrar na pasta">${escapeHtml(v)}</button>`
+      : `<span class="mono">${escapeHtml(v)}</span>`}</div>`)
     .join("");
 }
 
 function renderResume(d) {
   const sel = el("resume-stage");
-  if (!sel.dataset.filled) {
-    sel.innerHTML = STAGES.map((s) => `<option value="${s}">${s}</option>`).join("");
-    sel.dataset.filled = "1";
+  const stages = stagesOf(d);
+  if (sel.dataset.filled !== stages.join()) { // a short and a long list different stages
+    sel.innerHTML = stages.map((s) => `<option value="${s}">${s}</option>`).join("");
+    sel.dataset.filled = stages.join();
   }
-  if (d.current_stage && STAGES.includes(d.current_stage)) sel.value = d.current_stage;
+  if (d.current_stage && stages.includes(d.current_stage)) sel.value = d.current_stage;
   const live = d.status === "running";
   sel.disabled = live;
   el("btn-resume").disabled = live;
@@ -194,6 +207,16 @@ async function doResume() {
 
 function wire() {
   el("btn-resume").addEventListener("click", doResume);
+  el("pipe-facts").addEventListener("click", async (e) => {
+    const link = e.target.closest("[data-reveal]");
+    if (!link) return;
+    try {
+      await api.openFile(state.id, link.dataset.reveal, true);
+    } catch (err) {
+      el("pipe-error").hidden = false;
+      el("pipe-error").textContent = `não deu pra abrir a pasta: ${err.message || err}`;
+    }
+  });
   el("btn-stop").addEventListener("click", doStop);
   el("pipe-log").addEventListener("scroll", (e) => {
     const box = e.currentTarget;

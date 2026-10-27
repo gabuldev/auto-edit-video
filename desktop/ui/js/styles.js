@@ -18,6 +18,7 @@ const state = {
   aiImage: null, // data: URL of the AI's reference image
   generating: false, // the AI is working: the gallery and the editor wait
   settings: null,
+  logoBg: undefined, // behind the logo: a color, or null for the style's accent
   thumbs: {}, // style id → blob URL of its gallery thumbnail
   seq: 0, // ignores previews that arrive after a newer request
   timers: {},
@@ -64,17 +65,38 @@ function renderBrand() {
   el("sty-name").placeholder = b.name && !saved.name ? `padrão: ${b.name} (canal do YouTube)` : "seu nome ou do canal";
   el("sty-logo-initial").textContent = ((saved.name || b.name || "?").trim()[0] || "?").toUpperCase();
   el("sty-logo-img").hidden = !b.logo;
-  el("sty-logo-remove").hidden = !b.logo;
   el("sty-logo-bg-wrap").hidden = !b.logo;
   if (b.logo && !el("sty-logo-img").src) el("sty-logo-img").src = api.logoUrl();
   if (!b.logo) el("sty-logo-img").removeAttribute("src");
-  const bg = saved.logo_bg;
-  el("sty-logo-bg-own").checked = !!bg;
-  el("sty-logo-bg").disabled = !bg;
-  if (bg) el("sty-logo-bg").value = bg;
-  // the button shows the logo on the color it will get in the video
-  el("sty-logo").style.background = b.logo ? bg || shown()?.colors.accent || "" : "";
+  // The badge: + picks a logo, × removes the one there is.
+  const badge = el("sty-logo-badge");
+  badge.classList.toggle("remove", !!b.logo);
+  badge.title = b.logo ? "Remover a logo" : "Escolher a logo";
+  badge.setAttribute("aria-label", badge.title);
+  badge.innerHTML = b.logo ? `<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7"/></svg>`
+    : `<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2.5v9M2.5 7h9"/></svg>`;
+  // Read once: after that the screen owns it (a save still in flight must not
+  // put the old color back).
+  if (state.logoBg === undefined) state.logoBg = saved.logo_bg || null;
+  if (state.logoBg) el("sty-logo-bg").value = state.logoBg;
+  renderLogoBg();
   el("sty-overlays").value = state.settings?.overlays_dir || "";
+}
+
+// Behind the logo in the video: the style's accent, or a color of one's own.
+function renderLogoBg() {
+  const accent = shown()?.colors.accent || "";
+  const own = state.logoBg;
+  document.querySelectorAll("[data-logo-bg]").forEach((b) => {
+    const on = (b.dataset.logoBg === "own") === !!own;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", String(on));
+  });
+  el("sty-logo-bg-accent").style.background = accent;
+  el("sty-logo-bg-swatch").style.background = own || "";
+  el("sty-logo-bg-swatch").classList.toggle("unset", !own);
+  // the circle shows the logo on the color it will get in the video
+  el("sty-logo").style.background = state.data.brand?.logo ? own || accent : "";
 }
 
 async function saveBrand() {
@@ -82,8 +104,7 @@ async function saveBrand() {
     const name = el("sty-name").value.trim() || null;
     let handle = el("sty-handle").value.trim() || null;
     if (handle && !handle.startsWith("@")) handle = `@${handle}`;
-    const logo_bg = el("sty-logo-bg-own").checked ? el("sty-logo-bg").value : null;
-    state.settings = await api.saveSettings({ brand: { ...(state.settings?.brand || {}), name, handle, logo_bg } });
+    state.settings = await api.saveSettings({ brand: { ...(state.settings?.brand || {}), name, handle, logo_bg: state.logoBg || null } });
     renderBrand();
     el("sty-brand-saved").textContent = "salvo";
     setTimeout(() => (el("sty-brand-saved").textContent = ""), 1500);
@@ -98,8 +119,13 @@ async function pickLogo(file) {
   if (!file) return;
   if (file.size > 5 * 1024 * 1024) return setError("imagem grande demais (máx. 5 MB)");
   const data = await readDataUrl(file);
+  // Show it right away; once saved, reload it from the engine (a new URL, or a
+  // replaced logo would keep showing the old one).
+  el("sty-logo-img").src = data;
+  el("sty-logo-img").hidden = false;
   try {
     await api.uploadLogo(data);
+    el("sty-logo-img").src = api.logoUrl();
     state.settings = await api.settings();
     await reload(false);
     refreshPreviews(true);
@@ -443,9 +469,25 @@ function wire() {
   });
   el("sty-name").addEventListener("input", () => debounce("brand", saveBrand, 700));
   el("sty-handle").addEventListener("input", () => debounce("brand", saveBrand, 700));
-  el("sty-logo-bg-own").addEventListener("change", () => { el("sty-logo-bg").disabled = !el("sty-logo-bg-own").checked; saveBrand(); });
+  // "Cor do estilo" goes back to the accent; "Outra cor" is chosen right away
+  // (the last color picked, white at first) and opens the color picker.
+  el("sty-logo-bg-wrap").addEventListener("click", (e) => {
+    const opt = e.target.closest("[data-logo-bg]");
+    if (!opt) return;
+    const own = opt.dataset.logoBg === "own";
+    if (own) {
+      const input = el("sty-logo-bg");
+      if (input.showPicker) input.showPicker(); else input.click();
+    }
+    const next = own ? state.logoBg || el("sty-logo-bg").value : null;
+    if (next === state.logoBg) return;
+    state.logoBg = next;
+    renderLogoBg();
+    saveBrand();
+  });
   el("sty-logo-bg").addEventListener("input", () => {
-    el("sty-logo").style.background = el("sty-logo-bg").value;
+    state.logoBg = el("sty-logo-bg").value;
+    renderLogoBg();
     debounce("brand", saveBrand, 500);
   });
   el("sty-overlays").addEventListener("input", () => debounce("overlays", async () => {
@@ -454,12 +496,11 @@ function wire() {
       setError("");
     } catch (err) { setError(String(err.message || err)); }
   }, 900));
-  const pick = (e) => { e.preventDefault(); el("sty-logo-file").click(); };
+  const pick = () => el("sty-logo-file").click();
   el("sty-logo").addEventListener("click", pick);
-  el("sty-logo-pick").addEventListener("click", pick);
   el("sty-logo-file").addEventListener("change", (e) => { pickLogo(e.target.files[0]); e.target.value = ""; });
-  el("sty-logo-remove").addEventListener("click", async (e) => {
-    e.preventDefault();
+  el("sty-logo-badge").addEventListener("click", async () => {
+    if (!state.data?.brand?.logo) return pick();
     try { await api.deleteLogo(); await reload(false); refreshPreviews(true); } catch (err) { setError(String(err.message || err)); }
   });
 

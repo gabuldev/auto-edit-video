@@ -4,6 +4,7 @@ Pipeline state machine — manages pipeline.json per video workspace.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,6 +90,21 @@ def set_reorder(workspace: Path, enabled: bool = True) -> None:
     """Let the execute stage reorder whole blocks (kept across `resume`)."""
     p = load(workspace)
     p["reorder"] = bool(enabled)
+    save(workspace, p)
+
+
+NAME_MAX = 120
+
+
+def set_name(workspace: Path, name: str | None) -> None:
+    """The edit's own name, which the app shows instead of the file name.
+    Display only: the workspace and output files keep the file's name. Blank clears it."""
+    p = load(workspace)
+    name = " ".join((name or "").split())[:NAME_MAX]
+    if name:
+        p["name"] = name
+    else:
+        p.pop("name", None)
     save(workspace, p)
 
 
@@ -205,13 +221,32 @@ def recaption(workspace: Path) -> str:
     return start
 
 
+def output_root(workspace: Path) -> Path:
+    """Where finalize delivers now: AUTO_EDIT_OUTPUT (the app's "Pasta de
+    saída"), else <workspace root>/output as always."""
+    env = os.environ.get("AUTO_EDIT_OUTPUT")
+    return Path(env).expanduser() if env else workspace.parent / "output"
+
+
+def delivered_dir(workspace: Path, pipeline: dict | None = None) -> Path:
+    """Where this workspace's finished files are. finalize records it; a
+    workspace finalized before that existed delivered to <root>/output."""
+    p = pipeline if pipeline is not None else load(workspace)
+    recorded = p.get("output_dir")
+    return Path(recorded) if recorded else workspace.parent / "output"
+
+
 def finalize(workspace: Path) -> Path:
-    """Copy final video + write metadata txt to output/. Cleans up temp files."""
+    """Copy final video + write metadata txt to the output folder. Cleans up temp files."""
     import shutil
 
     pipeline = load(workspace)
-    output_dir = workspace.parent / "output"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = output_root(workspace)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Remember where it went: the app finds the files here even after the
+    # output folder setting changes.
+    pipeline["output_dir"] = str(output_dir.resolve())
+    save(workspace, pipeline)
 
     # Determine final video file
     if pipeline["type"] == "short" and (workspace / "captioned_video.mp4").exists():

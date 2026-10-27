@@ -10,7 +10,12 @@ module never requires it — only `create_app()` / `serve()` do.
 Endpoints
     GET  /api/health
     GET  /api/library
-    GET  /api/browse?dir=            (folders + videos, for the picker)
+    GET  /api/browse?dir=            (folders + videos of a directory)
+    GET  /api/recordings             Biblioteca: vídeos da pasta de entrada (subpastas até 3 níveis) + edições de cada
+    GET  /api/recordings/thumb?path= miniatura JPEG de um vídeo da pasta de entrada (só dela)
+    GET  /api/folders                {inbox, output}: {path, custom} — as the pipeline uses them now
+    POST /api/folders/<inbox|output>/open   abre a pasta no gerenciador de arquivos
+    GET  /api/video-file?path=       (nome/tamanho de um vídeo escolhido ou arrastado)
     GET  /api/videos/<id>
     GET  /api/videos/<id>/plan       (cortes + o que é dito em cada um)
     PUT  /api/videos/<id>/plan       {kept_segments: [{start, end, summary?}]}
@@ -19,12 +24,13 @@ Endpoints
     POST /api/videos/<id>/captions/preview  {ajuste} → PNG
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
     GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
-    POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder
+    POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder (kind source = o vídeo original)
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run, cold_open, reorder,
-                                    overlays_dir}
+                                    overlays_dir, name}  (name: só exibição; vazio = nome do arquivo)
     POST /api/videos/<id>/resume   {from_stage, overlays_dir, caption_only?}
     POST /api/videos/<id>/stop     para o que está rodando (job, ralph avulso, fila)
+    DELETE /api/videos/<id>        para e apaga o workspace + os arquivos em output/ (nunca o vídeo original)
     GET  /api/videos/<id>/shorts?max_dur=   (candidatos a short de um long pronto)
     POST /api/videos/<id>/shorts       {max_dur}  roda o clipper (job, SSE)
     POST /api/videos/<id>/shorts/cut   {pick: [1, 3], max_dur}  corta em fila
@@ -42,7 +48,11 @@ Endpoints
     GET  /api/publish/youtube                 (conta conectada?)
     POST /api/publish/youtube/connect         abre o OAuth no navegador
     POST /api/publish/youtube/disconnect
+    POST /api/publish/youtube/connect/cancel  para de esperar a autorização no navegador
+    PUT  /api/publish/youtube/client          {path} | {content}: o JSON do OAuth client
+    POST /api/publish/youtube/refresh         Edições: quais enviados ainda estão no YouTube
     GET  /api/videos/<id>/publish             (defaults do metadata + histórico)
+    GET  /api/videos/<id>/publish/live        como os vídeos enviados estão agora no YouTube
     POST /api/videos/<id>/publish/youtube     {title, description, tags, privacy,
                                                publish_at, force}  upload (job, SSE)
     GET  /api/videos/<id>/retention           (análise salva da curva de retenção)
@@ -118,6 +128,15 @@ def create_app(jobs: engine.JobManager | None = None):
     def browse():
         """Folders + video files of a directory (default: the inbox) for the picker."""
         return jsonify(engine.browse(request.args.get("dir") or None))
+
+    @app.get("/api/video-file")
+    def video_file_info():
+        """Name/size of a path the app got from its dialog or a drop — and a check it's a video."""
+        path = request.args.get("path") or ""
+        info = engine.video_file(path)
+        if info is None:
+            return jsonify({"error": "não é um vídeo que o pipeline abre (mp4, mov, mkv…)", "path": path}), 404
+        return jsonify(info)
 
     @app.get("/api/videos/<video_id>")
     def video_detail(video_id: str):
@@ -239,6 +258,7 @@ def create_app(jobs: engine.JobManager | None = None):
                 cold_open=bool(body.get("cold_open", saved["cold_open"])),
                 reorder=bool(body.get("reorder", saved["reorder"])),
                 overlays_dir=body.get("overlays_dir") or saved["overlays_dir"],
+                name=body.get("name") or None,
             )
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -315,6 +335,28 @@ def create_app(jobs: engine.JobManager | None = None):
     def youtube_disconnect():
         return jsonify(engine.disconnect_youtube())
 
+    @app.post("/api/publish/youtube/connect/cancel")
+    def youtube_connect_cancel():
+        """Stop waiting for the browser's authorization (tab closed)."""
+        return jsonify(engine.cancel_youtube_connect())
+
+    @app.post("/api/publish/youtube/refresh")
+    def youtube_refresh():
+        """Edições: which sent videos are still on YouTube (once a minute)."""
+        return jsonify(engine.refresh_published())
+
+    @app.put("/api/publish/youtube/client")
+    def youtube_client():
+        """The OAuth client JSON from Google Cloud: {path} (app) or {content}."""
+        body = request.get_json(silent=True) or {}
+        content = body.get("content")
+        try:
+            return jsonify(engine.set_youtube_client(
+                path=body.get("path"), content=content if isinstance(content, str) else None,
+            ))
+        except yt.AuthError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.get("/api/videos/<video_id>/publish")
     def publish_state(video_id: str):
         data = engine.publish_state(video_id)
@@ -325,6 +367,13 @@ def create_app(jobs: engine.JobManager | None = None):
             data["job"] = {"id": job.id, "status": job.status}
         return jsonify(data)
 
+    @app.get("/api/videos/<video_id>/publish/live")
+    def publish_live(video_id: str):
+        data = engine.publish_live(video_id)
+        if data is None:
+            return jsonify({"error": "not_found", "id": video_id}), 404
+        return jsonify(data)
+
     @app.post("/api/videos/<video_id>/publish/youtube")
     def publish_youtube(video_id: str):
         body = request.get_json(silent=True) or {}
@@ -332,7 +381,7 @@ def create_app(jobs: engine.JobManager | None = None):
         state = engine.publish_state(video_id)
         if state is None:
             return jsonify({"error": "not_found", "id": video_id}), 404
-        if state["published"] and not force:
+        if yt.on_youtube(state["published"]) and not force:
             return jsonify({"error": "este vídeo já foi enviado pro YouTube", "published": state["published"]}), 409
         tags = body.get("tags") or []
         if isinstance(tags, str):
@@ -381,6 +430,35 @@ def create_app(jobs: engine.JobManager | None = None):
         from auto_edit import settings
 
         return jsonify(settings.load())
+
+    @app.get("/api/recordings")
+    def list_recordings():
+        """The Biblioteca: the videos in the inbox, each with its edits."""
+        library = engine.list_library(
+            active_ids=jobs.active_ids(), failed_ids=jobs.failed_ids(), queued_ids=jobs.queued_ids()
+        )
+        return jsonify(engine.recordings_view(library))
+
+    @app.get("/api/recordings/thumb")
+    def recording_thumb():
+        path = engine.recording_thumbnail(request.args.get("path") or "")
+        if path is None:
+            return jsonify({"error": "not_found"}), 404
+        return send_file(path, mimetype="image/jpeg", max_age=3600)
+
+    @app.get("/api/folders")
+    def get_folders():
+        return jsonify(engine.folders())
+
+    @app.post("/api/folders/<which>/open")
+    def open_folder(which: str):
+        """Open the inbox or the output folder in the file manager."""
+        if which not in engine.FOLDERS:
+            return jsonify({"error": "not_found", "folder": which}), 404
+        path = engine.open_folder(which)
+        if path is None:
+            return jsonify({"error": f"a pasta não existe: {engine.folders()[which]['path']}"}), 404
+        return jsonify({"opened": str(path)})
 
     @app.put("/api/settings")
     def put_settings():
@@ -655,8 +733,20 @@ def create_app(jobs: engine.JobManager | None = None):
     def open_url():
         body = request.get_json(silent=True) or {}
         if not engine.open_url(body.get("url")):
-            return jsonify({"error": "só links do YouTube e das CLIs de agente"}), 400
+            return jsonify({"error": "só links do YouTube, do Google Cloud e das CLIs de agente"}), 400
         return jsonify({"opened": body["url"]})
+
+    @app.delete("/api/videos/<video_id>")
+    def delete_video(video_id: str):
+        """Stop whatever runs on it, then remove the workspace and its output
+        files (never the source video)."""
+        try:
+            jobs.stop(video_id)
+            return jsonify(engine.delete_video(video_id))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except OSError as exc:  # Windows: a file still open (player, ffmpeg)
+            return jsonify({"error": f"não deu pra apagar tudo: {exc}"}), 409
 
     @app.post("/api/videos/<video_id>/stop")
     def stop(video_id: str):
@@ -684,5 +774,6 @@ def create_app(jobs: engine.JobManager | None = None):
 
 def serve(host: str = "127.0.0.1", port: int = 8760) -> None:
     """Start the API server (blocking). threaded=True so SSE streams don't block."""
+    engine.ensure_default_folders()  # workspace/input and workspace/output, ready on first launch
     app = create_app()
     app.run(host=host, port=port, threaded=True)

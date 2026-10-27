@@ -15,9 +15,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -52,17 +54,33 @@ def library_root() -> Path:
     return workspace_root()
 
 
+def default_inbox() -> Path:
+    """The inbox when none was chosen: <workspace root>/input, next to output/.
+    Created, so the app works without anyone setting folders."""
+    folder = (library_root() / "input").resolve()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # the screens say it doesn't exist; a folder can still be chosen
+    return folder
+
+
+def ensure_default_folders() -> None:
+    """The input and output folders the app works with out of the box."""
+    default_inbox()
+    try:
+        (library_root() / "output").mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+
 def inbox_root() -> Path:
-    """Default folder the "new edit" picker browses (same one `plan ingest` uses)."""
-    env = os.environ.get("AUTO_EDIT_INBOX")
-    if env:
-        return Path(env).expanduser()
+    """The inbox: where the app's video picker opens (and what `plan ingest`
+    reads through AUTO_EDIT_INBOX). Chosen in Configurações, else default_inbox()."""
     from auto_edit import settings
 
-    saved = settings.load().get("inbox")
-    if saved:
-        return Path(saved).expanduser()
-    return repo_root() / "upload"
+    chosen = settings.env_from_settings().get("AUTO_EDIT_INBOX")  # as saved now; a set variable wins
+    return Path(chosen).expanduser() if chosen else default_inbox()
 
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mts", ".m2ts"}
@@ -95,15 +113,7 @@ def browse(directory: str | None = None) -> dict:
                 if not entry.name.startswith("."):
                     dirs.append({"name": entry.name, "path": str(entry)})
             elif entry.suffix.lower() in VIDEO_EXTS:
-                stat = entry.stat()
-                videos.append(
-                    {
-                        "name": entry.name,
-                        "path": str(entry),
-                        "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                    }
-                )
+                videos.append(_video_entry(entry))
         except OSError:
             continue
 
@@ -111,6 +121,34 @@ def browse(directory: str | None = None) -> dict:
     videos.sort(key=lambda v: v["modified"], reverse=True)
     parent = str(root.parent) if root.parent != root else None
     return {"dir": str(root), "parent": parent, "exists": True, "dirs": dirs, "videos": videos}
+
+
+def _video_entry(path: Path) -> dict:
+    stat = path.stat()
+    return {
+        "name": path.name,
+        "path": str(path),
+        "size": stat.st_size,
+        "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+    }
+
+
+def video_file(path: str | None) -> dict | None:
+    """A video picked or dropped in "new edit", as the card shows it.
+
+    None when the path isn't a file the pipeline can open (missing, a folder,
+    or not a video extension).
+    """
+    if not path:
+        return None
+    p = Path(path).expanduser()
+    if p.suffix.lower() not in VIDEO_EXTS:
+        return None
+    try:
+        return _video_entry(p) if p.is_file() else None
+    except OSError:
+        return None
+
 
 
 # ── Status derivation ─────────────────────────────────────────────────────────
@@ -145,10 +183,13 @@ def overall_status(
 
 
 def _output_file(ws: Path, pipeline: dict) -> Path | None:
-    """The finalized output for a done workspace, if present on disk."""
-    output_dir = ws.parent / "output"
-    candidate = output_dir / f"{pipeline.get('video_name', ws.name)}_final.mp4"
-    return candidate if candidate.exists() else None
+    """The finalized output for a done workspace, if present on disk.
+
+    Absolute: the library root is usually relative ("workspace"), and the app
+    shows this path to the person, who needs to find the file.
+    """
+    candidate = pl.delivered_dir(ws, pipeline) / f"{pipeline.get('video_name', ws.name)}_final.mp4"
+    return candidate.resolve() if candidate.exists() else None
 
 
 def _read_json(path: Path) -> dict | list | None:
@@ -172,7 +213,7 @@ def _title(ws: Path) -> str | None:
 
 def _thumbnail_file(ws: Path, pipeline: dict) -> Path | None:
     name = pipeline.get("video_name", ws.name)
-    candidate = ws.parent / "output" / f"{name}_thumbnail.png"
+    candidate = pl.delivered_dir(ws, pipeline) / f"{name}_thumbnail.png"
     return candidate if candidate.is_file() else None
 
 
@@ -186,6 +227,7 @@ def summarize(
     out = _output_file(ws, p)
     return {
         "id": ws.name,
+        "name": p.get("name"),  # the edit's own name, when given (else the screens fall back)
         "video_name": p.get("video_name", ws.name),
         "video_path": p.get("video_path"),
         "type": p.get("type"),
@@ -203,6 +245,23 @@ def summarize(
         "stages": {name: info.get("status") for name, info in p.get("stages", {}).items()},
         "estimated_tokens": tokens,
         "output": str(out) if out else None,
+        "published": _published(ws),
+    }
+
+
+def _published(ws: Path) -> dict | None:
+    """The last send to YouTube still there (publish.json), for "Publicado" in
+    Edições. Read from the record (one cheap read per video); the deleted ones
+    get marked when Edições or the Resultado card asks YouTube."""
+    sent = yt.on_youtube(yt.read_record(ws).get("youtube", []))
+    if not sent:
+        return None
+    last = sent[-1]
+    return {
+        "privacy": last.get("privacy"),
+        "publish_at": last.get("publish_at"),
+        "published_at": last.get("published_at"),
+        "count": len(sent),
     }
 
 
@@ -272,7 +331,7 @@ def detail(
 
 # ── Finished artifacts ────────────────────────────────────────────────────────
 
-# What `pipeline.finalize()` drops in <workspace root>/output/, by kind.
+# What `pipeline.finalize()` drops in the output folder, by kind.
 ARTIFACT_SUFFIXES = {
     "video": "_final.mp4",
     "thumbnail": "_thumbnail.png",
@@ -290,8 +349,8 @@ ARTIFACT_MIME = {
 def artifact_path(video_id: str, kind: str) -> Path | None:
     """Absolute path of one finished artifact, or None when it isn't there.
 
-    Only the four known kinds resolve, and always inside the library's own
-    output folder — this is what the API serves to the player.
+    Only the four known kinds resolve, and only from the folder this
+    workspace delivered to — this is what the API serves to the player.
     """
     suffix = ARTIFACT_SUFFIXES.get(kind)
     if suffix is None:
@@ -299,11 +358,44 @@ def artifact_path(video_id: str, kind: str) -> Path | None:
     ws = library_root() / video_id
     if not (ws / "pipeline.json").exists():
         return None
-    name = pl.load(ws).get("video_name", video_id)
+    p = pl.load(ws)
+    name = p.get("video_name", video_id)
     # Absolute: the library root is usually relative ("workspace"), and Flask's
     # send_file resolves a relative path against the package, not the cwd.
-    candidate = (ws.parent / "output" / f"{name}{suffix}").resolve()
+    candidate = (pl.delivered_dir(ws, p) / f"{name}{suffix}").resolve()
     return candidate if candidate.is_file() else None
+
+
+def delete_video(video_id: str) -> dict:
+    """Remove a video from the library: its workspace and its delivered files
+    in its output folder. The source video is never touched. Stop it first (Jobs.stop).
+
+    FileNotFoundError for an unknown id or one that points outside the library.
+    """
+    root = library_root().resolve()
+    ws = (root / video_id).resolve()
+    if ws.parent != root or not (ws / "pipeline.json").is_file():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    p = pl.load(ws)
+    name = p.get("video_name", video_id)
+    out_dir = pl.delivered_dir(ws, p).resolve()
+
+    def same_files(other: Path) -> bool:
+        q = pl.load(other)
+        return q.get("video_name", other.name) == name and pl.delivered_dir(other, q).resolve() == out_dir
+
+    # Another workspace with the same name delivered to the same files.
+    shared = any(pj.parent != ws and same_files(pj.parent) for pj in root.glob("*/pipeline.json"))
+    removed: list[str] = []
+    if not shared:
+        for suffix in ARTIFACT_SUFFIXES.values():
+            out = out_dir / f"{name}{suffix}"
+            if out.is_file():
+                out.unlink()
+                removed.append(str(out))
+    shutil.rmtree(ws)
+    removed.append(str(ws))
+    return {"id": video_id, "removed": removed}
 
 
 def _short_workspace(video_id: str) -> tuple[Path, dict]:
@@ -408,12 +500,23 @@ def open_artifact(
 
     The engine runs on the user's own machine, so this is how a frontend gets
     a file onto the screen — a webview (Tauri) won't follow a download link.
+    `kind="source"` is the recording the edit started from.
     """
-    path = artifact_path(video_id, kind)
+    path = source_path(video_id) if kind == "source" else artifact_path(video_id, kind)
     if path is None:
         return None
     os_open(path, reveal, run)
     return path
+
+
+def source_path(video_id: str) -> Path | None:
+    """The video this workspace was edited from, when it is still on disk."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    source = pl.load(ws).get("video_path")
+    path = Path(source).resolve() if source else None
+    return path if path and path.is_file() else None
 
 
 def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subprocess.Popen) -> None:
@@ -422,10 +525,82 @@ def os_open(path: Path, reveal: bool = False, run: Callable[..., object] = subpr
     if sys.platform == "darwin":
         cmd = ["open", "-R", str(path)] if reveal else ["open", str(path)]
     elif sys.platform == "win32":
-        cmd = ["explorer", f"/select,{path}"] if reveal else ["cmd", "/c", "start", "", str(path)]
+        # A command line, not a list: with a space in the path, a list quotes
+        # the whole `"/select,D:\a b\x.mp4"`, which Explorer ignores (it opens
+        # Documents). It wants only the path quoted. Windows paths can't hold ".
+        cmd = f'explorer /select,"{path}"' if reveal else ["cmd", "/c", "start", "", str(path)]
     else:  # no portable "select in folder" on Linux: open the folder instead
         cmd = ["xdg-open", str(path.parent if reveal else path)]
     run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def recordings_view(library: list[dict]) -> dict:
+    """The Biblioteca: the recordings in the inbox, each with the edits made
+    from it (newest first), matched by the source video path."""
+    from auto_edit import recordings
+
+    edits: dict[str, list[dict]] = {}
+    for v in sorted(library, key=lambda v: v.get("created_at") or "", reverse=True):
+        key = recordings.source_key(v.get("video_path"))
+        if key:
+            edits.setdefault(key, []).append(
+                {"id": v["id"], "name": v.get("name") or v.get("title"), "status": v.get("status")}
+            )
+    return recordings.listing(inbox_root(), edits)
+
+
+def recording_thumbnail(path: str) -> Path | None:
+    """A recording's thumbnail — only for a video inside the inbox, so this
+    never becomes a way to read any file on the machine."""
+    from auto_edit import recordings
+
+    if not path:
+        return None
+    try:
+        p = Path(path).resolve()
+        inbox = inbox_root().resolve()
+    except OSError:
+        return None
+    if p.suffix.lower() not in recordings.VIDEO_EXTS or inbox not in p.parents or not p.is_file():
+        return None
+    return recordings.thumbnail(p)
+
+
+FOLDERS = ("inbox", "output")
+
+
+def folders() -> dict:
+    """The folders Configurações shows, as the pipeline will use them now:
+    the inbox (where recordings are) and where finished videos go. `custom`
+    is False when nothing was chosen and the default applies."""
+    from auto_edit import settings
+
+    env = settings.env_from_settings()  # settings as saved now; a set variable wins
+    inbox = env.get("AUTO_EDIT_INBOX")
+    output = env.get("AUTO_EDIT_OUTPUT")
+    inbox_path = (Path(inbox).expanduser() if inbox else default_inbox()).resolve()
+    output_path = Path(output).expanduser() if output else (library_root() / "output").resolve()
+    return {
+        # exists: a chosen folder can be deleted later — the screen says so.
+        # The output folder is created when missing (finalize writes there).
+        "inbox": {"path": str(inbox_path), "custom": bool(inbox), "exists": inbox_path.is_dir()},
+        "output": {"path": str(output_path), "custom": bool(output), "exists": True},
+    }
+
+
+def open_folder(which: str, *, run: Callable[..., object] = subprocess.Popen) -> Path | None:
+    """Show one of FOLDERS in the file manager. Only those two, never a path
+    from the request: opening an arbitrary path would run it. None when it
+    doesn't exist (the output folder is created, it's where finalize writes)."""
+    if which not in FOLDERS:
+        return None
+    path = Path(folders()[which]["path"])
+    if which == "output":
+        path.mkdir(parents=True, exist_ok=True)
+    if not path.is_dir():
+        return None
+    os_open(path, run=run)
+    return path
 
 
 def downloads_dir() -> Path:
@@ -440,6 +615,8 @@ _OPENABLE_URL = re.compile(
     # where to install the agent CLIs (Settings → "como instalar")
     r"|^https://(docs\.claude\.com|cursor\.com|antigravity\.google|opencode\.ai|ollama\.com"
     r"|developers\.openai\.com|openrouter\.ai)(/|$)"
+    # the Google Cloud console (Configurações → YouTube, step by step)
+    r"|^https://console\.cloud\.google\.com/"
 )
 
 
@@ -481,6 +658,7 @@ def result(video_id: str) -> dict | None:
         }
     return {
         "id": video_id,
+        "name": p.get("name"),
         "video_name": p.get("video_name", video_id),
         "type": p.get("type"),
         "status": overall_status(p),
@@ -573,6 +751,7 @@ def read_plan(video_id: str) -> dict | None:
 
     return {
         "id": video_id,
+        "name": pl.load(ws).get("name"),
         "source": path.name,
         "editable": path.name == "reviewed_plan.json",
         "duration": duration,
@@ -644,6 +823,7 @@ def shorts_state(video_id: str, max_duration: float = sh.DEFAULT_MAX_DURATION) -
 
     state: dict = {
         "id": video_id,
+        "name": pl.load(ws).get("name"),
         "eligible": False,
         "reason": None,
         "has_plan": False,
@@ -724,7 +904,28 @@ def youtube_account() -> dict:
         "connecting": connecting,
         "error": error,
         "has_client_secret": yt.client_config() is not None,
+        "client_id": yt.client_id(),
     }
+
+
+YT_CLIENT_MAX = 64 * 1024  # the JSON Google hands out is well under 1 KB
+
+
+def set_youtube_client(*, path: str | None = None, content: str | None = None) -> dict:
+    """Keep the Google OAuth client from the JSON picked in Configurações →
+    YouTube (`path`) or read by the browser (`content`). The account state, or
+    `yt.AuthError` saying what's wrong with the file."""
+    if content is None:
+        p = Path(path or "").expanduser()
+        if p.suffix.lower() != ".json" or not p.is_file():
+            raise yt.AuthError("Escolha o arquivo .json que o Google Cloud baixou.")
+        if p.stat().st_size > YT_CLIENT_MAX:
+            raise yt.AuthError("Esse arquivo é grande demais pra ser um cliente OAuth do Google.")
+        content = p.read_text(encoding="utf-8")
+    yt.save_client(content)
+    with _yt_lock:
+        _yt_connect["error"] = None  # an old failure no longer applies
+    return youtube_account()
 
 
 def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
@@ -732,7 +933,7 @@ def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
     with _yt_lock:
         already = _yt_connect["status"] == "connecting"
         if not already:
-            _yt_connect.update(status="connecting", error=None)
+            _yt_connect.update(status="connecting", error=None, cancelled=False)
     if already:  # outside the lock: youtube_account() takes it too
         return youtube_account()
 
@@ -743,15 +944,81 @@ def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
         except Exception as exc:  # surfaced to the UI as-is
             error = str(exc)
         with _yt_lock:
-            _yt_connect.update(status="idle", error=error)
+            # cancelled from the app (this attempt): the way it ended isn't an error
+            _yt_connect.update(status="idle", error=None if _yt_connect.get("cancelled") else error)
 
     threading.Thread(target=_run, name="youtube-connect", daemon=True).start()
+    return youtube_account()
+
+
+def cancel_youtube_connect(*, wait: float = 5.0) -> dict:
+    """Stop waiting for the browser (the tab was closed, or it was the wrong
+    account). Waits a moment for the consent to wind down, then the state."""
+    with _yt_lock:
+        waiting = _yt_connect["status"] == "connecting"
+        if waiting:
+            _yt_connect["cancelled"] = True
+    if waiting and yt.cancel_consent():
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            with _yt_lock:
+                if _yt_connect["status"] != "connecting":
+                    break
+            time.sleep(0.1)
     return youtube_account()
 
 
 def disconnect_youtube() -> dict:
     yt.disconnect()
     return youtube_account()
+
+
+def publish_live(video_id: str, *, fetch: Callable[[list[str]], dict] | None = None) -> dict | None:
+    """The sent videos as YouTube has them now (the Publicar card asks after
+    showing what publish.json says). `checked` False: couldn't ask (not
+    connected, offline); True and an id missing: it was deleted."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    ids = [r["video_id"] for r in yt.read_record(ws).get("youtube", []) if r.get("video_id")]
+    if not ids or not yt.is_connected():
+        return {"checked": False, "videos": {}}
+    try:
+        videos = (fetch or yt.live_status)(ids)
+    except Exception as exc:  # network, expired token: the card keeps the record
+        return {"checked": False, "videos": {}, "error": str(exc)}
+    yt.mark_gone(ws, set(ids), set(videos))  # deleted on YouTube: Edições stops saying "Publicado"
+    return {"checked": True, "videos": videos}
+
+
+PUBLISHED_CHECK_EVERY = 60.0  # seconds between Edições' checks on YouTube
+_published_checked_at: float | None = None
+
+
+def refresh_published(
+    *, fetch: Callable[[list[str]], dict] | None = None, now: Callable[[], float] = time.monotonic,
+) -> dict:
+    """Ask YouTube, in one go, which sent videos are still there (Edições,
+    when it opens) and mark the deleted ones in each publish.json. At most
+    once a minute. {"checked", "changed"}: changed → the list is stale."""
+    global _published_checked_at
+    if _published_checked_at is not None and now() - _published_checked_at < PUBLISHED_CHECK_EVERY:
+        return {"checked": False, "changed": False}
+    root = library_root()
+    sent: dict[Path, set[str]] = {}
+    for record in root.glob(f"*/{yt.RECORD_NAME}") if root.is_dir() else []:
+        ids = {r["video_id"] for r in yt.read_record(record.parent).get("youtube", []) if r.get("video_id")}
+        if ids:
+            sent[record.parent] = ids
+    if not sent or not yt.is_connected():
+        return {"checked": False, "changed": False}
+    try:
+        found = set((fetch or yt.live_status)(sorted(set().union(*sent.values()))))
+    except Exception as exc:  # network, expired token: the list keeps what was recorded
+        return {"checked": False, "changed": False, "error": str(exc)}
+    _published_checked_at = now()
+    changed = [yt.mark_gone(ws, ids, found & ids) for ws, ids in sent.items()]
+    return {"checked": True, "changed": any(changed)}
 
 
 def publish_state(video_id: str) -> dict | None:
@@ -1134,6 +1401,7 @@ class JobManager:
         caption_style: dict | None = None,
         cold_open: bool = False,
         reorder: bool = False,
+        name: str | None = None,
     ) -> Job:
         video = Path(shell.native_path(Path(video_path).resolve()))
         if not video.exists():
@@ -1147,6 +1415,8 @@ class JobManager:
             caption_style=caption_style or {},
             language=language,
         )
+        if name:
+            pl.set_name(ws, name)
         if cold_open:
             pl.set_cold_open(ws)
         if reorder:
@@ -1293,7 +1563,7 @@ class JobManager:
             raise yt.PublishError(state["reason"])
         if not yt.is_connected():
             raise yt.PublishError("YouTube não conectado. Conecte a conta antes de publicar.")
-        if state["published"] and not force:
+        if yt.on_youtube(state["published"]) and not force:
             raise yt.PublishError("este vídeo já foi enviado pro YouTube")
         if self._busy(video_id):
             raise yt.PublishError(f"{video_id} já tem um job rodando")

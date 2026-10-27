@@ -104,17 +104,38 @@ class AgentError(RuntimeError):
     pass
 
 
+def decode_output(data: bytes | str | None) -> str:
+    """Text a CLI printed. UTF-8, else — on Windows — the console's own code
+    page: cmd.exe's errors ("O sistema não pode encontrar…") come in cp850,
+    and reading them as UTF-8 used to crash the whole agent list."""
+    if not data:
+        return ""
+    if isinstance(data, str):  # already text (a caller that ran with text=True)
+        return data
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if sys.platform == "win32":
+        try:
+            return data.decode("oem")
+        except (UnicodeDecodeError, LookupError):
+            pass
+    return data.decode("utf-8", errors="replace")
+
+
 def _run(cmd: list[str], stdin: str, timeout: float | None, env: dict | None = None, cwd: str | None = None) -> str:
     try:
         proc = subprocess.run(
-            cmd, input=stdin, capture_output=True, text=True, encoding="utf-8",
+            cmd, input=stdin.encode("utf-8"), capture_output=True,
             timeout=timeout, env=env, cwd=cwd,
         )
     except subprocess.TimeoutExpired:
         raise AgentError(f"{cmd[0]} não respondeu em {timeout:.0f}s") from None
+    stdout, stderr = decode_output(proc.stdout), decode_output(proc.stderr)
     if proc.returncode != 0:
-        raise AgentError(f"{Path(cmd[0]).name} saiu com {proc.returncode}: {(proc.stderr or proc.stdout).strip()[-500:]}")
-    return proc.stdout
+        raise AgentError(f"{Path(cmd[0]).name} saiu com {proc.returncode}: {(stderr or stdout).strip()[-500:]}")
+    return stdout
 
 
 def _b64(path: Path) -> str:

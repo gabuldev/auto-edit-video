@@ -3,7 +3,7 @@
 
 import * as api from "./api.js";
 import { el, escapeHtml, releaseMedia, humanSize, setEngine } from "./shell.js";
-import { go } from "./router.js";
+import { go, previousPath } from "./router.js";
 import { mountPublish, unmountPublish } from "./publish.js";
 import { mountCaptionAdjust, unmountCaptionAdjust } from "./caption-adjust.js";
 import { mountRetention } from "./retention.js";
@@ -24,6 +24,8 @@ function valueText(v) {
   return Array.isArray(v) ? v.join(", ") : String(v);
 }
 
+const COPY = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`;
+
 function fieldHTML(key, label, value) {
   const text = valueText(value);
   const isList = Array.isArray(value);
@@ -31,7 +33,7 @@ function fieldHTML(key, label, value) {
   <div class="meta-field">
     <div class="meta-label">
       <span>${label}</span>
-      <button class="btn btn-sm copy" data-copy="${escapeHtml(isList ? value.map((t) => `#${t}`).join(" ") : text)}">copiar</button>
+      <button class="copy" type="button" data-copy="${escapeHtml(isList ? value.map((t) => `#${t}`).join(" ") : text)}" title="Copiar" aria-label="Copiar ${label}">${COPY}</button>
     </div>
     ${
       isList
@@ -41,21 +43,26 @@ function fieldHTML(key, label, value) {
   </div>`;
 }
 
-function fileHTML(kind, info, id) {
-  const label = { video: "vídeo final", thumbnail: "thumbnail", captions: "legendas (.srt)", notes: "metadata (.txt)" }[kind] || kind;
+const FOLDER = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+
+function fileHTML(kind, info) {
+  const label = { video: "Vídeo final", thumbnail: "Thumbnail", captions: "Legendas (.srt)", notes: "Metadata (.txt)" }[kind] || kind;
   return `
   <div class="file">
     <span class="file-kind">${label}</span>
     <span class="file-size mono">${humanSize(info.size)}</span>
-    <button class="btn btn-sm" data-open="${kind}">abrir</button>
-    <button class="btn btn-sm" data-open="${kind}" data-reveal="1">mostrar na pasta</button>
-    <button class="btn btn-sm copy" data-copy="${escapeHtml(info.path)}">copiar caminho</button>
+    <button class="btn btn-sm btn-icon" data-open="${kind}" data-reveal="1" title="Mostrar na pasta" aria-label="Mostrar ${label} na pasta">${FOLDER}</button>
   </div>`;
+}
+
+function setShape(ratio) {
+  el("res-player").style.setProperty("--ar", ratio);
+  el("res-player").classList.toggle("vertical", ratio < 1);
 }
 
 function render(d) {
   state.data = d;
-  el("res-title").textContent = d.video_name || d.id;
+  el("res-title").textContent = d.name || d.video_name || d.id;
   el("res-sub").innerHTML =
     `<span class="badge ${d.type === "short" ? "short" : "long"}">${d.type || "?"}</span>` +
     `<span class="chip ${d.status}"><span class="d"></span>${
@@ -69,6 +76,8 @@ function render(d) {
   const files = d.files || {};
   const hasVideo = Boolean(files.video);
   el("res-player").hidden = !hasVideo;
+  // Video and thumbnail take the video's shape: a guess by type until the file loads.
+  if (!el("res-player").dataset.measured) setShape(d.type === "short" ? 9 / 16 : 16 / 9);
   if (hasVideo) {
     // ?t= : o vídeo pode ter sido regravado e o webview guarda cache.
     const src = `${api.API}/api/videos/${encodeURIComponent(d.id)}/file/video?t=${state.stamp}`;
@@ -86,24 +95,13 @@ function render(d) {
   }
 
   const kinds = ["video", "thumbnail", "captions", "notes"].filter((k) => files[k]);
-  el("res-files").innerHTML = kinds.map((k) => fileHTML(k, files[k], d.id)).join("");
+  el("res-files").innerHTML = kinds.map((k) => fileHTML(k, files[k])).join("");
   el("res-nofiles").hidden = kinds.length > 0;
 
   const meta = d.metadata;
   const rows = meta ? FIELDS.filter(([k]) => meta[k] != null && valueText(meta[k]).trim()) : [];
   el("res-meta").innerHTML = rows.map(([k, label]) => fieldHTML(k, label, meta[k])).join("");
   el("res-nometa").hidden = rows.length > 0;
-
-  const thumbText = meta?.thumbnail;
-  el("res-thumbtext").hidden = !thumbText;
-  if (thumbText) {
-    el("res-thumbtext").innerHTML =
-      `<div class="meta-label"><span>Texto da thumbnail</span></div>` +
-      `<div class="thumb-text"><b>${escapeHtml(thumbText.main_text || "")}</b>` +
-      (thumbText.sub_text ? `<span class="chip-text">${escapeHtml(thumbText.sub_text)}</span>` : "") +
-      (thumbText.template ? `<span class="mono dim">template: ${escapeHtml(thumbText.template)}</span>` : "") +
-      `</div>`;
-  }
 }
 
 async function load(id) {
@@ -130,9 +128,10 @@ async function copy(text, button) {
     document.execCommand("copy");
     ta.remove();
   }
-  const before = button.textContent;
-  button.textContent = "copiado";
-  setTimeout(() => { button.textContent = before; }, 1200);
+  // "Copiado" pops over the icon, which turns green for a moment.
+  clearTimeout(button.copiedTimer);
+  button.classList.add("copied");
+  button.copiedTimer = setTimeout(() => button.classList.remove("copied"), 1600);
 }
 
 function wire() {
@@ -148,7 +147,15 @@ function wire() {
       });
     }
   });
-  el("btn-res-back").addEventListener("click", () => go(`/video/${encodeURIComponent(state.id)}`));
+  // Back to where we came from: the library ("Ver resultado") or the pipeline.
+  el("btn-res-back").addEventListener("click", () =>
+    go(previousPath() === "/" ? "/" : `/video/${encodeURIComponent(state.id)}`));
+  el("res-video").addEventListener("loadedmetadata", (e) => {
+    const { videoWidth: w, videoHeight: h } = e.target;
+    if (!w || !h) return;
+    setShape(w / h);
+    el("res-player").dataset.measured = "1";
+  });
 }
 
 export default {
@@ -159,6 +166,7 @@ export default {
     state.stamp = Date.now();
     state.capMounted = false;
     el("res-video").removeAttribute("src");
+    delete el("res-player").dataset.measured;
     el("btn-res-shorts").hidden = true;
     load(id);
     mountPublish(id);

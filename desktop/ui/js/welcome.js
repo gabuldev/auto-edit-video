@@ -61,13 +61,13 @@ function render() {
   el("ws-agent-state").classList.toggle("ok", s.agent_ready);
 
   const w = s.whisper;
-  el("ws-whisper-sub").textContent = `o Whisper "${w.model}" (~${w.size_mb} MB) transcreve o áudio no seu computador, sem enviar nada.`;
+  el("ws-whisper-sub").textContent = `O Whisper "${w.model}" (~${w.size_mb} MB) transcreve o áudio no seu computador, sem enviar nada.`;
   el("ws-whisper-state").textContent = w.ready ? "pronto" : w.downloading ? "baixando" : "pendente";
   el("ws-whisper-state").classList.toggle("ok", w.ready);
   el("btn-ws-whisper").hidden = w.ready || w.downloading;
   el("ws-whisper-progress").hidden = !w.downloading;
   const pct = Math.round((w.progress || 0) * 100);
-  el("ws-whisper-bar").style.width = `${pct}%`;
+  el("ws-whisper-bar").style.transform = `scaleX(${pct / 100})`;
   el("ws-whisper-pct").textContent = `${pct}%`;
   if (w.error) setError(`não deu pra baixar o Whisper: ${w.error}`);
 

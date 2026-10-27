@@ -11,7 +11,8 @@ async function json(path, opts) {
 
 export async function health() {
   try {
-    return (await fetch(`${API}/api/health`, { cache: "no-store" })).ok;
+    // A hung engine accepts the connection and never answers: give up, it's down.
+    return (await fetch(`${API}/api/health`, { cache: "no-store", signal: AbortSignal.timeout(5000) })).ok;
   } catch {
     return false;
   }
@@ -40,8 +41,8 @@ export const resume = (id, from_stage, { captionOnly = false } = {}) =>
     body: JSON.stringify(captionOnly ? { from_stage, caption_only: true } : { from_stage }),
   });
 
-export const browse = (dir) =>
-  json(`/api/browse${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`);
+/** Nome/tamanho de um caminho vindo do diálogo ou de um arquivo arrastado (404 se não for vídeo). */
+export const videoFile = (path) => json(`/api/video-file?path=${encodeURIComponent(path)}`);
 
 export const startEdit = (payload) =>
   json("/api/edit", {
@@ -80,6 +81,9 @@ export const connectYoutube = () => json("/api/publish/youtube/connect", { metho
 
 export const publishState = (id) => json(`/api/videos/${encodeURIComponent(id)}/publish`);
 
+// Edições: which sent videos are still on YouTube (the engine asks at most once a minute).
+export const refreshPublished = () => json("/api/publish/youtube/refresh", { method: "POST" });
+export const publishLive = (id) => json(`/api/videos/${encodeURIComponent(id)}/publish/live`);
 export const publishYoutube = (id, payload) =>
   json(`/api/videos/${encodeURIComponent(id)}/publish/youtube`, {
     method: "POST",
@@ -101,7 +105,22 @@ export const openUrl = (url) =>
 
 export const stop = (id) => json(`/api/videos/${encodeURIComponent(id)}/stop`, { method: "POST" });
 
+/** Para o que estiver rodando e apaga o workspace e os arquivos finais (nunca o vídeo original). */
+export const deleteVideo = (id) => json(`/api/videos/${encodeURIComponent(id)}`, { method: "DELETE" });
+
 export const settings = () => json("/api/settings");
+
+/** Biblioteca: os vídeos da pasta de entrada (com subpastas) e as edições de cada um. */
+export const recordings = () => json("/api/recordings");
+
+/** Miniatura de um vídeo da pasta de entrada (o motor só serve as de lá). */
+export const recordingThumbUrl = (path) => `${API}/api/recordings/thumb?path=${encodeURIComponent(path)}`;
+
+/** Pasta de entrada e de saída como o pipeline usa agora: {inbox, output}: {path, custom}. */
+export const folders = () => json("/api/folders");
+
+/** Abre uma das duas pastas ("inbox" | "output") no gerenciador de arquivos. */
+export const openFolder = (which) => json(`/api/folders/${which}/open`, { method: "POST" });
 
 export const saveSettings = (data) =>
   json("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -124,6 +143,11 @@ export const pullOllama = (model) =>
   json("/api/agents/ollama/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
 
 export const disconnectYoutube = () => json("/api/publish/youtube/disconnect", { method: "POST" });
+// Stop waiting for the browser's authorization (the tab was closed).
+export const cancelYoutubeConnect = () => json("/api/publish/youtube/connect/cancel", { method: "POST" });
+// The OAuth client JSON from Google Cloud: {path} (app dialog) or {content}.
+export const setYoutubeClient = (body) =>
+  json("/api/publish/youtube/client", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const setupState = () => json("/api/setup");
 

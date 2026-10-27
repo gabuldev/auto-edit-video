@@ -7,6 +7,19 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Until the engine answers: the screens only mount once it does -->
+  <div class="boot" id="boot">
+    <div class="logo boot-logo">G</div>
+    <div class="boot-title">Auto-Edit</div>
+    <div class="boot-spin" aria-hidden="true"></div>
+    <div class="boot-msg" role="status">Iniciando o motor…</div>
+    <div class="boot-hint" id="boot-slow" hidden>Na primeira abertura pode levar um pouco mais.</div>
+    <div class="boot-hint warn" id="boot-stuck" hidden>
+      O motor ainda não respondeu. Se continuar assim, feche e abra o app de novo
+      (ou rode <code class="mono">auto-edit serve</code> no terminal). Continuo tentando.
+    </div>
+  </div>
+
   <div class="app">
     <!-- Sidebar -->
     <aside class="sidebar">
@@ -18,29 +31,36 @@
         </div>
       </div>
       <nav class="nav">
-        <a class="nav-item" href="#/" data-route="/"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Biblioteca</a>
-        <a class="nav-item" href="#/novo" data-route="/novo"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo edit</a>
+        <a class="nav-item" href="#/" data-route="/" data-also="/novo"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v5"/></svg>Edições</a>
+        <a class="nav-item" href="#/biblioteca" data-route="/biblioteca"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>Biblioteca</a>
         <a class="nav-item" href="#/estilos" data-route="/estilos"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.5-1.1-.3-.3-.5-.7-.5-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.5 17 3 12 3z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg>Estilos</a>
         <a class="nav-item" href="#/config" data-route="/config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Configurações</a>
       </nav>
       <div class="sidebar-foot">
-        <div class="engine-status" id="engine-status">
+        <div class="engine-status" id="engine-status" role="status" aria-live="polite">
           <span class="dot" id="engine-dot"></span>
-          <span id="engine-label" class="mono">verificando…</span>
+          <span class="engine-text">
+            <span class="engine-label" id="engine-label">Verificando o motor…</span>
+            <span class="engine-sub" id="engine-sub" hidden></span>
+          </span>
         </div>
+        <button class="btn btn-sm engine-restart" id="btn-engine-restart" type="button" hidden
+          title="Para o motor e sobe de novo. Uma edição que estiver rodando é interrompida.">Reiniciar o motor</button>
       </div>
     </aside>
 
-    <!-- Biblioteca -->
+    <!-- Edições (the edits made so far) -->
     <main class="main" data-screen="library">
       <header class="topbar">
         <div class="titles">
-          <div class="page-title">Biblioteca</div>
-          <div class="page-sub" id="lib-sub">carregando…</div>
+          <div class="page-title">Edições</div>
+          <div class="page-sub" id="lib-sub">Carregando…</div>
         </div>
-        <a class="btn btn-primary" href="#/novo">
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Novo edit
-        </a>
+        <label class="lib-search" id="lib-search-box" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input class="input" type="search" id="lib-search" placeholder="Buscar por nome, arquivo ou título" aria-label="Buscar edições" autocomplete="off" spellcheck="false" />
+        </label>
+        <a class="btn btn-primary" href="#/novo">Nova edição</a>
       </header>
 
       <div class="banner" id="setup-banner" hidden>
@@ -49,15 +69,63 @@
       <div class="banner" data-offline-banner hidden>
         <b>Motor offline.</b> O app inicia o motor sozinho; se não subir, rode
         <code class="mono">auto-edit serve</code> no terminal e clique em
-        <a data-retry>tentar de novo</a>. (mostrando exemplos abaixo)
+        <a data-retry>tentar de novo</a>.
       </div>
 
       <div class="content">
-        <div class="table-head">
-          <div>Vídeo</div><div>Tipo</div><div>Pipeline</div><div>Status</div>
+        <div id="lib-error" class="banner err" hidden></div>
+        <div class="table-head" id="lib-head">
+          <label class="sel"><input type="checkbox" id="lib-select-all" aria-label="Selecionar todas as edições" /></label>
+          <div class="th">Vídeo</div><div class="th">Tipo</div><div class="th">Pipeline</div><div class="th">Status</div><div class="th"></div>
+          <!-- with something selected, the header is the bar for it -->
+          <div class="bulk" id="lib-bulk" hidden>
+            <b id="lib-bulk-count"></b>
+            <span class="bulk-note" id="lib-bulk-note"></span>
+            <span class="bulk-acts" id="lib-bulk-acts"></span>
+          </div>
         </div>
         <div id="rows" class="rows"></div>
-        <div id="empty" class="empty" hidden>Nenhum vídeo no workspace ainda.</div>
+        <div id="lib-noresults" class="empty" hidden></div>
+        <div id="empty" class="lib-empty" hidden>
+          <div class="drop-zone" id="lib-drop">
+            <button class="dz-empty" id="lib-pick" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+              <b>Nenhuma edição ainda</b>
+              <span>Arraste um vídeo pra cá ou <u>escolha no computador</u> pra começar a primeira edição</span>
+              <small class="mono">mp4 · mov · mkv · webm · avi · m4v · mts</small>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Biblioteca: the videos in the inbox, ready to edit -->
+    <main class="main" data-screen="recordings" hidden>
+      <header class="topbar">
+        <div class="titles">
+          <div class="page-title">Biblioteca</div>
+          <div class="page-sub" id="rec-sub">Carregando…</div>
+        </div>
+        <label class="lib-search" id="rec-search-box" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input class="input" type="search" id="rec-search" placeholder="Buscar por nome ou pasta" aria-label="Buscar vídeos" autocomplete="off" spellcheck="false" />
+        </label>
+        <button class="btn btn-icon" id="btn-rec-folder" type="button" title="Abrir a pasta de entrada" aria-label="Abrir a pasta de entrada"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+        <button class="btn btn-icon" id="btn-rec-reload" type="button" title="Atualizar" aria-label="Atualizar"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg></button>
+      </header>
+
+      <div class="banner" data-offline-banner hidden>
+        <b>Motor offline.</b> O app inicia o motor sozinho; se não subir, rode
+        <code class="mono">auto-edit serve</code> no terminal.
+      </div>
+
+      <div class="content">
+        <div id="rec-error" class="banner err" hidden></div>
+        <div class="table-head rec-grid" id="rec-head" hidden>
+          <div>Vídeo</div><div>Duração</div><div>Formato</div><div>Tamanho</div><div class="rec-date">Gravado em</div><div></div>
+        </div>
+        <div id="rec-rows" class="rows"></div>
+        <div id="rec-empty" class="empty" hidden></div>
       </div>
     </main>
 
@@ -66,7 +134,7 @@
       <header class="topbar">
         <div class="titles">
           <div class="page-title">Novo edit</div>
-          <div class="page-sub">escolha o vídeo, diga do que ele trata e o pipeline assume</div>
+          <div class="page-sub">Escolha o vídeo, diga do que ele trata e o pipeline assume</div>
         </div>
         <button class="btn" id="btn-cancel">Cancelar</button>
         <button class="btn btn-primary" id="btn-start" disabled>Iniciar edição</button>
@@ -84,25 +152,31 @@
             <span class="step mono">1</span>
             <div>
               <h2>Vídeo</h2>
-              <p>Arquivos da sua pasta de entrada (<code class="mono">AUTO_EDIT_INBOX</code>, ou <code class="mono">upload/</code>).</p>
+              <p>O arquivo que vai ser editado.</p>
             </div>
           </div>
 
-          <div class="picker">
-            <div class="pick-bar">
-              <button class="btn btn-sm" id="pick-up" type="button">↑ acima</button>
-              <span class="pick-path mono" id="pick-path">—</span>
-              <button class="btn btn-sm" id="pick-reload" type="button">recarregar</button>
+          <div class="drop-zone" id="drop-zone">
+            <button class="dz-empty" id="dz-empty" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+              <b>Arraste o vídeo pra cá</b>
+              <span>ou <u>escolha no computador</u></span>
+              <small class="mono">mp4 · mov · mkv · webm · avi · m4v · mts</small>
+            </button>
+            <div class="dz-file" id="dz-file" hidden>
+              <span class="dz-film"></span>
+              <div class="dz-info">
+                <div class="dz-name"><span id="dz-name"></span><span class="dz-size mono" id="dz-size"></span></div>
+                <div class="dz-meta mono" id="dz-meta"></div>
+              </div>
+              <button class="btn btn-sm" id="dz-change" type="button">Trocar</button>
             </div>
-            <input class="pick-search" id="pick-search" type="search" placeholder="buscar nesta pasta…" autocomplete="off" spellcheck="false" />
-            <div class="pick-list" id="pick-list"></div>
           </div>
 
           <label class="field">
-            <span>ou cole um caminho</span>
-            <input class="input mono" id="manual-path" placeholder="C:\videos\live.mp4" />
+            <span>Nome da edição <em class="field-opt">opcional</em></span>
+            <input class="input" id="f-name" maxlength="120" autocomplete="off" placeholder="Sem nome, usa o nome do arquivo" />
           </label>
-          <div class="selected mono muted" id="sel-path">nenhum vídeo escolhido</div>
         </section>
 
         <section class="card">
@@ -118,14 +192,28 @@
               <input type="radio" name="vtype" value="short" />
               <span class="choice-body">
                 <span class="choice-title">Short <span class="badge short">short</span></span>
-                <span class="choice-desc">Vertical, com legendas estilo CapCut. Pula overlay.</span>
+                <span class="choice-desc">Pra Reels, Shorts e TikTok</span>
+                <ul class="choice-list">
+                  <li>Vertical 9:16 (recorta o centro se gravou na horizontal)</li>
+                  <li>Corta pausas, repetições e tropeços</li>
+                  <li>Legenda animada na tela, estilo CapCut</li>
+                  <li>Capa, título, gancho e hashtags</li>
+                  <li class="skip"><b>Pula</b> lower third e CTA na tela</li>
+                </ul>
               </span>
             </label>
             <label class="choice">
               <input type="radio" name="vtype" value="long" />
               <span class="choice-body">
                 <span class="choice-title">Long <span class="badge long">long</span></span>
-                <span class="choice-desc">Horizontal, com overlays e curadoria editorial. Pula legendas.</span>
+                <span class="choice-desc">Pra vídeo no YouTube</span>
+                <ul class="choice-list">
+                  <li>Mantém o formato original (horizontal)</li>
+                  <li>Curadoria: tira os blocos que não rendem e acha a duração certa</li>
+                  <li>Lower third com seu nome e CTA animados</li>
+                  <li>Thumbnail, título (3 opções) e descrição</li>
+                  <li class="skip"><b>Pula</b> legenda na tela (vai como .srt ao publicar)</li>
+                </ul>
               </span>
             </label>
           </div>
@@ -191,7 +279,7 @@
     <!-- Pipeline ao vivo -->
     <main class="main" data-screen="pipeline" hidden>
       <header class="topbar">
-        <button class="btn btn-icon" id="btn-pipe-back" title="Voltar">&larr;</button>
+        <button class="btn btn-icon" id="btn-pipe-back" title="Voltar" aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
         <div class="titles">
           <div class="page-title" id="pipe-title">—</div>
           <div class="page-sub row-inline" id="pipe-sub"></div>
@@ -205,37 +293,48 @@
         <div id="pipe-error" class="banner err" hidden></div>
 
         <div class="pipe-grid">
-          <section class="card">
-            <div class="card-head">
-              <div>
-                <h2>Stages</h2>
-                <p>a fonte da verdade é o <code class="mono">pipeline.json</code> do workspace.</p>
+          <div>
+            <section class="card">
+              <div class="card-head">
+                <div>
+                  <h2>Stages</h2>
+                  <p>A fonte da verdade é o <code class="mono">pipeline.json</code> do workspace.</p>
+                </div>
               </div>
-            </div>
-            <div id="pipe-stages" class="stages"></div>
+              <div id="pipe-stages" class="stages"></div>
 
-            <div class="resume">
-              <label class="field">
-                <span>Retomar a partir de</span>
-                <select class="input mono" id="resume-stage"></select>
-              </label>
-              <button class="btn" id="btn-resume">Retomar</button>
-              <span class="resume-note" id="resume-note"></span>
-            </div>
-          </section>
+              <div class="resume">
+                <label class="field">
+                  <span>Retomar a partir de</span>
+                  <select class="input mono" id="resume-stage"></select>
+                </label>
+                <button class="btn" id="btn-resume">Retomar</button>
+                <span class="resume-note" id="resume-note"></span>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-head">
+                <div>
+                  <h2>Vídeo</h2>
+                  <p>O arquivo, o pedido e onde fica o resultado.</p>
+                </div>
+              </div>
+              <div class="facts" id="pipe-facts"></div>
+            </section>
+          </div>
 
           <section class="card">
             <div class="card-head">
               <div>
                 <h2>Log ao vivo</h2>
-                <p>saída do <code class="mono">ralph.sh</code> em tempo real (SSE).</p>
+                <p>Saída do <code class="mono">ralph.sh</code> em tempo real (SSE).</p>
               </div>
             </div>
             <div class="log-wrap">
               <pre class="log mono" id="pipe-log"></pre>
               <div class="log-empty" id="log-empty">sem job ao vivo — o log aparece quando um run está em andamento.</div>
             </div>
-            <div class="facts" id="pipe-facts"></div>
           </section>
         </div>
       </div>
@@ -244,7 +343,7 @@
     <!-- Revisar cortes -->
     <main class="main" data-screen="cuts" hidden>
       <header class="topbar">
-        <button class="btn btn-icon" id="btn-cuts-back" title="Voltar">&larr;</button>
+        <button class="btn btn-icon" id="btn-cuts-back" title="Voltar" aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
         <div class="titles">
           <div class="page-title" id="cuts-title">—</div>
           <div class="page-sub row-inline" id="cuts-sub"></div>
@@ -266,7 +365,7 @@
             <div class="card-head">
               <div>
                 <h2>Blocos descartados</h2>
-                <p>curadoria editorial do planner de vídeos long.</p>
+                <p>Curadoria editorial do planner de vídeos long.</p>
               </div>
             </div>
             <ul class="blocks" id="cuts-blocks"></ul>
@@ -290,7 +389,7 @@
     <!-- Resultado -->
     <main class="main" data-screen="result" hidden>
       <header class="topbar">
-        <button class="btn btn-icon" id="btn-res-back" title="Voltar">&larr;</button>
+        <button class="btn btn-icon" id="btn-res-back" title="Voltar" aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
         <div class="titles">
           <div class="page-title" id="res-title">—</div>
           <div class="page-sub row-inline" id="res-sub"></div>
@@ -301,150 +400,179 @@
       <div class="content">
         <div id="res-error" class="banner err" hidden></div>
 
-        <div class="res-grid">
-          <section>
-            <div class="card" id="res-player" hidden>
-              <video id="res-video" class="player" controls preload="metadata"></video>
-            </div>
-
-            <div class="card" id="cap-card" hidden>
-              <div class="card-head">
-                <div>
-                  <h2>Ajustar legenda</h2>
-                  <p>arraste a faixa pra mover a legenda; só regrava a legenda, o resto do vídeo fica.</p>
-                </div>
-              </div>
-              <div id="cap-error" class="banner err" hidden></div>
-              <div class="cap-stage" id="cap-stage">
-                <img id="cap-img" alt="prévia da legenda" draggable="false" />
-                <div class="cap-band" id="cap-band"><span>legenda</span></div>
-              </div>
-              <label class="field">
-                <span>Tamanho <b id="cap-size-val">100%</b></span>
-                <input type="range" id="cap-size" min="50" max="200" step="5" value="100" />
-              </label>
-              <label class="check">
-                <input type="checkbox" id="cap-hidden" />
-                <span>Esconder legenda</span>
-              </label>
-              <div class="pub-actions">
-                <button class="btn btn-primary" id="btn-cap-redo">Regravar legenda</button>
-              </div>
-            </div>
-
-            <div class="card" id="ret-card" hidden>
-              <div class="card-head ret-head">
-                <div>
-                  <h2>Retenção no YouTube</h2>
-                  <p id="ret-sub">onde o público saiu, com o que era dito.</p>
-                </div>
-                <button class="btn btn-sm" id="btn-ret-refresh">Atualizar</button>
-              </div>
-              <div id="ret-error" class="banner err" hidden></div>
-              <div id="ret-empty" class="empty small" hidden></div>
-              <div id="ret-body" hidden>
-                <div class="ret-stats" id="ret-stats"></div>
-                <div class="ret-chart" id="ret-chart"></div>
-                <ol class="ret-drops" id="ret-drops"></ol>
-              </div>
-            </div>
-
-            <div class="card" id="res-thumb-box" hidden>
-              <div class="card-head"><div><h2>Thumbnail</h2></div></div>
-              <img id="res-thumb" class="thumb-img" alt="thumbnail gerada" />
-            </div>
-
-            <div class="card">
-              <div class="card-head">
-                <div>
-                  <h2>Arquivos</h2>
-                  <p>o que o <code class="mono">finalize</code> deixou em <code class="mono">output/</code>.</p>
-                </div>
-              </div>
-              <div id="res-files" class="files"></div>
-              <div id="res-nofiles" class="empty small" hidden>Nada em output/ ainda — o vídeo aparece aqui quando o pipeline termina.</div>
-            </div>
-          </section>
-
-          <section>
-          <div class="card" id="pub-card" hidden>
-            <div class="card-head">
-              <div>
-                <h2>Publicar no YouTube</h2>
-                <p id="pub-account">—</p>
-              </div>
-            </div>
-            <div id="pub-error" class="banner err" hidden></div>
-
-            <div id="pub-connect" hidden>
-              <p class="pub-note" id="pub-connect-note"></p>
-              <button class="btn btn-primary" id="btn-yt-connect">Conectar YouTube</button>
-            </div>
-
-            <div id="pub-history" class="pub-history" hidden></div>
-            <button class="btn btn-sm" id="btn-pub-again" hidden>Enviar de novo</button>
-
-            <div id="pub-form" hidden>
-              <label class="field">
-                <span>Título <em class="pub-count mono" id="pub-title-count"></em></span>
-                <input class="input" id="pub-title" maxlength="100" />
-              </label>
-              <div class="pub-titles" id="pub-titles" hidden></div>
-              <label class="field">
-                <span>Descrição</span>
-                <textarea class="input" id="pub-desc" rows="6"></textarea>
-              </label>
-              <label class="field">
-                <span>Tags (separadas por vírgula)</span>
-                <input class="input" id="pub-tags" />
-              </label>
-              <div class="pub-row">
-                <label class="field">
-                  <span>Visibilidade</span>
-                  <select class="input" id="pub-privacy">
-                    <option value="private">Privado</option>
-                    <option value="unlisted">Não listado</option>
-                    <option value="public">Público</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Agendar (opcional)</span>
-                  <input class="input mono" type="datetime-local" id="pub-when" />
-                </label>
-              </div>
-              <label class="check" id="pub-captions-row" hidden>
-                <input type="checkbox" id="pub-captions" checked />
-                <span>Enviar legenda (.srt gerado da transcrição)</span>
-              </label>
-              <label class="check" id="pub-comment-row" hidden>
-                <input type="checkbox" id="pub-comment-on" />
-                <span>Postar o comentário pra fixar (fixar continua no Studio)</span>
-              </label>
-              <textarea class="input" id="pub-comment" rows="2" hidden></textarea>
-              <p class="pub-note" id="pub-note"></p>
-              <div class="pub-actions">
-                <button class="btn btn-primary" id="btn-publish">Enviar pro YouTube</button>
-              </div>
-            </div>
-
-            <div id="pub-progress" class="pub-progress" hidden>
-              <div class="pub-bar"><span id="pub-bar"></span></div>
-              <span class="mono" id="pub-pct">0%</span>
+        <!-- The video and its thumbnail; a short's caption is adjusted right on the video -->
+        <div class="card" id="res-player" hidden>
+          <div class="card-head">
+            <div>
+              <h2>Vídeo final</h2>
+              <p>Do jeito que vai ser publicado.</p>
             </div>
           </div>
+          <div class="res-watch-grid">
+            <section class="res-area res-thumb-area" id="res-thumb-box" hidden>
+              <div class="area-title">Thumbnail</div>
+              <img id="res-thumb" class="thumb-img" alt="thumbnail gerada" />
+            </section>
 
-          <div class="card">
+            <section class="res-area">
+              <div class="area-title">Prévia</div>
+              <div class="res-watch-row">
+                <div class="res-stage" id="cap-stage">
+                  <video id="res-video" class="player" controls preload="metadata"></video>
+                  <img id="cap-img" class="cap-preview" alt="prévia da legenda" draggable="false" />
+                  <div class="cap-band" id="cap-band" title="Arraste pra cima ou pra baixo"><span class="cap-grip">⇕ arraste pra mover</span></div>
+                </div>
+
+                <div class="cap-panel" id="cap-card" hidden>
+                  <div class="card-head">
+                    <div>
+                      <h2>Legenda</h2>
+                      <p>Mude a posição e o tamanho direto no vídeo.</p>
+                    </div>
+                  </div>
+                  <div id="cap-error" class="banner err" hidden></div>
+                  <ol class="cap-steps">
+                    <li>Clique em <b>Ajustar legenda</b>: o vídeo pausa e mostra a legenda numa faixa tracejada.</li>
+                    <li><b>Arraste a faixa</b> pra cima ou pra baixo pra mudar a posição.</li>
+                    <li>Mude o <b>tamanho</b> e clique em <b>Regravar legenda</b>.</li>
+                  </ol>
+                  <button class="btn" id="btn-cap-edit" type="button">Ajustar legenda</button>
+                  <div id="cap-controls" hidden>
+                    <label class="field">
+                      <span>Tamanho <b id="cap-size-val">100%</b></span>
+                      <input type="range" id="cap-size" min="50" max="200" step="5" value="100" />
+                    </label>
+                    <label class="check">
+                      <input type="checkbox" id="cap-hidden" />
+                      <span>Esconder legenda</span>
+                    </label>
+                    <div class="pub-actions">
+                      <button class="btn btn-primary" id="btn-cap-redo">Regravar legenda</button>
+                      <button class="btn" id="btn-cap-cancel" type="button">Cancelar</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- The files and what metadata wrote to post them -->
+        <div class="card res-hub">
+          <div class="card-head">
+            <div>
+              <h2>Arquivos</h2>
+              <p>O que ficou em <code class="mono">output/</code>.</p>
+            </div>
+          </div>
+          <div id="res-files" class="files"></div>
+          <div id="res-nofiles" class="empty small" hidden>Nada em output/ ainda — o vídeo aparece aqui quando o pipeline termina.</div>
+
+          <div class="res-part">
             <div class="card-head">
               <div>
-                <h2>Publicação</h2>
-                <p>gerado no stage <code class="mono">metadata</code> — copie e poste.</p>
+                <h2>Dados para publicação</h2>
+                <p>Gerado no stage <code class="mono">metadata</code> — copie e poste.</p>
               </div>
             </div>
             <div id="res-meta" class="meta"></div>
-            <div id="res-thumbtext" class="meta-field" hidden></div>
             <div id="res-nometa" class="empty small" hidden>Sem metadata ainda — ela sai no fim do pipeline.</div>
           </div>
-          </section>
+        </div>
+
+        <!-- Sending it to YouTube: a card of its own -->
+        <div class="card res-hub" id="pub-card" hidden>
+          <div class="card-head">
+            <div>
+              <h2>Publicar no YouTube</h2>
+              <p id="pub-account">—</p>
+            </div>
+          </div>
+          <div id="pub-error" class="banner err" hidden></div>
+
+          <div id="pub-connect" hidden>
+            <p class="pub-note" id="pub-connect-note"></p>
+            <button class="btn btn-primary" id="btn-yt-connect">Conectar YouTube</button>
+            <button class="btn" id="btn-yt-cancel" type="button" hidden>Cancelar</button>
+            <button class="btn btn-primary" id="btn-yt-setup" type="button" hidden>Abrir Configurações</button>
+          </div>
+
+          <div id="pub-history" class="pub-history" hidden></div>
+          <p class="pub-again" id="pub-again" hidden>
+            <button class="btn-link" type="button" id="btn-pub-again">Enviar de novo</button>
+            <span>Cria outro vídeo no canal; o que já foi enviado continua lá.</span>
+          </p>
+
+          <div id="pub-form" hidden>
+            <div class="pub-resend-head" id="pub-resend-head" hidden>
+              <b>Enviar de novo</b>
+              <span>Cria outro vídeo no canal; o que já foi enviado continua lá.</span>
+            </div>
+            <label class="field">
+              <span>Título <em class="pub-count mono" id="pub-title-count"></em></span>
+              <input class="input" id="pub-title" maxlength="100" />
+            </label>
+            <div class="pub-titles" id="pub-titles" hidden></div>
+            <label class="field">
+              <span>Descrição</span>
+              <textarea class="input" id="pub-desc" rows="6"></textarea>
+            </label>
+            <label class="field">
+              <span>Tags (separadas por vírgula)</span>
+              <input class="input" id="pub-tags" />
+            </label>
+            <div class="pub-row">
+              <label class="field">
+                <span>Visibilidade</span>
+                <select class="input" id="pub-privacy">
+                  <option value="private">Privado</option>
+                  <option value="unlisted">Não listado</option>
+                  <option value="public">Público</option>
+                </select>
+                <small class="pub-hint" id="pub-privacy-hint" hidden></small>
+              </label>
+              <div class="field">
+                <span>Agendar (opcional) <button class="btn-link pub-clear" type="button" id="pub-when-clear" hidden>limpar</button></span>
+                <input class="input mono" type="datetime-local" id="pub-when" aria-label="Agendar" />
+              </div>
+            </div>
+            <label class="check" id="pub-captions-row" hidden>
+              <input type="checkbox" id="pub-captions" checked />
+              <span>Enviar legenda (.srt gerado da transcrição)</span>
+            </label>
+            <label class="check" id="pub-comment-row" hidden>
+              <input type="checkbox" id="pub-comment-on" />
+              <span>Postar o comentário pra fixar (fixar continua no Studio)</span>
+            </label>
+            <textarea class="input" id="pub-comment" rows="2" hidden></textarea>
+            <p class="pub-note" id="pub-note"></p>
+            <div class="pub-actions">
+              <button class="btn btn-primary" id="btn-publish">Enviar pro YouTube</button>
+              <button class="btn" type="button" id="btn-pub-cancel" hidden>Cancelar</button>
+            </div>
+          </div>
+
+          <div id="pub-progress" class="pub-progress" hidden>
+            <div class="pub-bar"><span id="pub-bar"></span></div>
+            <span class="mono" id="pub-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="card" id="ret-card" hidden>
+          <div class="card-head ret-head">
+            <div>
+              <h2>Retenção no YouTube</h2>
+              <p id="ret-sub">Onde o público saiu, com o que era dito.</p>
+            </div>
+            <button class="btn btn-sm" id="btn-ret-refresh">Atualizar</button>
+          </div>
+          <div id="ret-error" class="banner err" hidden></div>
+          <div id="ret-empty" class="empty small" hidden></div>
+          <div id="ret-body" hidden>
+            <div class="ret-stats" id="ret-stats"></div>
+            <div class="ret-chart" id="ret-chart"></div>
+            <ol class="ret-drops" id="ret-drops"></ol>
+          </div>
         </div>
       </div>
     </main>
@@ -452,7 +580,7 @@
     <!-- Shorts -->
     <main class="main" data-screen="shorts" hidden>
       <header class="topbar">
-        <button class="btn btn-icon" id="btn-sh-back" title="Voltar">&larr;</button>
+        <button class="btn btn-icon" id="btn-sh-back" title="Voltar" aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
         <div class="titles">
           <div class="page-title" id="sh-title">Shorts</div>
           <div class="page-sub row-inline" id="sh-sub"></div>
@@ -477,7 +605,7 @@
           <div class="card-head">
             <div>
               <h2>Procurando candidatos…</h2>
-              <p>o <code class="mono">clipper</code> está lendo a transcrição — leva um ou dois minutos.</p>
+              <p>O <code class="mono">clipper</code> está lendo a transcrição — leva um ou dois minutos.</p>
             </div>
           </div>
           <pre class="log mono" id="sh-log"></pre>
@@ -516,29 +644,32 @@
       <header class="topbar">
         <div class="titles">
           <div class="page-title">Estilos</div>
-          <div class="page-sub">como ficam a thumbnail e os overlays dos seus vídeos</div>
+          <div class="page-sub">Como ficam a thumbnail e os overlays dos seus vídeos</div>
         </div>
       </header>
       <div class="content sty">
         <div id="sty-error" class="banner err" hidden></div>
 
         <section class="card sty-brand">
-          <button class="sty-logo" id="sty-logo" title="Trocar a logo"><span id="sty-logo-initial">?</span><img id="sty-logo-img" alt="" hidden /></button>
+          <div class="sty-logo-wrap">
+            <button class="sty-logo" id="sty-logo" type="button" title="Escolher a logo" aria-label="Escolher a logo"><span id="sty-logo-initial">?</span><img id="sty-logo-img" alt="" hidden /></button>
+            <button class="sty-logo-badge" id="sty-logo-badge" type="button"></button>
+          </div>
           <input type="file" id="sty-logo-file" accept="image/png,image/jpeg,image/webp" hidden />
           <div class="sty-brand-fields">
-            <div class="card-head"><div><h2>Sua marca</h2><p>aparece no nome na tela (lower third). A logo substitui a inicial no círculo.</p></div></div>
+            <div class="card-head"><div><h2>Sua marca</h2><p>Aparece no nome na tela (lower third). Clique no círculo pra escolher a logo; ela substitui a inicial.</p></div><span class="grow"></span><span class="dim sty-brand-saved" id="sty-brand-saved"></span></div>
             <div class="sty-row">
-              <label class="field"><span>Nome</span><input class="input" id="sty-name" maxlength="40" placeholder="padrão: o nome do canal no YouTube" /></label>
-              <label class="field"><span>@ do canal</span><input class="input mono" id="sty-handle" maxlength="40" placeholder="@seucanal" /></label>
-            </div>
-            <div class="sty-logo-actions">
-              <a href="#" id="sty-logo-pick">enviar logo</a><a href="#" id="sty-logo-remove" hidden>remover logo</a>
-              <span class="sty-logo-bg" id="sty-logo-bg-wrap" hidden>
-                <span>fundo da logo</span>
-                <label class="check"><input type="checkbox" id="sty-logo-bg-own" /><span>cor própria</span></label>
-                <input type="color" id="sty-logo-bg" value="#ffffff" disabled />
-              </span>
-              <span class="dim" id="sty-brand-saved"></span>
+              <label class="field"><span>Nome</span><small class="field-desc">O texto em destaque no nome na tela.</small><input class="input" id="sty-name" maxlength="40" placeholder="padrão: o nome do canal no YouTube" /></label>
+              <label class="field"><span>@ do canal</span><small class="field-desc">Aparece menor, embaixo do nome.</small><input class="input mono" id="sty-handle" maxlength="40" placeholder="@seucanal" /></label>
+              <div class="field sty-logo-bg" id="sty-logo-bg-wrap" hidden>
+                <span>Fundo da logo</span>
+                <small class="field-desc">A cor atrás da logo. Só aparece onde ela é transparente.</small>
+                <div class="sty-logo-bg-opts" role="radiogroup" aria-label="Fundo da logo">
+                  <button type="button" role="radio" data-logo-bg="style"><span class="sw" id="sty-logo-bg-accent"></span>Cor do estilo</button>
+                  <button type="button" role="radio" data-logo-bg="own"><span class="sw" id="sty-logo-bg-swatch"></span>Outra cor</button>
+                  <input type="color" id="sty-logo-bg" value="#ffffff" tabindex="-1" aria-hidden="true" />
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -552,7 +683,7 @@
         <div class="sty-gallery" id="sty-gallery"></div>
 
         <section class="card sty-ai" id="sty-ai" hidden>
-          <div class="card-head"><div><h2>✨ Criar com IA</h2><p>descreva o clima do canal e/ou mande uma thumbnail de referência: a IA reproduz o layout dela (título, fontes, elementos) com o seu conteúdo.</p></div></div>
+          <div class="card-head"><div><h2>✨ Criar com IA</h2><p>Descreva o clima do canal e/ou mande uma thumbnail de referência: a IA reproduz o layout dela (título, fontes, elementos) com o seu conteúdo.</p></div></div>
           <textarea class="input" id="sty-ai-desc" rows="3" maxlength="500" placeholder="ex.: tech escuro, neon roxo, bem agressivo"></textarea>
           <div class="sty-ai-row">
             <a href="#" id="sty-ai-pick">anexar imagem</a><span class="dim">ou cole um print (⌘V / Ctrl+V)</span>
@@ -664,7 +795,7 @@
         </section>
 
         <section class="card">
-          <div class="card-head"><div><h2>Overlays em MP4 (opcional)</h2><p>se você tem os seus com fundo verde (<code>lowerthid_gabul.mp4</code>, <code>ctas.mp4</code>), eles entram no lugar dos do estilo.</p></div></div>
+          <div class="card-head"><div><h2>Overlays em MP4 (opcional)</h2><p>Se você tiver vídeos próprios de lower third e CTA com fundo verde (<code>lowerthid_gabul.mp4</code> e <code>ctas.mp4</code>), eles substituem os overlays do estilo.</p></div></div>
           <label class="field"><span>Pasta</span><input class="input mono" id="sty-overlays" placeholder="padrão: assets/overlays/" /></label>
         </section>
       </div>
@@ -674,19 +805,72 @@
       <header class="topbar">
         <div class="titles">
           <div class="page-title">Configurações</div>
-          <div class="page-sub" id="cfg-sub">agente de IA, contas e padrões das edições</div>
+          <div class="page-sub" id="cfg-sub">Agente de IA, contas e padrões das edições</div>
         </div>
-        <button class="btn btn-primary" id="btn-cfg-save" disabled>Salvar</button>
+        <span class="save-status" id="cfg-save-status" role="status">Salvo automaticamente</span>
       </header>
       <div class="content form">
         <div id="cfg-error" class="banner err" hidden></div>
 
         <section class="card">
+          <div class="card-head"><div><h2>Pastas</h2><p>O seletor de vídeos abre na pasta de entrada; os vídeos prontos vão pra pasta de saída.</p></div></div>
+          <div class="folders">
+            <div class="field">
+              <span>Pasta de entrada (gravações) <em class="field-opt" id="cfg-inbox-default" hidden>padrão</em><a class="field-opt field-link" href="#" id="cfg-inbox-reset" data-folder-reset="inbox" hidden>usar a padrão</a></span>
+              <div class="folder-row">
+                <div class="input mono folder-path" id="cfg-inbox"></div>
+                <button class="btn btn-icon" type="button" data-folder-open="inbox" title="Abrir a pasta" aria-label="Abrir a pasta de entrada"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+                <button class="btn" type="button" data-folder-pick="inbox">Trocar</button>
+              </div>
+              <small class="folder-warn" id="cfg-inbox-missing" hidden>Essa pasta não existe mais. Clique em Trocar ou em “usar a padrão”.</small>
+            </div>
+            <div class="field">
+              <span>Pasta de saída (vídeos prontos) <em class="field-opt" id="cfg-output-default" hidden>padrão</em><a class="field-opt field-link" href="#" id="cfg-output-reset" data-folder-reset="output" hidden>usar a padrão</a></span>
+              <div class="folder-row">
+                <div class="input mono folder-path" id="cfg-output"></div>
+                <button class="btn btn-icon" type="button" data-folder-open="output" title="Abrir a pasta" aria-label="Abrir a pasta de saída"><svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+                <button class="btn" type="button" data-folder-pick="output">Trocar</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="cfg-yt-card">
+          <div class="card-head"><div>
+            <h2>YouTube</h2>
+            <p>Publicar, legenda, comentário e retenção usam uma conexão só.</p>
+          </div></div>
+          <div class="cfg-row yt-status">
+            <span class="yt-dot" id="cfg-yt-dot"></span>
+            <span id="cfg-yt-status">—</span>
+            <span class="grow"></span>
+            <button class="btn" id="btn-cfg-yt-cancel" type="button" hidden>Cancelar</button>
+            <button class="btn" id="btn-cfg-yt">Conectar YouTube</button>
+          </div>
+          <div id="cfg-yt-error" class="banner err" hidden></div>
+          <p class="yt-client" id="cfg-yt-client" hidden></p>
+          <details class="yt-guide" id="cfg-yt-guide">
+            <summary>Como conectar <span class="dim">(uma vez só, uns 5 minutos)</span></summary>
+            <p class="yt-intro">O YouTube só aceita vídeos enviados por um app registrado no Google Cloud. Você cria o seu (é grátis), baixa um arquivo de credencial e escolhe ele aqui.</p>
+            <ol class="yt-steps">
+              <li><b>Crie um projeto</b> no Google Cloud, com a conta Google do seu canal. <a href="#" data-docs="https://console.cloud.google.com/projectcreate">Abrir o Google Cloud</a></li>
+              <li><b>Ative as duas APIs do YouTube</b>: a Data API v3 (envio) e a Analytics API (retenção). Em cada uma, clique em Ativar. <a href="#" data-docs="https://console.cloud.google.com/apis/library/youtube.googleapis.com">YouTube Data API v3</a> · <a href="#" data-docs="https://console.cloud.google.com/apis/library/youtubeanalytics.googleapis.com">YouTube Analytics API</a></li>
+              <li><b>Configure o acesso</b>: no Google Auth Platform, clique em Primeiros passos, dê um nome ao app e escolha <b>Externo</b>. Depois, em Público-alvo, adicione o seu e-mail como <b>usuário de teste</b>. <a href="#" data-docs="https://console.cloud.google.com/auth/overview">Abrir o Google Auth Platform</a></li>
+              <li><b>Crie a credencial</b>: em Clientes → Criar cliente, escolha o tipo <b>App para computador</b> e baixe o JSON. <a href="#" data-docs="https://console.cloud.google.com/auth/clients/create">Criar cliente</a></li>
+              <li><b>Escolha o JSON aqui</b>. <button class="btn btn-sm" type="button" data-yt-json>Escolher arquivo JSON</button></li>
+              <li><b>Conecte</b>: clique em Conectar YouTube. O navegador abre pra você escolher o canal e autorizar. Se o Google avisar que o app não foi verificado, é o seu próprio app: clique em Avançado e continue.</li>
+            </ol>
+            <p class="yt-tip">Em modo de teste, o Google desconecta a cada 7 dias. Pra não expirar, clique em <b>Publicar app</b> em Público-alvo (pra uso próprio não precisa de verificação). E enquanto o projeto não passa pela auditoria do YouTube, os vídeos enviados ficam privados: é só liberar no Studio.</p>
+          </details>
+          <input type="file" id="cfg-yt-file" accept=".json,application/json" hidden />
+        </section>
+
+        <section class="card">
           <div class="card-head"><div>
             <h2>Agente de IA</h2>
-            <p>quem planeja, revisa e avalia os cortes. O <b>principal</b> roda sempre; o <b>fallback</b> entra se ele falhar.</p>
+            <p>Quem planeja, revisa e avalia os cortes. O <b>principal</b> roda sempre; o <b>fallback</b> entra se ele falhar.</p>
           </div></div>
-          <div class="cfg-agents" id="cfg-agents"><div class="empty small">verificando as CLIs…</div></div>
+          <div class="cfg-agents" id="cfg-agents"></div>
           <label class="field">
             <span>Fallback</span>
             <select class="input" id="cfg-fallback"></select>
@@ -696,7 +880,7 @@
         <section class="card" id="cfg-ollama-card">
           <div class="card-head"><div>
             <h2>Ollama (modelo local)</h2>
-            <p>roda na sua máquina, sem conta. Modelos pequenos cortam pior que os de nuvem e são mais lentos (minutos por etapa); vídeo longo funciona, mas um fallback na nuvem ajuda se o modelo errar o formato.</p>
+            <p>Roda na sua máquina, sem conta. Modelos pequenos cortam pior que os de nuvem e são mais lentos (minutos por etapa); vídeo longo funciona, mas um fallback na nuvem ajuda se o modelo errar o formato.</p>
           </div></div>
           <div id="cfg-ollama"></div>
           <div class="cfg-row">
@@ -706,25 +890,7 @@
         </section>
 
         <section class="card">
-          <div class="card-head"><div>
-            <h2>YouTube</h2>
-            <p>publicar, legenda, comentário e retenção usam uma conexão só.</p>
-          </div></div>
-          <div class="cfg-row">
-            <span id="cfg-yt-status" class="dim">—</span>
-            <span class="grow"></span>
-            <button class="btn" id="btn-cfg-yt">Conectar YouTube</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-head"><div><h2>Pastas</h2></div></div>
-          <label class="field"><span>Pasta de entrada (onde ficam as gravações)</span>
-            <input class="input mono" id="cfg-inbox" placeholder="padrão: upload/ do repo" /></label>
-        </section>
-
-        <section class="card">
-          <div class="card-head"><div><h2>Padrões das edições</h2><p>vêm preenchidos no Novo edit.</p></div></div>
+          <div class="card-head"><div><h2>Padrões das edições</h2><p>Vêm preenchidos no Novo edit.</p></div></div>
           <div class="grid">
             <label class="field"><span>Idioma</span>
               <select class="input" id="cfg-language"><option value="pt">pt</option><option value="en">en</option><option value="es">es</option></select></label>
@@ -764,7 +930,7 @@
             <span class="step mono">2</span>
             <div>
               <h2>Modelo de transcrição</h2>
-              <p id="ws-whisper-sub">o Whisper transcreve o áudio no seu computador, sem enviar nada.</p>
+              <p id="ws-whisper-sub">O Whisper transcreve o áudio no seu computador, sem enviar nada.</p>
             </div>
             <span class="wstate" id="ws-whisper-state"></span>
           </div>

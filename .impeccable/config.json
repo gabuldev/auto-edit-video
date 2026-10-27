@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "desktop/ui/index.html"
+        ],
+        "createdAt": "2026-10-27T14:05:28.675Z",
+        "reason": "Claude verified: every <img> in index.html gets its src from JS at runtime (cap-img in caption-adjust.js, res-thumb in result.js, sty-logo-img in styles.js, .sty-shot previews in styles.js:178); empty src in the static HTML is intentional"
+      }
+    ]
+  }
+}

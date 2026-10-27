@@ -142,7 +142,8 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_END_PADDING` | `0.2` | Segundos adicionados ao final de cada segmento mantido |
 | `AUTO_EDIT_LANGUAGE` | `pt` | Idioma do áudio para transcrição |
 | `AUTO_EDIT_HOME` | `~/.auto-edit` | Diretório de profile + plans (fora do repo) |
-| `AUTO_EDIT_INBOX` | — | Pasta padrão pra `auto-edit plan ingest` |
+| `AUTO_EDIT_INBOX` | — | Pasta das gravações: onde o seletor de vídeos do app abre (sem ela: `workspace/input`, criada ao subir o motor junto com `workspace/output`) e a pasta padrão pra `auto-edit plan ingest` |
+| `AUTO_EDIT_OUTPUT` | `workspace/output` | Pasta onde o `finalize` entrega os vídeos prontos (app: Configurações → Pastas → Pasta de saída). Cada workspace grava no `pipeline.json` (`output_dir`) onde entregou, então trocar a pasta não perde os vídeos já feitos; workspace antigo sem esse campo continua em `workspace/output` |
 | `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
 | `AUTO_EDIT_THUMB_RENDERER` | — | `pillow` desenha a thumbnail com o layout antigo (Pillow) em vez do React (`renderer/`) |
@@ -152,7 +153,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_OVERLAYS_STRICT` | — | `1` faz o stage `overlay` falhar quando um overlay planejado não sai (sem MP4 e sem React). Por padrão ele só avisa e renderiza sem |
 | `AUTO_EDIT_SEGMENT_THRESHOLD` | `12` | Acima de N segmentos, o `execute` corta um-a-um + concat (evita OOM do FFmpeg em vídeo longo/4K) |
 | `GEMINI_API_KEY` | — | API key para correção de texto via Gemini |
-| `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` e `auto-edit publish auth youtube`. Sem ele, reaproveita o client de um token já salvo. Publish e insights usam **uma conexão só** (`auto_edit/youtube_auth.py`, `tokens/youtube.json`). App OAuth em modo "Testing" expira o token em 7 dias: publique o app ("In production") pra não expirar |
+| `AUTO_EDIT_YT_CLIENT_SECRET` | — | Caminho do JSON de OAuth client (Desktop) do Google Cloud, pro `auto-edit insights auth youtube` e `auto-edit publish auth youtube`. Sem ele, usa o JSON escolhido no app (Configurações → YouTube, passo a passo; fica em `tokens/youtube.client.json`) ou o client de um token já salvo. Publish e insights usam **uma conexão só** (`auto_edit/youtube_auth.py`, `tokens/youtube.json`). App OAuth em modo "Testing" expira o token em 7 dias: publique o app ("In production") pra não expirar |
 | `AUTO_EDIT_YT_CATEGORY` | `28` | Categoria do YouTube nos uploads do `publish` (28 = Ciência e tecnologia) |
 | `AUTO_EDIT_WORKSPACE` | `workspace` | Pasta raiz que guarda os workspaces por vídeo (CLI, MCP e motor headless) |
 
@@ -193,7 +194,12 @@ fica em `auto_edit/engine.py` (fachada pura sobre `ralph.sh` + `pipeline.py` +
 ```
 GET  /api/health
 GET  /api/library                 # lista workspaces + status derivado
-GET  /api/browse?dir=             # pastas + vídeos de um diretório (file picker)
+GET  /api/browse?dir=             # pastas + vídeos de um diretório
+GET  /api/recordings              # Biblioteca: vídeos da pasta de entrada (subpastas até 3 níveis), com duração/resolução (ffprobe em cache) e as edições de cada
+GET  /api/recordings/thumb?path=  # miniatura de um vídeo da pasta de entrada (só dela)
+GET  /api/folders                 # {inbox, output}: {path, custom} como o pipeline usa agora
+POST /api/folders/<inbox|output>/open  # abre a pasta no gerenciador de arquivos (só essas duas)
+GET  /api/video-file?path=        # nome/tamanho de um vídeo escolhido ou arrastado (404 se não for vídeo)
 GET  /api/videos/<id>             # detalhe (stages, plano, metadata)
 GET  /api/videos/<id>/plan        # cortes + o que é dito em cada trecho
 PUT  /api/videos/<id>/plan        # {kept_segments: [{start, end, summary?}]}
@@ -202,15 +208,19 @@ PUT  /api/videos/<id>/captions    # {position, offset, size, hidden}: só essas 
 POST /api/videos/<id>/captions/preview  # {ajuste} → PNG da legenda num frame do short (regravar: /resume from_stage=caption, caption_only)
 GET  /api/videos/<id>/result      # metadata + arquivos finais
 GET  /api/videos/<id>/file/<kind> # video | thumbnail | captions | notes
-POST /api/edit                    # {video_path, type, context, language, overlays_dir, ...}
+POST /api/edit                    # {video_path, type, context, language, overlays_dir, name?, ...} (name: nome da edição, só exibição)
 POST /api/videos/<id>/resume      # {from_stage, caption_only?} (caption_only: short regrava só a legenda)
+DELETE /api/videos/<id>           # para o que roda e apaga workspace + arquivos em output/ (nunca o vídeo original)
 GET  /api/videos/<id>/shorts      # candidatos a short de um long pronto
 POST /api/videos/<id>/shorts      # {max_dur} roda o clipper (job + SSE)
 POST /api/videos/<id>/shorts/cut  # {pick: [1, 3]} semeia os _shortN e corta em fila
-GET  /api/publish/youtube         # conta conectada? (POST .../connect abre o OAuth)
+GET  /api/publish/youtube         # conta conectada? (POST .../connect abre o OAuth; .../connect/cancel para de esperar; desiste sozinho em 5 min)
+PUT  /api/publish/youtube/client  # {path} | {content}: o JSON do OAuth client (tipo Desktop app) baixado do Google Cloud
+POST /api/publish/youtube/refresh # Edições: marca no publish.json os enviados que foram apagados no YouTube (1x/min)
 GET  /api/videos/<id>/publish     # defaults do metadata + histórico (publish.json)
+GET  /api/videos/<id>/publish/live  # estado atual no YouTube dos enviados (programado virou público? apagado?)
 POST /api/videos/<id>/publish/youtube  # {title, description, tags, privacy, publish_at, force}
-POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder
+POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder (kind `source` = o vídeo original)
 GET  /api/videos/<id>/retention   # análise salva (POST busca a curva no YouTube)
 GET  /api/styles                  # estilos (presets + seus), o ativo, fontes, marca
 PUT  /api/styles/active           # {id}

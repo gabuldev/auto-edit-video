@@ -177,7 +177,9 @@ fn engine_command(embedded: Option<&Embedded>) -> Result<(Command, String), Stri
         "`auto-edit` não encontrado. Instale o CLI ou aponte AUTO_EDIT_BIN pro executável.",
     )?;
     let mut cmd = Command::new(&bin);
-    cmd.arg("serve");
+    // stdout goes to engine.log, not a console: without this Windows encodes
+    // it as cp1252 and the engine dies on its first "→".
+    cmd.arg("serve").env("PYTHONUTF8", "1");
     Ok((cmd, bin.display().to_string()))
 }
 
@@ -213,12 +215,43 @@ fn stop_engine_for_update() {
     stop_engine();
 }
 
+/// "Reiniciar o motor" in the sidebar, once the engine stopped answering: the
+/// one this app started is killed and a fresh one started (its log moves to
+/// engine.prev.log, to see why it hung). One started by hand and reused at
+/// launch isn't ours to kill: then it says so.
+#[tauri::command]
+async fn restart_engine(app: tauri::AppHandle) -> Result<(), String> {
+    stop_engine();
+    for _ in 0..20 {
+        if !engine_listening() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    if engine_listening() {
+        return Err(
+            "Outro motor, que não foi aberto pelo app, está usando a porta 8760. Feche-o (o terminal com auto-edit serve) e tente de novo."
+                .into(),
+        );
+    }
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("auto-edit"));
+    let _ = fs::rename(log_dir.join("engine.log"), log_dir.join("engine.prev.log"));
+    let embedded = embedded_engine(app.path().resource_dir().ok());
+    let child = start_engine(&log_dir, embedded.as_ref())?;
+    *ENGINE.lock().unwrap() = Some(child);
+    Ok(())
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![stop_engine_for_update])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![stop_engine_for_update, restart_engine])
         .setup(|app| {
             if engine_listening() {
                 eprintln!("[auto-edit] engine already running on {ENGINE_ADDR}, reusing it");

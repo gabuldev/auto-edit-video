@@ -303,3 +303,9 @@ class TestOverlaySearchDirs:
         # overlay_search_dirs resolves the root (adds the drive on Windows).
         root = repo.resolve()
         assert dirs == [root / "assets" / "overlays", root / "overlays"]
+
+
+def test_output_is_8bit(monkeypatch):
+    # A 10-bit (phone HDR) edit must not stay 10-bit: see executor.PIX_FMT.
+    cmd = _capture_cmd(monkeypatch)
+    assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"

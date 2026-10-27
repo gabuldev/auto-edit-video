@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -146,13 +147,18 @@ def _parse_when(value: str) -> datetime:
 
 # ── OAuth (shared with insights: auto_edit.youtube_auth) ─────────────────────
 
+AuthError = youtube_auth.AuthError
 token_path = youtube_auth.token_path
 client_secret = youtube_auth.client_secret
 client_config = youtube_auth.client_config
+client_id = youtube_auth.client_id
+save_client = youtube_auth.save_client
 is_connected = youtube_auth.is_connected
 needs_reconnect = youtube_auth.needs_reconnect
 channel_title = youtube_auth.channel_title
 disconnect = youtube_auth.disconnect
+cancel_consent = youtube_auth.cancel_consent
+consent_cancelled = youtube_auth.consent_cancelled
 
 
 def credentials(*, interactive: bool = False):
@@ -273,6 +279,26 @@ def upload(
     }
 
 
+def live_status(video_ids: list[str], *, service=None) -> dict[str, dict]:
+    """Como os vídeos já enviados estão agora no YouTube: um programado vira
+    público sozinho, e projeto sem auditoria trava o vídeo como privado.
+    {id: {privacy, publish_at, upload_status}}; vídeo apagado não vem."""
+    if not video_ids:
+        return {}
+    yt = service or _service()
+    out: dict[str, dict] = {}
+    for i in range(0, len(video_ids), 50):  # the API takes 50 ids per call
+        resp = yt.videos().list(part="status", id=",".join(video_ids[i:i + 50]), maxResults=50).execute()
+        for item in resp.get("items") or []:
+            st = item.get("status") or {}
+            out[item["id"]] = {
+                "privacy": st.get("privacyStatus"),
+                "publish_at": st.get("publishAt"),
+                "upload_status": st.get("uploadStatus"),
+            }
+    return out
+
+
 def _reason(exc) -> str:
     try:
         err = json.loads(exc.content.decode("utf-8"))["error"]
@@ -292,11 +318,52 @@ def read_record(ws: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+# An upload finishing and a check of what's still on YouTube both rewrite
+# publish.json: one at a time, or one would drop the other's change.
+_record_lock = threading.Lock()
+
+
+def _write_record(ws: Path, data: dict) -> None:
+    (ws / RECORD_NAME).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def add_record(ws: Path, platform: str, entry: dict) -> dict:
     """Acrescenta uma publicação ao `publish.json` do workspace (histórico)."""
-    data = read_record(ws)
-    data.setdefault(platform, []).append(
-        {**entry, "published_at": datetime.now(timezone.utc).isoformat()}
-    )
-    (ws / RECORD_NAME).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _record_lock:
+        data = read_record(ws)
+        data.setdefault(platform, []).append(
+            {**entry, "published_at": datetime.now(timezone.utc).isoformat()}
+        )
+        _write_record(ws, data)
     return data
+
+
+def on_youtube(entries: list[dict]) -> list[dict]:
+    """Os envios que ainda estão no YouTube (sem a marca de `mark_gone`)."""
+    return [e for e in entries if e.get("video_id") and not e.get("removed")]
+
+
+def mark_gone(ws: Path, asked: set[str], found: set[str]) -> bool:
+    """Grava no publish.json quais envios sumiram do YouTube (apagados lá):
+    perguntados (`asked`) e não encontrados (`found`). Um que volta a aparecer
+    (outra conta conectada antes, por exemplo) perde a marca. True se mudou."""
+    with _record_lock:
+        data = read_record(ws)
+        changed = False
+        for entry in data.get("youtube", []):
+            vid = entry.get("video_id")
+            if vid not in asked:
+                continue
+            gone = vid not in found
+            if bool(entry.get("removed")) == gone:
+                continue
+            if gone:
+                entry["removed"] = True
+                entry["removed_at"] = datetime.now(timezone.utc).isoformat()
+            else:
+                entry.pop("removed", None)
+                entry.pop("removed_at", None)
+            changed = True
+        if changed:
+            _write_record(ws, data)
+    return changed

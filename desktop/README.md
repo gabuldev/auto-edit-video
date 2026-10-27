@@ -4,8 +4,8 @@ Cliente **fino** (Tauri v2) da UI do auto-edit, consumindo a API headless do
 `auto-edit serve`. Toda a lógica de pipeline fica no Python — este app só mostra
 e dispara.
 
-**Telas:** Biblioteca (lista + progresso ao vivo por SSE), Novo edit (escolhe o
-vídeo na pasta de entrada, com busca, e inicia o pipeline), Pipeline ao vivo
+**Telas:** Biblioteca (lista + progresso ao vivo por SSE), Novo edit (arrasta o
+vídeo pra tela ou escolhe no computador, e inicia o pipeline), Pipeline ao vivo
 (stages, log do `ralph.sh` em tempo real e retomar a partir de um stage),
 Revisar cortes (os trechos mantidos com o que é dito em cada um; desmarcar e
 salvar reescreve o `reviewed_plan.json`), Resultado (o vídeo pronto tocando, a
@@ -70,8 +70,9 @@ npm run tauri dev                 # abre a janela do app
 
 - A URL da API é `http://127.0.0.1:8760` por padrão. Pra trocar, defina
   `window.AUTO_EDIT_API` antes do `js/app.js` (ex.: um `<script>` no `index.html`).
-- O file picker do "Novo edit" começa na pasta de entrada (`AUTO_EDIT_INBOX`, ou
-  `upload/` do repo) e navega a partir dela.
+- No "Novo edit", o app pega o caminho do vídeo pelo diálogo nativo
+  (`tauri-plugin-dialog`) ou pelo arquivo solto na janela. No navegador (2a)
+  não dá pra escolher o vídeo: o navegador não informa o caminho de um arquivo.
 - A CSP em `src-tauri/tauri.conf.json` já libera `connect-src` pra `127.0.0.1:8760`.
 
 ## Estrutura
@@ -87,7 +88,7 @@ desktop/
 │       ├── api.js      # única camada que fala com a API
 │       ├── shell.js    # helpers + indicador do motor
 │       ├── library.js  # tela Biblioteca (SSE por linha)
-│       ├── new-edit.js # tela Novo edit (file picker + form)
+│       ├── new-edit.js # tela Novo edit (escolher/arrastar vídeo + form)
 │       ├── pipeline.js # tela Pipeline ao vivo (stages + log SSE + resume)
 │       ├── cuts.js     # tela Revisar cortes (edita o plano e recorta)
 │       ├── result.js   # tela Resultado (player, thumbnail e metadata)

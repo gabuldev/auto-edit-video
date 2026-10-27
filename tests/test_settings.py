@@ -164,6 +164,48 @@ class TestApi:
         assert c.post("/api/agents/ollama/pull", json={}).status_code == 400
 
 
+def _oem_codepage() -> int:
+    import ctypes
+    return ctypes.windll.kernel32.GetOEMCP()
+
+
+class TestCliOutput:
+    """A CLI on Windows can print cmd.exe's own error in cp850 ("O sistema não
+    pode encontrar…"): reading it as UTF-8 crashed /api/agents with a 500 and
+    hid every agent behind one broken one."""
+
+    CP850 = "O sistema não pode encontrar o caminho especificado.".encode("cp850")
+
+    def test_decodes_utf8_text_and_none(self):
+        assert agents.decode_output("ação".encode("utf-8")) == "ação"
+        assert agents.decode_output(None) == ""
+        assert agents.decode_output("já texto") == "já texto"
+
+    def test_never_raises_on_the_windows_console_page(self, monkeypatch):
+        monkeypatch.setattr(agents.sys, "platform", "win32")
+        out = agents.decode_output(self.CP850)
+        assert out.startswith("O sistema n") and out.endswith("especificado.")
+
+    @pytest.mark.skipif(sys.platform != "win32" or _oem_codepage() != 850,
+                        reason="needs a Windows console on code page 850 (pt-BR); CI runners use 437")
+    def test_reads_the_accent_right_on_windows(self):
+        assert agents.decode_output(self.CP850) == "O sistema não pode encontrar o caminho especificado."
+
+    def test_a_broken_cli_does_not_break_the_list(self, monkeypatch):
+        class Done:
+            returncode, stdout = 1, b""
+        Done.stderr = self.CP850
+        monkeypatch.setattr(agent_status.subprocess, "run", lambda *a, **k: Done)
+        version = agent_status._version("opencode.cmd")
+        assert isinstance(version, str) and version.startswith("O sistema n")
+
+    def test_no_output_at_all_is_no_version(self, monkeypatch):
+        class Silent:
+            returncode, stdout, stderr = 0, None, None
+        monkeypatch.setattr(agent_status.subprocess, "run", lambda *a, **k: Silent)
+        assert agent_status._version("x") is None
+
+
 class TestAgentStatus:
     def test_test_reports_failure_with_the_cli_message(self, monkeypatch):
         def boom(prompt, model=None, timeout=None):

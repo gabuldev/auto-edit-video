@@ -706,7 +706,7 @@ def merge(
         codec, codec_flags = _get_merge_codec()
         cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex,
                "-map", "[outv]", "-map", "[outa]",
-               "-c:v", codec, *codec_flags,
+               "-c:v", codec, *codec_flags, "-pix_fmt", "yuv420p",  # 8-bit, plays everywhere
                "-c:a", "aac", "-b:a", "192k",
                str(merged_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1301,6 +1301,9 @@ def serve(
         # escape: the hint names the `[api]` extra, which Rich would eat as markup
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(1)
+    from auto_edit import engine
+
+    engine.ensure_default_folders()  # workspace/input and workspace/output, ready on first launch
     console.print(f"[cyan]auto-edit API[/cyan] → http://{host}:{port}  [dim](Ctrl+C to stop)[/dim]")
     console.print(f"[dim]Library root:[/dim] {(Path.cwd() / 'workspace')}")
     app_.run(host=host, port=port, threaded=True)

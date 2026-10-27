@@ -134,17 +134,17 @@ fi
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 get_stage() {
-    $PYTHON -c 'import json, sys; print(json.load(open(sys.argv[1]))["current_stage"])' "$PIPELINE"
+    "$PYTHON" -c 'import json, sys; print(json.load(open(sys.argv[1]))["current_stage"])' "$PIPELINE"
 }
 
 advance_stage() {
     local stage="$1"
-    $PYTHON -m auto_edit.pipeline complete "$WORKSPACE" "$stage" > /dev/null
+    "$PYTHON" -m auto_edit.pipeline complete "$WORKSPACE" "$stage" > /dev/null
 }
 
 fail_stage() {
     local stage="$1"
-    $PYTHON -c '
+    "$PYTHON" -c '
 import json, sys
 path, stage = sys.argv[1], sys.argv[2]
 p = json.load(open(path))
@@ -193,7 +193,7 @@ run_agent() {
     log "Running agent: $stage"
 
     # Mark as running in pipeline.json
-    $PYTHON -c '
+    "$PYTHON" -c '
 import json, sys
 path, stage = sys.argv[1], sys.argv[2]
 p = json.load(open(path))
@@ -205,7 +205,7 @@ json.dump(p, open(path, "w"), indent=2, ensure_ascii=False)
     local tmp_output="$WORKSPACE/.output_${stage}.txt"
 
     # Build prompt safely in Python (embeds JSON without shell quoting issues)
-    $PYTHON "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
+    "$PYTHON" "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
         "$stage" "$WORKSPACE" "$prompt_file" > "$tmp_prompt"
 
     _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file" "$prompt_file"
@@ -227,7 +227,7 @@ run_standalone_agent() {
     local tmp_prompt="$WORKSPACE/.prompt_${stage}.txt"
     local tmp_output="$WORKSPACE/.output_${stage}.txt"
 
-    $PYTHON "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
+    "$PYTHON" "$SCRIPT_DIR/auto_edit/runner.py" build-prompt \
         "$stage" "$WORKSPACE" "$prompt_file" > "$tmp_prompt"
 
     _call_llm "$tmp_prompt" "$tmp_output" "$stage" "$output_file" "$prompt_file"
@@ -239,7 +239,7 @@ run_standalone_agent() {
 _run_cursor_print() {
     local prompt_file="$1"
     local output_file="$2"
-    $PYTHON "$SCRIPT_DIR/auto_edit/runner.py" invoke-cursor "$prompt_file" "$output_file" "$SCRIPT_DIR"
+    "$PYTHON" "$SCRIPT_DIR/auto_edit/runner.py" invoke-cursor "$prompt_file" "$output_file" "$SCRIPT_DIR"
 }
 
 # Runs one LLM backend; writes combined stdout+stderr to output_file.
@@ -410,7 +410,7 @@ while true; do
         review)
             run_agent "review" "$WORKSPACE/reviewed_plan.json" "$AGENTS_DIR/reviewer.md"
             # Agents place boundaries a few ms inside spoken words; fix mechanically.
-            $PYTHON -m auto_edit.snap "$WORKSPACE" || { log "ERROR: snap failed"; exit 1; }
+            "$PYTHON" -m auto_edit.snap "$WORKSPACE" || { log "ERROR: snap failed"; exit 1; }
             ;;
 
         execute)
@@ -443,18 +443,18 @@ final = sum(float(s[\"end\"]) - float(s[\"start\"]) for s in kept)
 if final:
     print(f'[dry-run] Final duration: {final/60:.1f}min (from kept segments)')
 " "$WORKSPACE"
-                $PYTHON -m auto_edit.opening "$WORKSPACE" || true
+                "$PYTHON" -m auto_edit.opening "$WORKSPACE" || true
                 break
             fi
             run_python_tool "execute" "$TOOLS_DIR/executor.py"
             # Transcript of what was actually rendered (padding, onset snap):
             # captions, overlays, chapters and metadata read it.
-            $PYTHON -m auto_edit.postcut "$WORKSPACE" || { log "ERROR: postcut failed"; exit 1; }
+            "$PYTHON" -m auto_edit.postcut "$WORKSPACE" || { log "ERROR: postcut failed"; exit 1; }
             ;;
 
         overlay)
             run_agent "overlay" "$WORKSPACE/overlay_plan.json" "$AGENTS_DIR/overlayer.md" no-advance
-            $PYTHON "$TOOLS_DIR/overlayer.py" "$WORKSPACE" || fail_stage "overlay"
+            "$PYTHON" "$TOOLS_DIR/overlayer.py" "$WORKSPACE" || fail_stage "overlay"
             advance_stage "overlay"
             ;;
 
@@ -466,22 +466,22 @@ if final:
             # Cold open / reorder (on by default; --no-cold-open/--no-reorder): an agent picks a moment from later
             # in the video to play first and/or a new block order, written as the plan's sequence. A failed or
             # skipped cold open never fails the edit — it just plays in order.
-            if $PYTHON -m auto_edit.sequence wants-cold-open "$WORKSPACE"; then
+            if "$PYTHON" -m auto_edit.sequence wants-cold-open "$WORKSPACE"; then
                 rm -f "$WORKSPACE/cold_open.json"
                 if ( fail_stage() { exit 1; }
                      run_standalone_agent "coldopen" "$WORKSPACE/cold_open.json" "$AGENTS_DIR/cold_open.md" ); then
-                    $PYTHON -m auto_edit.sequence cold-open "$WORKSPACE" || log "WARNING: cold open merge failed — editing without it"
+                    "$PYTHON" -m auto_edit.sequence cold-open "$WORKSPACE" || log "WARNING: cold open merge failed — editing without it"
                 else
                     log "WARNING: cold open agent failed — editing without it"
                 fi
             fi
             # Judge the planned cut before rendering anything: a rejection loops
             # back to plan without paying for the FFmpeg cut.
-            $PYTHON -m auto_edit.postcut --planned "$WORKSPACE" || true
-            $PYTHON -m auto_edit.opening "$WORKSPACE" || true
+            "$PYTHON" -m auto_edit.postcut --planned "$WORKSPACE" || true
+            "$PYTHON" -m auto_edit.opening "$WORKSPACE" || true
             run_agent "evaluate" "$WORKSPACE/assessment.json" "$AGENTS_DIR/evaluator.md"
             # eval-result handles approved/reject + loop-back logic, prints "next:<stage>"
-            NEXT=$($PYTHON -m auto_edit.pipeline eval-result "$WORKSPACE")
+            NEXT=$("$PYTHON" -m auto_edit.pipeline eval-result "$WORKSPACE")
             NEXT="${NEXT#next:}"
             log "Evaluator → next: $NEXT"
             ;;
@@ -490,7 +490,7 @@ if final:
             run_agent "metadata" "$WORKSPACE/metadata.json" "$AGENTS_DIR/metadata.md" no-advance
             # Capítulos fora das regras do YouTube somem aqui (com o motivo no
             # log); nunca falham o stage.
-            $PYTHON -m auto_edit.chapters "$WORKSPACE" || true
+            "$PYTHON" -m auto_edit.chapters "$WORKSPACE" || true
             advance_stage "metadata"
             ;;
 
@@ -500,7 +500,7 @@ if final:
 
         done)
             log "Pipeline complete. Writing output..."
-            $PYTHON -m auto_edit.pipeline finalize "$WORKSPACE"
+            "$PYTHON" -m auto_edit.pipeline finalize "$WORKSPACE"
             log "Done."
             break
             ;;
