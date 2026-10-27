@@ -31,6 +31,8 @@ on:
       - "scripts/sync_desktop_version.py"
       - "scripts/stage_engine.py"
       - "scripts/smoke_engine.py"
+      - "auto_edit/engine.py"
+      - "auto_edit/shell.py"
       - "renderer/**"
       - "scripts/sign_macos_engine.py"
       - "scripts/write_p8.py"
