@@ -15,7 +15,11 @@ const MODEL_HINT = {
   ollama: "escolha abaixo",
 };
 
-const state = { saved: null, draft: null, agents: [], results: {}, busy: {}, poll: null, wired: false };
+const state = {
+  saved: null, draft: null, agents: [], results: {}, busy: {}, poll: null, wired: false,
+  // YouTube: credential there? following the consent; land on the card; Conectar clicked here
+  ytReady: null, ytPoll: null, ytFocus: false, ytTried: false,
+};
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
@@ -180,14 +184,94 @@ function renderForm() {
   el("cfg-reorder").checked = d.reorder;
 }
 
-async function renderYoutube() {
+// ── YouTube ──────────────────────────────────────────────────────────────────
+// Connecting needs an OAuth client of one's own from Google Cloud (the JSON
+// it downloads): the step by step stays open until there is one.
+
+function ytStatus(a) {
+  if (a.connecting) return ["wait", "Aguardando você autorizar no navegador… Fechou a página? Cancele e conecte de novo."];
+  if (a.connected) return ["ok", `Conectado como <b>${escapeHtml(a.channel || "?")}</b>`];
+  if (a.needs_reconnect) return ["warn", "Precisa reconectar pra liberar as permissões novas"];
+  if (a.has_client_secret) return ["off", "Não conectado"];
+  return ["off", "Não configurado: falta a credencial do Google (passo a passo abaixo)"];
+}
+
+function renderYoutube(a) {
+  const ready = !!a.has_client_secret;
+  const [tone, text] = ytStatus(a);
+  el("cfg-yt-dot").className = `yt-dot ${tone}`;
+  el("cfg-yt-status").innerHTML = text;
+  const btn = el("btn-cfg-yt");
+  btn.textContent = a.connecting ? "Esperando autorização…"
+    : a.connected ? "Desconectar" : a.needs_reconnect ? "Reconectar YouTube" : "Conectar YouTube";
+  btn.dataset.connected = a.connected ? "1" : "";
+  btn.disabled = a.connecting || (!ready && !a.connected);
+  btn.title = ready || a.connected ? "" : "Primeiro escolha o JSON da credencial (passo 5)";
+  btn.classList.toggle("btn-primary", ready && !a.connected && !a.connecting);
+  el("btn-cfg-yt-cancel").hidden = !a.connecting;
+  // The engine keeps the last attempt's error; only one tried from here shows.
+  const failed = state.ytTried && !a.connecting && a.error;
+  el("cfg-yt-error").hidden = !failed;
+  el("cfg-yt-error").textContent = failed ? `Não conectou: ${a.error}` : "";
+  el("cfg-yt-client").hidden = !ready;
+  el("cfg-yt-client").innerHTML = ready
+    ? `Credencial do Google: <span class="mono" title="${escapeHtml(a.client_id || "")}">${escapeHtml(a.client_id || "configurada")}</span> · <a href="#" data-yt-json>trocar arquivo</a>`
+    : "";
+  // Open while there's no credential; once it changes, follow it (in between,
+  // it stays as the person left it).
+  if (state.ytReady !== ready) el("cfg-yt-guide").open = !ready;
+  state.ytReady = ready;
+}
+
+function ytError(msg) {
+  el("cfg-yt-error").hidden = !msg;
+  el("cfg-yt-error").textContent = msg || "";
+}
+
+async function loadYoutube() {
   let a;
   try { a = await api.youtubeAccount(); } catch { return; }
-  el("cfg-yt-status").textContent = a.connected
-    ? `conectado como ${a.channel || "?"}`
-    : a.needs_reconnect ? "precisa reconectar (permissões novas)" : "não conectado";
-  el("btn-cfg-yt").textContent = a.connected ? "Desconectar" : a.needs_reconnect ? "Reconectar YouTube" : "Conectar YouTube";
-  el("btn-cfg-yt").dataset.connected = a.connected ? "1" : "";
+  renderYoutube(a);
+  // The consent happens in the browser: follow it until it ends.
+  clearTimeout(state.ytPoll);
+  state.ytPoll = a.connecting ? setTimeout(loadYoutube, 2000) : null;
+  if (state.ytFocus) {
+    state.ytFocus = false;
+    const card = el("cfg-yt-card");
+    card.scrollIntoView({ block: "start", behavior: "smooth" });
+    card.classList.remove("flash");
+    void card.offsetWidth; // restart the animation
+    card.classList.add("flash");
+  }
+}
+
+async function saveClient(body) {
+  ytError("");
+  try {
+    renderYoutube(await api.setYoutubeClient(body));
+  } catch (err) {
+    ytError(String(err.message || err));
+  }
+}
+
+async function pickClientJson() {
+  const dialog = window.__TAURI__?.dialog;
+  if (!dialog) { el("cfg-yt-file").click(); return; } // the browser reads it instead
+  let path;
+  try {
+    path = await dialog.open({
+      title: "Escolher o JSON da credencial do Google",
+      multiple: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+  } catch (err) { ytError(String(err.message || err)); return; }
+  if (path) saveClient({ path });
+}
+
+/** "Abrir Configurações" from elsewhere (the Publicar card): lands on YouTube. */
+export function openYoutubeSettings() {
+  state.ytFocus = true;
+  location.hash = "#/config";
 }
 
 // Checking every agent CLI takes a few seconds: until the first answer, a
@@ -236,7 +320,7 @@ async function load() {
   renderForm();
   syncSave();
   renderFolders();
-  renderYoutube();
+  loadYoutube();
   await loadAgents();
 }
 
@@ -349,13 +433,29 @@ function wire() {
     loadAgents();
   });
   el("btn-cfg-yt").addEventListener("click", async () => {
+    ytError("");
+    state.ytTried = !el("btn-cfg-yt").dataset.connected;
     try {
       if (el("btn-cfg-yt").dataset.connected) await api.disconnectYoutube();
       else await api.connectYoutube();
-    } catch (err) { setError(String(err.message || err)); }
-    // The consent happens in the browser; check back a few times.
-    for (const wait of [1500, 5000, 10000, 20000]) setTimeout(renderYoutube, wait);
-    renderYoutube();
+    } catch (err) { ytError(String(err.message || err)); }
+    loadYoutube();
+  });
+  el("btn-cfg-yt-cancel").addEventListener("click", async () => {
+    el("btn-cfg-yt-cancel").disabled = true;
+    try { renderYoutube(await api.cancelYoutubeConnect()); } catch (err) { ytError(String(err.message || err)); }
+    el("btn-cfg-yt-cancel").disabled = false;
+    loadYoutube();
+  });
+  el("cfg-yt-card").addEventListener("click", (e) => {
+    if (!e.target.closest("[data-yt-json]")) return;
+    e.preventDefault();
+    pickClientJson();
+  });
+  el("cfg-yt-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (file) saveClient({ content: await file.text() });
   });
 }
 
@@ -371,5 +471,8 @@ export default {
     if (dirty()) save(); // a change still waiting its moment is saved on the way out
     clearInterval(state.poll);
     state.poll = null;
+    clearTimeout(state.ytPoll);
+    state.ytPoll = null;
+    state.ytTried = false;
   },
 };

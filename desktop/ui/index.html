@@ -37,10 +37,15 @@
         <a class="nav-item" href="#/config" data-route="/config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Configurações</a>
       </nav>
       <div class="sidebar-foot">
-        <div class="engine-status" id="engine-status">
+        <div class="engine-status" id="engine-status" role="status" aria-live="polite">
           <span class="dot" id="engine-dot"></span>
-          <span id="engine-label" class="mono">verificando…</span>
+          <span class="engine-text">
+            <span class="engine-label" id="engine-label">Verificando o motor…</span>
+            <span class="engine-sub" id="engine-sub" hidden></span>
+          </span>
         </div>
+        <button class="btn btn-sm engine-restart" id="btn-engine-restart" type="button" hidden
+          title="Para o motor e sobe de novo. Uma edição que estiver rodando é interrompida.">Reiniciar o motor</button>
       </div>
     </aside>
 
@@ -55,9 +60,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
           <input class="input" type="search" id="lib-search" placeholder="Buscar por nome, arquivo ou título" aria-label="Buscar edições" autocomplete="off" spellcheck="false" />
         </label>
-        <a class="btn btn-primary" href="#/novo">
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Novo edit
-        </a>
+        <a class="btn btn-primary" href="#/novo">Nova edição</a>
       </header>
 
       <div class="banner" id="setup-banner" hidden>
@@ -72,7 +75,14 @@
       <div class="content">
         <div id="lib-error" class="banner err" hidden></div>
         <div class="table-head" id="lib-head">
-          <div>Vídeo</div><div>Tipo</div><div>Pipeline</div><div>Status</div><div></div>
+          <label class="sel"><input type="checkbox" id="lib-select-all" aria-label="Selecionar todas as edições" /></label>
+          <div class="th">Vídeo</div><div class="th">Tipo</div><div class="th">Pipeline</div><div class="th">Status</div><div class="th"></div>
+          <!-- with something selected, the header is the bar for it -->
+          <div class="bulk" id="lib-bulk" hidden>
+            <b id="lib-bulk-count"></b>
+            <span class="bulk-note" id="lib-bulk-note"></span>
+            <span class="bulk-acts" id="lib-bulk-acts"></span>
+          </div>
         </div>
         <div id="rows" class="rows"></div>
         <div id="lib-noresults" class="empty" hidden></div>
@@ -447,7 +457,7 @@
           </div>
         </div>
 
-        <!-- Everything to post it, in one place -->
+        <!-- The files and what metadata wrote to post them -->
         <div class="card res-hub">
           <div class="card-head">
             <div>
@@ -461,78 +471,90 @@
           <div class="res-part">
             <div class="card-head">
               <div>
-                <h2>Publicação</h2>
+                <h2>Dados para publicação</h2>
                 <p>Gerado no stage <code class="mono">metadata</code> — copie e poste.</p>
               </div>
             </div>
             <div id="res-meta" class="meta"></div>
             <div id="res-nometa" class="empty small" hidden>Sem metadata ainda — ela sai no fim do pipeline.</div>
           </div>
+        </div>
 
-          <div class="res-part" id="pub-card" hidden>
-            <div class="card-head">
-              <div>
-                <h2>Publicar no YouTube</h2>
-                <p id="pub-account">—</p>
+        <!-- Sending it to YouTube: a card of its own -->
+        <div class="card res-hub" id="pub-card" hidden>
+          <div class="card-head">
+            <div>
+              <h2>Publicar no YouTube</h2>
+              <p id="pub-account">—</p>
+            </div>
+          </div>
+          <div id="pub-error" class="banner err" hidden></div>
+
+          <div id="pub-connect" hidden>
+            <p class="pub-note" id="pub-connect-note"></p>
+            <button class="btn btn-primary" id="btn-yt-connect">Conectar YouTube</button>
+            <button class="btn" id="btn-yt-cancel" type="button" hidden>Cancelar</button>
+            <button class="btn btn-primary" id="btn-yt-setup" type="button" hidden>Abrir Configurações</button>
+          </div>
+
+          <div id="pub-history" class="pub-history" hidden></div>
+          <p class="pub-again" id="pub-again" hidden>
+            <button class="btn-link" type="button" id="btn-pub-again">Enviar de novo</button>
+            <span>Cria outro vídeo no canal; o que já foi enviado continua lá.</span>
+          </p>
+
+          <div id="pub-form" hidden>
+            <div class="pub-resend-head" id="pub-resend-head" hidden>
+              <b>Enviar de novo</b>
+              <span>Cria outro vídeo no canal; o que já foi enviado continua lá.</span>
+            </div>
+            <label class="field">
+              <span>Título <em class="pub-count mono" id="pub-title-count"></em></span>
+              <input class="input" id="pub-title" maxlength="100" />
+            </label>
+            <div class="pub-titles" id="pub-titles" hidden></div>
+            <label class="field">
+              <span>Descrição</span>
+              <textarea class="input" id="pub-desc" rows="6"></textarea>
+            </label>
+            <label class="field">
+              <span>Tags (separadas por vírgula)</span>
+              <input class="input" id="pub-tags" />
+            </label>
+            <div class="pub-row">
+              <label class="field">
+                <span>Visibilidade</span>
+                <select class="input" id="pub-privacy">
+                  <option value="private">Privado</option>
+                  <option value="unlisted">Não listado</option>
+                  <option value="public">Público</option>
+                </select>
+                <small class="pub-hint" id="pub-privacy-hint" hidden></small>
+              </label>
+              <div class="field">
+                <span>Agendar (opcional) <button class="btn-link pub-clear" type="button" id="pub-when-clear" hidden>limpar</button></span>
+                <input class="input mono" type="datetime-local" id="pub-when" aria-label="Agendar" />
               </div>
             </div>
-            <div id="pub-error" class="banner err" hidden></div>
-
-            <div id="pub-connect" hidden>
-              <p class="pub-note" id="pub-connect-note"></p>
-              <button class="btn btn-primary" id="btn-yt-connect">Conectar YouTube</button>
+            <label class="check" id="pub-captions-row" hidden>
+              <input type="checkbox" id="pub-captions" checked />
+              <span>Enviar legenda (.srt gerado da transcrição)</span>
+            </label>
+            <label class="check" id="pub-comment-row" hidden>
+              <input type="checkbox" id="pub-comment-on" />
+              <span>Postar o comentário pra fixar (fixar continua no Studio)</span>
+            </label>
+            <textarea class="input" id="pub-comment" rows="2" hidden></textarea>
+            <p class="pub-note" id="pub-note"></p>
+            <div class="pub-actions">
+              <button class="btn btn-primary" id="btn-publish">Enviar pro YouTube</button>
+              <button class="btn" type="button" id="btn-pub-cancel" hidden>Cancelar</button>
             </div>
+          </div>
 
-            <div id="pub-history" class="pub-history" hidden></div>
-            <button class="btn btn-sm" id="btn-pub-again" hidden>Enviar de novo</button>
-
-            <div id="pub-form" hidden>
-              <label class="field">
-                <span>Título <em class="pub-count mono" id="pub-title-count"></em></span>
-                <input class="input" id="pub-title" maxlength="100" />
-              </label>
-              <div class="pub-titles" id="pub-titles" hidden></div>
-              <label class="field">
-                <span>Descrição</span>
-                <textarea class="input" id="pub-desc" rows="6"></textarea>
-              </label>
-              <label class="field">
-                <span>Tags (separadas por vírgula)</span>
-                <input class="input" id="pub-tags" />
-              </label>
-              <div class="pub-row">
-                <label class="field">
-                  <span>Visibilidade</span>
-                  <select class="input" id="pub-privacy">
-                    <option value="private">Privado</option>
-                    <option value="unlisted">Não listado</option>
-                    <option value="public">Público</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Agendar (opcional)</span>
-                  <input class="input mono" type="datetime-local" id="pub-when" />
-                </label>
-              </div>
-              <label class="check" id="pub-captions-row" hidden>
-                <input type="checkbox" id="pub-captions" checked />
-                <span>Enviar legenda (.srt gerado da transcrição)</span>
-              </label>
-              <label class="check" id="pub-comment-row" hidden>
-                <input type="checkbox" id="pub-comment-on" />
-                <span>Postar o comentário pra fixar (fixar continua no Studio)</span>
-              </label>
-              <textarea class="input" id="pub-comment" rows="2" hidden></textarea>
-              <p class="pub-note" id="pub-note"></p>
-              <div class="pub-actions">
-                <button class="btn btn-primary" id="btn-publish">Enviar pro YouTube</button>
-              </div>
-            </div>
-
-            <div id="pub-progress" class="pub-progress" hidden>
-              <div class="pub-bar"><span id="pub-bar"></span></div>
-              <span class="mono" id="pub-pct">0%</span>
-            </div>
+          <div id="pub-progress" class="pub-progress" hidden>
+            <div class="pub-bar"><span id="pub-bar"></span></div>
+            <span class="mono" id="pub-pct">0%</span>
           </div>
         </div>
 
@@ -813,16 +835,34 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" id="cfg-yt-card">
           <div class="card-head"><div>
             <h2>YouTube</h2>
             <p>Publicar, legenda, comentário e retenção usam uma conexão só.</p>
           </div></div>
-          <div class="cfg-row">
-            <span id="cfg-yt-status" class="dim">—</span>
+          <div class="cfg-row yt-status">
+            <span class="yt-dot" id="cfg-yt-dot"></span>
+            <span id="cfg-yt-status">—</span>
             <span class="grow"></span>
+            <button class="btn" id="btn-cfg-yt-cancel" type="button" hidden>Cancelar</button>
             <button class="btn" id="btn-cfg-yt">Conectar YouTube</button>
           </div>
+          <div id="cfg-yt-error" class="banner err" hidden></div>
+          <p class="yt-client" id="cfg-yt-client" hidden></p>
+          <details class="yt-guide" id="cfg-yt-guide">
+            <summary>Como conectar <span class="dim">(uma vez só, uns 5 minutos)</span></summary>
+            <p class="yt-intro">O YouTube só aceita vídeos enviados por um app registrado no Google Cloud. Você cria o seu (é grátis), baixa um arquivo de credencial e escolhe ele aqui.</p>
+            <ol class="yt-steps">
+              <li><b>Crie um projeto</b> no Google Cloud, com a conta Google do seu canal. <a href="#" data-docs="https://console.cloud.google.com/projectcreate">Abrir o Google Cloud</a></li>
+              <li><b>Ative as duas APIs do YouTube</b>: a Data API v3 (envio) e a Analytics API (retenção). Em cada uma, clique em Ativar. <a href="#" data-docs="https://console.cloud.google.com/apis/library/youtube.googleapis.com">YouTube Data API v3</a> · <a href="#" data-docs="https://console.cloud.google.com/apis/library/youtubeanalytics.googleapis.com">YouTube Analytics API</a></li>
+              <li><b>Configure o acesso</b>: no Google Auth Platform, clique em Primeiros passos, dê um nome ao app e escolha <b>Externo</b>. Depois, em Público-alvo, adicione o seu e-mail como <b>usuário de teste</b>. <a href="#" data-docs="https://console.cloud.google.com/auth/overview">Abrir o Google Auth Platform</a></li>
+              <li><b>Crie a credencial</b>: em Clientes → Criar cliente, escolha o tipo <b>App para computador</b> e baixe o JSON. <a href="#" data-docs="https://console.cloud.google.com/auth/clients/create">Criar cliente</a></li>
+              <li><b>Escolha o JSON aqui</b>. <button class="btn btn-sm" type="button" data-yt-json>Escolher arquivo JSON</button></li>
+              <li><b>Conecte</b>: clique em Conectar YouTube. O navegador abre pra você escolher o canal e autorizar. Se o Google avisar que o app não foi verificado, é o seu próprio app: clique em Avançado e continue.</li>
+            </ol>
+            <p class="yt-tip">Em modo de teste, o Google desconecta a cada 7 dias. Pra não expirar, clique em <b>Publicar app</b> em Público-alvo (pra uso próprio não precisa de verificação). E enquanto o projeto não passa pela auditoria do YouTube, os vídeos enviados ficam privados: é só liberar no Studio.</p>
+          </details>
+          <input type="file" id="cfg-yt-file" accept=".json,application/json" hidden />
         </section>
 
         <section class="card">

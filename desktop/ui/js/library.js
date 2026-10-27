@@ -40,9 +40,25 @@ function dots(v) {
   }).join("");
 }
 
-function chip(status) {
-  const label = { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila", interrupted: "Interrompido" }[status] || status;
-  return `<span class="chip ${status}"><span class="d"></span>${label}</span>`;
+const PRIVACY = { private: "privado", unlisted: "não listado", public: "público" };
+const when = (iso) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+
+// A finished edit already sent to YouTube says "Publicado"; the details (as
+// sent) on hover, the live state on its Resultado.
+function publishedTip(p) {
+  const parts = [p.published_at ? `Enviado ao YouTube em ${when(p.published_at)}` : "Enviado ao YouTube"];
+  if (p.publish_at) parts.push(`programado pra ${when(p.publish_at)}`);
+  else if (PRIVACY[p.privacy]) parts.push(PRIVACY[p.privacy]);
+  if (p.count > 1) parts.push(`${p.count} envios`);
+  return parts.join(" · ");
+}
+
+function chip(v) {
+  if (v.status === "done" && v.published) {
+    return `<span class="chip published" title="${escapeHtml(publishedTip(v.published))}"><span class="d"></span>Publicado</span>`;
+  }
+  const label = { done: "Pronto", running: "Rodando", failed: "Falhou", idle: "Parado", queued: "Na fila", interrupted: "Interrompido" }[v.status] || v.status;
+  return `<span class="chip ${v.status}"><span class="d"></span>${label}</span>`;
 }
 
 // The video's real name: the one given on Novo edit, else its title once
@@ -60,8 +76,10 @@ function stageText(stage) {
 function rowHTML(v) {
   const stageColor = v.status === "failed" ? "var(--err)" : v.status === "running" ? "var(--run)" : "var(--faint)";
   const stageLabel = stageText(v.current_stage);
+  const on = selected.has(v.id);
   return `
-  <div class="row ${v.status}" data-id="${v.id}">
+  <div class="row ${v.status}${on ? " selected" : ""}" data-id="${v.id}">
+    <label class="sel"><input type="checkbox" data-select="${escapeHtml(v.id)}"${on ? " checked" : ""} aria-label="Selecionar ${escapeHtml(name(v))}" /></label>
     <div class="vid">
       ${v.has_thumbnail
         ? `<img class="thumb" loading="lazy" alt="" src="${api.API}/api/videos/${encodeURIComponent(v.id)}/file/thumbnail" />`
@@ -77,7 +95,7 @@ function rowHTML(v) {
       <div class="dots" data-dots>${dots(v)}</div>
       <span class="stage-name mono" data-stage style="color:${stageColor}">${stageLabel}</span>
     </div>
-    <div data-chip>${chip(v.status)}</div>
+    <div data-chip>${chip(v)}</div>
     <div class="row-acts">${actsHTML(v)}</div>
   </div>`;
 }
@@ -100,6 +118,78 @@ function actsHTML(v) {
     stoppable ? `<button class="btn btn-sm btn-danger" type="button" data-act="stop">Cancelar</button>` : "",
     `<button class="btn btn-sm btn-icon" type="button" data-act="delete" title="Excluir vídeo" aria-label="Excluir vídeo">${TRASH}</button>`,
   ].join("");
+}
+
+// ── Selecting several, to delete them together ──────────────────────────────
+// The header turns into the bar for what's selected; deleting asks first, in
+// the bar itself, and says when one of them is still running.
+const selected = new Set(); // video ids
+let bulk = { armed: false, busy: null }; // busy: {done, total} while deleting
+
+function renderBulk() {
+  const shown = matching(lastVideos);
+  const n = selected.size;
+  el("lib-head").classList.toggle("selecting", n > 0);
+  el("lib-bulk").hidden = n === 0;
+  const all = el("lib-select-all");
+  const picked = shown.filter((v) => selected.has(v.id)).length;
+  all.checked = shown.length > 0 && picked === shown.length;
+  all.indeterminate = picked > 0 && picked < shown.length;
+  all.disabled = !!bulk.busy;
+  if (!n) { bulk.armed = false; return; }
+  const running = lastVideos.filter((v) => selected.has(v.id) && (v.status === "running" || v.status === "queued")).length;
+  el("lib-bulk-count").textContent = `${n} ${n === 1 ? "selecionada" : "selecionadas"}`;
+  let note = "";
+  let acts;
+  if (bulk.busy) {
+    acts = `<span class="bulk-progress"><span class="mini-spin"></span>Excluindo ${Math.min(bulk.busy.done + 1, bulk.busy.total)} de ${bulk.busy.total}…</span>`;
+  } else if (bulk.armed) {
+    note = `Apaga também os arquivos da pasta de saída; os vídeos originais ficam.${running ? ` ${running === 1 ? "Uma está rodando e vai ser cancelada." : `${running} estão rodando e vão ser canceladas.`}` : ""}`;
+    acts = `<button class="btn btn-sm" type="button" data-bulk="disarm">Cancelar</button>` +
+      `<button class="btn btn-sm btn-danger confirm" type="button" data-bulk="delete">Excluir ${n === 1 ? "1 edição" : `${n} edições`}</button>`;
+  } else {
+    acts = `<button class="btn btn-sm" type="button" data-bulk="clear">Limpar seleção</button>` +
+      `<button class="btn btn-sm btn-danger" type="button" data-bulk="arm">${TRASH}Excluir</button>`;
+  }
+  el("lib-bulk-note").textContent = note;
+  el("lib-bulk-acts").innerHTML = acts;
+}
+
+function select(id, on) {
+  if (on) selected.add(id); else selected.delete(id);
+  bulk.armed = false;
+  document.querySelector(`.row[data-id="${CSS.escape(id)}"]`)?.classList.toggle("selected", on);
+  renderBulk();
+}
+
+async function deleteSelected() {
+  const ids = [...selected];
+  bulk = { armed: false, busy: { done: 0, total: ids.length } };
+  renderBulk();
+  showError("");
+  const failed = [];
+  for (const id of ids) {
+    close(id);
+    try {
+      await api.deleteVideo(id);
+      selected.delete(id);
+    } catch (err) {
+      failed.push(`${name(lastVideos.find((v) => v.id === id) || { id })} (${err.message || err})`);
+    }
+    bulk.busy.done += 1;
+    renderBulk();
+  }
+  bulk = { armed: false, busy: null };
+  if (failed.length) showError(`Não deu pra excluir ${failed.length === 1 ? "esta" : "estas"}: ${failed.join("; ")}`);
+  await refresh();
+}
+
+function bulkAct(what) {
+  if (what === "clear") { selected.clear(); document.querySelectorAll(".row.selected").forEach((r) => r.classList.remove("selected")); document.querySelectorAll("[data-select]").forEach((c) => { c.checked = false; }); }
+  else if (what === "arm") bulk.armed = true;
+  else if (what === "disarm") bulk.armed = false;
+  else if (what === "delete") { deleteSelected(); return; }
+  renderBulk();
 }
 
 function redrawActs(id) {
@@ -168,6 +258,7 @@ function haystack(v) {
     fileOf(v.output), // the final video, e.g. IMG_3724_final.mp4
     v.derived_from, // a short's long
     v.type,
+    v.status === "done" && v.published ? "publicado" : "", // as the chip says
   ].filter(Boolean).join(" "));
 }
 
@@ -179,9 +270,11 @@ function matching(videos) {
 
 function render(videos) {
   lastVideos = videos;
+  if (!bulk.busy) for (const id of selected) if (!videos.some((v) => v.id === id)) selected.delete(id); // gone
   const shown = matching(videos);
   const query = el("lib-search").value.trim();
   el("rows").innerHTML = shown.map(rowHTML).join("");
+  renderBulk();
   el("empty").hidden = videos.length > 0;
   el("lib-head").hidden = shown.length === 0;
   el("lib-search-box").hidden = videos.length === 0;
@@ -248,7 +341,22 @@ export default {
   id: "library",
   mount() {
     if (!wired) {
+      el("rows").addEventListener("change", (e) => {
+        const box = e.target.closest("[data-select]");
+        if (box) select(box.dataset.select, box.checked);
+      });
+      el("lib-select-all").addEventListener("change", (e) => {
+        const shown = matching(lastVideos);
+        shown.forEach((v) => { if (e.target.checked) selected.add(v.id); else selected.delete(v.id); });
+        bulk.armed = false;
+        render(lastVideos);
+      });
+      el("lib-bulk-acts").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-bulk]");
+        if (b && !offline) bulkAct(b.dataset.bulk);
+      });
       el("rows").addEventListener("click", (e) => {
+        if (e.target.closest(".sel")) return; // ticking a box isn't opening the video
         const button = e.target.closest("[data-act]");
         if (button) {
           if (!offline) act(button.closest(".row").dataset.id, button.dataset.act);
@@ -273,6 +381,9 @@ export default {
     clearInterval(timer); // defensive: never two pollers
     checkSetup();
     refresh();
+    // A video deleted on YouTube stops being "Publicado" (the engine asks
+    // YouTube at most once a minute, all of them in one go).
+    api.refreshPublished().then((r) => r?.changed && refresh()).catch(() => {});
     timer = setInterval(refresh, 5000); // fallback poll: SSE only covers live jobs
   },
   unmount() {

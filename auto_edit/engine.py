@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -244,6 +245,23 @@ def summarize(
         "stages": {name: info.get("status") for name, info in p.get("stages", {}).items()},
         "estimated_tokens": tokens,
         "output": str(out) if out else None,
+        "published": _published(ws),
+    }
+
+
+def _published(ws: Path) -> dict | None:
+    """The last send to YouTube still there (publish.json), for "Publicado" in
+    Edições. Read from the record (one cheap read per video); the deleted ones
+    get marked when Edições or the Resultado card asks YouTube."""
+    sent = yt.on_youtube(yt.read_record(ws).get("youtube", []))
+    if not sent:
+        return None
+    last = sent[-1]
+    return {
+        "privacy": last.get("privacy"),
+        "publish_at": last.get("publish_at"),
+        "published_at": last.get("published_at"),
+        "count": len(sent),
     }
 
 
@@ -597,6 +615,8 @@ _OPENABLE_URL = re.compile(
     # where to install the agent CLIs (Settings → "como instalar")
     r"|^https://(docs\.claude\.com|cursor\.com|antigravity\.google|opencode\.ai|ollama\.com"
     r"|developers\.openai\.com|openrouter\.ai)(/|$)"
+    # the Google Cloud console (Configurações → YouTube, step by step)
+    r"|^https://console\.cloud\.google\.com/"
 )
 
 
@@ -884,7 +904,28 @@ def youtube_account() -> dict:
         "connecting": connecting,
         "error": error,
         "has_client_secret": yt.client_config() is not None,
+        "client_id": yt.client_id(),
     }
+
+
+YT_CLIENT_MAX = 64 * 1024  # the JSON Google hands out is well under 1 KB
+
+
+def set_youtube_client(*, path: str | None = None, content: str | None = None) -> dict:
+    """Keep the Google OAuth client from the JSON picked in Configurações →
+    YouTube (`path`) or read by the browser (`content`). The account state, or
+    `yt.AuthError` saying what's wrong with the file."""
+    if content is None:
+        p = Path(path or "").expanduser()
+        if p.suffix.lower() != ".json" or not p.is_file():
+            raise yt.AuthError("Escolha o arquivo .json que o Google Cloud baixou.")
+        if p.stat().st_size > YT_CLIENT_MAX:
+            raise yt.AuthError("Esse arquivo é grande demais pra ser um cliente OAuth do Google.")
+        content = p.read_text(encoding="utf-8")
+    yt.save_client(content)
+    with _yt_lock:
+        _yt_connect["error"] = None  # an old failure no longer applies
+    return youtube_account()
 
 
 def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
@@ -892,7 +933,7 @@ def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
     with _yt_lock:
         already = _yt_connect["status"] == "connecting"
         if not already:
-            _yt_connect.update(status="connecting", error=None)
+            _yt_connect.update(status="connecting", error=None, cancelled=False)
     if already:  # outside the lock: youtube_account() takes it too
         return youtube_account()
 
@@ -903,15 +944,81 @@ def connect_youtube(*, connect: Callable[[], object] = yt.connect) -> dict:
         except Exception as exc:  # surfaced to the UI as-is
             error = str(exc)
         with _yt_lock:
-            _yt_connect.update(status="idle", error=error)
+            # cancelled from the app (this attempt): the way it ended isn't an error
+            _yt_connect.update(status="idle", error=None if _yt_connect.get("cancelled") else error)
 
     threading.Thread(target=_run, name="youtube-connect", daemon=True).start()
+    return youtube_account()
+
+
+def cancel_youtube_connect(*, wait: float = 5.0) -> dict:
+    """Stop waiting for the browser (the tab was closed, or it was the wrong
+    account). Waits a moment for the consent to wind down, then the state."""
+    with _yt_lock:
+        waiting = _yt_connect["status"] == "connecting"
+        if waiting:
+            _yt_connect["cancelled"] = True
+    if waiting and yt.cancel_consent():
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            with _yt_lock:
+                if _yt_connect["status"] != "connecting":
+                    break
+            time.sleep(0.1)
     return youtube_account()
 
 
 def disconnect_youtube() -> dict:
     yt.disconnect()
     return youtube_account()
+
+
+def publish_live(video_id: str, *, fetch: Callable[[list[str]], dict] | None = None) -> dict | None:
+    """The sent videos as YouTube has them now (the Publicar card asks after
+    showing what publish.json says). `checked` False: couldn't ask (not
+    connected, offline); True and an id missing: it was deleted."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    ids = [r["video_id"] for r in yt.read_record(ws).get("youtube", []) if r.get("video_id")]
+    if not ids or not yt.is_connected():
+        return {"checked": False, "videos": {}}
+    try:
+        videos = (fetch or yt.live_status)(ids)
+    except Exception as exc:  # network, expired token: the card keeps the record
+        return {"checked": False, "videos": {}, "error": str(exc)}
+    yt.mark_gone(ws, set(ids), set(videos))  # deleted on YouTube: Edições stops saying "Publicado"
+    return {"checked": True, "videos": videos}
+
+
+PUBLISHED_CHECK_EVERY = 60.0  # seconds between Edições' checks on YouTube
+_published_checked_at: float | None = None
+
+
+def refresh_published(
+    *, fetch: Callable[[list[str]], dict] | None = None, now: Callable[[], float] = time.monotonic,
+) -> dict:
+    """Ask YouTube, in one go, which sent videos are still there (Edições,
+    when it opens) and mark the deleted ones in each publish.json. At most
+    once a minute. {"checked", "changed"}: changed → the list is stale."""
+    global _published_checked_at
+    if _published_checked_at is not None and now() - _published_checked_at < PUBLISHED_CHECK_EVERY:
+        return {"checked": False, "changed": False}
+    root = library_root()
+    sent: dict[Path, set[str]] = {}
+    for record in root.glob(f"*/{yt.RECORD_NAME}") if root.is_dir() else []:
+        ids = {r["video_id"] for r in yt.read_record(record.parent).get("youtube", []) if r.get("video_id")}
+        if ids:
+            sent[record.parent] = ids
+    if not sent or not yt.is_connected():
+        return {"checked": False, "changed": False}
+    try:
+        found = set((fetch or yt.live_status)(sorted(set().union(*sent.values()))))
+    except Exception as exc:  # network, expired token: the list keeps what was recorded
+        return {"checked": False, "changed": False, "error": str(exc)}
+    _published_checked_at = now()
+    changed = [yt.mark_gone(ws, ids, found & ids) for ws, ids in sent.items()]
+    return {"checked": True, "changed": any(changed)}
 
 
 def publish_state(video_id: str) -> dict | None:
@@ -1456,7 +1563,7 @@ class JobManager:
             raise yt.PublishError(state["reason"])
         if not yt.is_connected():
             raise yt.PublishError("YouTube não conectado. Conecte a conta antes de publicar.")
-        if state["published"] and not force:
+        if yt.on_youtube(state["published"]) and not force:
             raise yt.PublishError("este vídeo já foi enviado pro YouTube")
         if self._busy(video_id):
             raise yt.PublishError(f"{video_id} já tem um job rodando")

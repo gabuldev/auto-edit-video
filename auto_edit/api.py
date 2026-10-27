@@ -48,7 +48,11 @@ Endpoints
     GET  /api/publish/youtube                 (conta conectada?)
     POST /api/publish/youtube/connect         abre o OAuth no navegador
     POST /api/publish/youtube/disconnect
+    POST /api/publish/youtube/connect/cancel  para de esperar a autorização no navegador
+    PUT  /api/publish/youtube/client          {path} | {content}: o JSON do OAuth client
+    POST /api/publish/youtube/refresh         Edições: quais enviados ainda estão no YouTube
     GET  /api/videos/<id>/publish             (defaults do metadata + histórico)
+    GET  /api/videos/<id>/publish/live        como os vídeos enviados estão agora no YouTube
     POST /api/videos/<id>/publish/youtube     {title, description, tags, privacy,
                                                publish_at, force}  upload (job, SSE)
     GET  /api/videos/<id>/retention           (análise salva da curva de retenção)
@@ -331,6 +335,28 @@ def create_app(jobs: engine.JobManager | None = None):
     def youtube_disconnect():
         return jsonify(engine.disconnect_youtube())
 
+    @app.post("/api/publish/youtube/connect/cancel")
+    def youtube_connect_cancel():
+        """Stop waiting for the browser's authorization (tab closed)."""
+        return jsonify(engine.cancel_youtube_connect())
+
+    @app.post("/api/publish/youtube/refresh")
+    def youtube_refresh():
+        """Edições: which sent videos are still on YouTube (once a minute)."""
+        return jsonify(engine.refresh_published())
+
+    @app.put("/api/publish/youtube/client")
+    def youtube_client():
+        """The OAuth client JSON from Google Cloud: {path} (app) or {content}."""
+        body = request.get_json(silent=True) or {}
+        content = body.get("content")
+        try:
+            return jsonify(engine.set_youtube_client(
+                path=body.get("path"), content=content if isinstance(content, str) else None,
+            ))
+        except yt.AuthError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.get("/api/videos/<video_id>/publish")
     def publish_state(video_id: str):
         data = engine.publish_state(video_id)
@@ -341,6 +367,13 @@ def create_app(jobs: engine.JobManager | None = None):
             data["job"] = {"id": job.id, "status": job.status}
         return jsonify(data)
 
+    @app.get("/api/videos/<video_id>/publish/live")
+    def publish_live(video_id: str):
+        data = engine.publish_live(video_id)
+        if data is None:
+            return jsonify({"error": "not_found", "id": video_id}), 404
+        return jsonify(data)
+
     @app.post("/api/videos/<video_id>/publish/youtube")
     def publish_youtube(video_id: str):
         body = request.get_json(silent=True) or {}
@@ -348,7 +381,7 @@ def create_app(jobs: engine.JobManager | None = None):
         state = engine.publish_state(video_id)
         if state is None:
             return jsonify({"error": "not_found", "id": video_id}), 404
-        if state["published"] and not force:
+        if yt.on_youtube(state["published"]) and not force:
             return jsonify({"error": "este vídeo já foi enviado pro YouTube", "published": state["published"]}), 409
         tags = body.get("tags") or []
         if isinstance(tags, str):
@@ -700,7 +733,7 @@ def create_app(jobs: engine.JobManager | None = None):
     def open_url():
         body = request.get_json(silent=True) or {}
         if not engine.open_url(body.get("url")):
-            return jsonify({"error": "só links do YouTube e das CLIs de agente"}), 400
+            return jsonify({"error": "só links do YouTube, do Google Cloud e das CLIs de agente"}), 400
         return jsonify({"opened": body["url"]})
 
     @app.delete("/api/videos/<video_id>")

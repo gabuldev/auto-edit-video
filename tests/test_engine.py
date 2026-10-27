@@ -959,6 +959,16 @@ class TestEditName:
         # display only: the workspace and file name stay the file's
         assert ws.name == "IMG_3725" and engine.summarize(ws)["video_name"] == "IMG_3725"
 
+    def test_published_says_what_was_last_sent(self, tmp_path, monkeypatch):
+        """Edições shows "Publicado" once publish.json has a YouTube upload."""
+        from auto_edit.publish import youtube as yt
+        ws = self._ws(tmp_path, monkeypatch)
+        assert engine.summarize(ws)["published"] is None  # never sent (or from before publishing existed)
+        yt.add_record(ws, "youtube", {"video_id": "a", "url": "u", "privacy": "private"})
+        yt.add_record(ws, "youtube", {"video_id": "b", "url": "u", "privacy": "private", "publish_at": "2026-10-28T19:51:00Z"})
+        pub = engine.summarize(ws)["published"]
+        assert pub["count"] == 2 and pub["publish_at"] == "2026-10-28T19:51:00Z" and pub["published_at"]
+
     def test_blank_or_missing_name_falls_back(self, tmp_path, monkeypatch):
         from auto_edit import pipeline as pl
         ws = self._ws(tmp_path, monkeypatch)

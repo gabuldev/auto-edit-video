@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import urllib.request
 from pathlib import Path
 
 from auto_edit import config as cfg
@@ -34,6 +36,34 @@ LEGACY_TOKENS = ("youtube_publish.json",)
 
 class AuthError(RuntimeError):
     """Sem conexão válida com o YouTube; a mensagem diz o que fazer."""
+
+
+# The consent waits for the browser to come back to a local server. A closed
+# tab never does: it gives up after CONSENT_TIMEOUT, and `cancel_consent()`
+# ends it at once.
+CONSENT_TIMEOUT = 300
+_consent = None  # the flow waiting for the browser, if any
+_cancelled = threading.Event()
+
+
+def cancel_consent() -> bool:
+    """Stop waiting for the browser: a request to the flow's own local server
+    wakes it up, and it ends in an error `consent_cancelled()` explains."""
+    flow = _consent
+    uri = getattr(flow, "redirect_uri", None) if flow is not None else None
+    if not uri:
+        return False
+    _cancelled.set()
+    try:
+        urllib.request.urlopen(f"{uri}?error=access_denied", timeout=3).read()
+    except Exception:  # noqa: BLE001 - it only has to wake the server up
+        pass
+    return True
+
+
+def consent_cancelled() -> bool:
+    """The last consent ended because someone cancelled it (not an error)."""
+    return _cancelled.is_set()
 
 
 def token_path() -> Path:
@@ -69,6 +99,42 @@ def client_config() -> dict | None:
                 }
             }
     return None
+
+
+def client_id() -> str | None:
+    """Which OAuth client is set up (shown in Configurações; not a secret)."""
+    installed = (client_config() or {}).get("installed")
+    return installed.get("client_id") if isinstance(installed, dict) else None
+
+
+def save_client(raw: str) -> str:
+    """Keep the OAuth client from the JSON the Google Cloud console downloads
+    (a "Desktop app" client) where `client_config()` finds it: the app picks
+    the file, no env var or restart. Returns the client id."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise AuthError("Esse arquivo não é um JSON.") from None
+    data = data if isinstance(data, dict) else {}
+    installed = data.get("installed")
+    if "web" in data and not installed:
+        raise AuthError(
+            "Esse cliente é do tipo 'Aplicativo da Web'. Crie um do tipo "
+            "'App para computador' (Desktop app) e escolha o JSON dele."
+        )
+    if not (isinstance(installed, dict) and installed.get("client_id") and installed.get("client_secret")):
+        raise AuthError(
+            "Esse JSON não é um cliente OAuth do Google. Baixe o do cliente "
+            "'App para computador' em Google Auth Platform → Clientes."
+        )
+    path = cfg.tokens_dir() / CLIENT_NAME
+    path.write_text(json.dumps({
+        "client_id": installed["client_id"],
+        "client_secret": installed["client_secret"],
+        "token_uri": installed.get("token_uri"),
+    }), encoding="utf-8")
+    path.chmod(0o600)
+    return installed["client_id"]
 
 
 def _granted() -> set[str]:
@@ -146,13 +212,24 @@ def credentials(*, interactive: bool = False):
         if config is None:
             raise AuthError(
                 "Falta o OAuth client do Google: no Google Cloud, habilite a YouTube Data "
-                "API v3 e a YouTube Analytics API, crie um OAuth client 'Desktop app', "
-                "baixe o JSON e aponte AUTO_EDIT_YT_CLIENT_SECRET pra ele."
+                "API v3 e a YouTube Analytics API, crie um OAuth client 'Desktop app' e "
+                "baixe o JSON. No app, escolha o JSON em Configurações → YouTube; na CLI, "
+                "aponte AUTO_EDIT_YT_CLIENT_SECRET pra ele."
             )
-        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google_auth_oauthlib.flow import InstalledAppFlow, WSGITimeoutError
 
+        global _consent
         flow = InstalledAppFlow.from_client_config(config, SCOPES)
-        creds = flow.run_local_server(port=0, open_browser=True)
+        _cancelled.clear()
+        _consent = flow
+        try:
+            creds = flow.run_local_server(port=0, open_browser=True, timeout_seconds=CONSENT_TIMEOUT)
+        except WSGITimeoutError:
+            raise AuthError(
+                f"Ninguém autorizou no navegador em {CONSENT_TIMEOUT // 60} minutos. Clique em Conectar de novo."
+            ) from None
+        finally:
+            _consent = None
 
     path = token_path()
     path.write_text(creds.to_json())

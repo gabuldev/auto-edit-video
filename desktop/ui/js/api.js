@@ -11,7 +11,8 @@ async function json(path, opts) {
 
 export async function health() {
   try {
-    return (await fetch(`${API}/api/health`, { cache: "no-store" })).ok;
+    // A hung engine accepts the connection and never answers: give up, it's down.
+    return (await fetch(`${API}/api/health`, { cache: "no-store", signal: AbortSignal.timeout(5000) })).ok;
   } catch {
     return false;
   }
@@ -80,6 +81,9 @@ export const connectYoutube = () => json("/api/publish/youtube/connect", { metho
 
 export const publishState = (id) => json(`/api/videos/${encodeURIComponent(id)}/publish`);
 
+// Edições: which sent videos are still on YouTube (the engine asks at most once a minute).
+export const refreshPublished = () => json("/api/publish/youtube/refresh", { method: "POST" });
+export const publishLive = (id) => json(`/api/videos/${encodeURIComponent(id)}/publish/live`);
 export const publishYoutube = (id, payload) =>
   json(`/api/videos/${encodeURIComponent(id)}/publish/youtube`, {
     method: "POST",
@@ -139,6 +143,11 @@ export const pullOllama = (model) =>
   json("/api/agents/ollama/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) });
 
 export const disconnectYoutube = () => json("/api/publish/youtube/disconnect", { method: "POST" });
+// Stop waiting for the browser's authorization (the tab was closed).
+export const cancelYoutubeConnect = () => json("/api/publish/youtube/connect/cancel", { method: "POST" });
+// The OAuth client JSON from Google Cloud: {path} (app dialog) or {content}.
+export const setYoutubeClient = (body) =>
+  json("/api/publish/youtube/client", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const setupState = () => json("/api/setup");
 

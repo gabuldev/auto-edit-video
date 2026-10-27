@@ -86,6 +86,86 @@ def test_env_client_secret_wins(home, tmp_path, monkeypatch):
     assert ya.client_config()["installed"]["client_id"] == "env"
 
 
+DESKTOP_CLIENT = {"installed": {
+    "client_id": "123-abc.apps.googleusercontent.com", "client_secret": "GOCSPX-x",
+    "token_uri": "https://oauth2.googleapis.com/token", "redirect_uris": ["http://localhost"],
+}}
+
+
+def test_save_client_from_the_downloaded_json(home):
+    """Configurações → YouTube: the JSON the console downloads, no env var."""
+    assert ya.client_config() is None and ya.client_id() is None
+    assert ya.save_client(json.dumps(DESKTOP_CLIENT)) == "123-abc.apps.googleusercontent.com"
+    assert ya.client_config()["installed"]["client_secret"] == "GOCSPX-x"
+    assert ya.client_id() == "123-abc.apps.googleusercontent.com"
+
+
+def test_save_client_replaces_the_previous_one(home):
+    ya.save_client(json.dumps(DESKTOP_CLIENT))
+    other = {"installed": {**DESKTOP_CLIENT["installed"], "client_id": "456-new.apps.googleusercontent.com"}}
+    ya.save_client(json.dumps(other))
+    assert ya.client_id() == "456-new.apps.googleusercontent.com"
+
+
+@pytest.mark.parametrize("raw, message", [
+    ("not json", "não é um JSON"),
+    (json.dumps({"web": {"client_id": "w", "client_secret": "s"}}), "Aplicativo da Web"),
+    (json.dumps({"installed": {"client_id": "only-id"}}), "não é um cliente OAuth"),
+    (json.dumps(["x"]), "não é um cliente OAuth"),
+])
+def test_save_client_refuses_what_wont_connect(home, raw, message):
+    with pytest.raises(ya.AuthError, match=message):
+        ya.save_client(raw)
+    assert ya.client_config() is None
+
+
+@pytest.fixture
+def consent(home, monkeypatch):
+    """The real local-server consent, minus the browser it would open."""
+    import google_auth_oauthlib.flow as gflow
+
+    monkeypatch.setattr(gflow.webbrowser, "get", lambda *a, **k: type("B", (), {"open": lambda *a, **k: True})())
+    ya.save_client(json.dumps(DESKTOP_CLIENT))
+
+
+def _consent_in_thread():
+    import threading
+    out = {}
+
+    def run():
+        try:
+            ya.credentials(interactive=True)
+        except Exception as exc:  # noqa: BLE001
+            out["error"] = exc
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return t, out
+
+
+def test_closed_tab_gives_up_after_the_timeout(consent, monkeypatch):
+    """Nobody comes back from the browser: an error, not a hang."""
+    monkeypatch.setattr(ya, "CONSENT_TIMEOUT", 1)
+    t, out = _consent_in_thread()
+    t.join(10)
+    assert not t.is_alive()
+    assert isinstance(out["error"], ya.AuthError) and "Ninguém autorizou" in str(out["error"])
+    assert not ya.consent_cancelled()
+
+
+def test_cancel_wakes_the_waiting_consent(consent):
+    import time
+    t, out = _consent_in_thread()
+    for _ in range(100):  # until the local server is up
+        if getattr(ya._consent, "redirect_uri", None):
+            break
+        time.sleep(0.05)
+    assert ya.cancel_consent() is True
+    t.join(10)
+    assert not t.is_alive() and "error" in out
+    assert ya.consent_cancelled()
+    assert ya.cancel_consent() is False  # nothing waiting anymore
+
+
 def test_disconnect_keeps_the_client(home):
     _token(ya.SCOPES)
     (cfg.tokens_dir() / ya.CLIENT_NAME).write_text(json.dumps({"client_id": "cid", "client_secret": "cs"}), encoding="utf-8")
