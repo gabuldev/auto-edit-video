@@ -28,6 +28,7 @@ from typing import Callable, Iterator
 from auto_edit import pipeline as pl
 from auto_edit import retention as ret
 from auto_edit.chapters import description_with_chapters
+from auto_edit import shell
 from auto_edit import shorts as sh
 from auto_edit.publish import youtube as yt
 from auto_edit.workspace import init_workspace, workspace_root
@@ -1134,7 +1135,7 @@ class JobManager:
         cold_open: bool = False,
         reorder: bool = False,
     ) -> Job:
-        video = Path(video_path).resolve()
+        video = Path(shell.native_path(Path(video_path).resolve()))
         if not video.exists():
             raise FileNotFoundError(f"file not found: {video}")
         ws = init_workspace(
@@ -1359,7 +1360,7 @@ def run_clipper(
     env["AUTO_EDIT_CLIP_MAX_DUR"] = f"{max_duration:g}"
     proc = popen(
         [
-            "bash", str(ralph), "--agent", str(ws.resolve()),
+            shell.bash(env), str(ralph), "--agent", shell.native_path(ws.resolve()),
             "clip", str((ws / sh.CLIPS_PLAN_NAME).resolve()),
             str(ralph.parent / "agents" / "clipper.md"),
         ],
@@ -1416,7 +1417,7 @@ def run_workspace(
         env["AUTO_EDIT_ASSETS_OVERLAYS"] = str(Path(overlays_dir).expanduser().resolve())
 
     proc = popen(
-        ["bash", str(ralph), str(ws.resolve())],
+        [shell.bash(env), str(ralph), shell.native_path(ws.resolve())],
         cwd=str(ralph.parent),
         env=env,
         stdout=subprocess.PIPE,
@@ -1428,10 +1429,12 @@ def run_workspace(
     _register(proc)
 
     last_stage: str | None = None
+    said_anything = False
     if proc.stdout is not None:
         for raw in proc.stdout:
             line = raw.rstrip("\n")
             if line:
+                said_anything = True
                 emit({"type": "log", "line": line})
             cur = _current_stage(ws)
             if cur and cur != last_stage:
@@ -1442,6 +1445,13 @@ def run_workspace(
     if _was_cancelled():
         emit({"type": "error", "status": "cancelled", "message": "parado", "stage": _current_stage(ws)})
         return rc
+    if rc == 0 and not said_anything:
+        # ralph always logs "Starting pipeline"; silence means bash never ran
+        # it (on Windows: the WSL launcher instead of the bundled Git bash).
+        msg = f"o bash não rodou o pipeline ({shell.bash(env)})"
+        emit({"type": "log", "line": msg})
+        emit({"type": "error", "status": "failed", "message": msg, "stage": _current_stage(ws)})
+        return 1
     if rc == 0:
         out = None
         try:

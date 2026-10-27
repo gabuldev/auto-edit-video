@@ -19,6 +19,7 @@ from rich.table import Table
 from auto_edit import pipeline as pl
 from auto_edit import plan as plan_mod
 from auto_edit import probe as probe_mod
+from auto_edit import shell
 from auto_edit import shorts as sh
 from auto_edit._version import __version__
 from auto_edit.ideas import ideas_app
@@ -280,7 +281,7 @@ def _run_pipeline(
 
     console.print("[bold green]Starting pipeline...[/bold green]")
     result = subprocess.run(
-        ["bash", str(RALPH_SCRIPT), str(ws.resolve())],
+        [shell.bash(env), str(RALPH_SCRIPT), shell.native_path(ws.resolve())],
         cwd=RALPH_SCRIPT.parent,
         env=env,
     )
@@ -507,7 +508,7 @@ def shorts(
         env["AUTO_EDIT_CLIP_MAX_DUR"] = f"{max_dur:g}"
         result = subprocess.run(
             [
-                "bash", str(RALPH_SCRIPT), "--agent", str(long_ws.resolve()),
+                shell.bash(env), str(RALPH_SCRIPT), "--agent", shell.native_path(long_ws.resolve()),
                 "clip", str(plan_path.resolve()),
                 str(RALPH_SCRIPT.parent / "agents" / "clipper.md"),
             ],
@@ -579,7 +580,7 @@ def shorts(
         console.print(f"[cyan]Workspace:[/cyan] {ws}")
 
         result = subprocess.run(
-            ["bash", str(RALPH_SCRIPT), str(ws.resolve())],
+            [shell.bash(env), str(RALPH_SCRIPT), shell.native_path(ws.resolve())],
             cwd=RALPH_SCRIPT.parent,
             env=env,
         )

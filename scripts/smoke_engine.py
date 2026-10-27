@@ -154,6 +154,25 @@ def main(engine: Path) -> None:
              "assert styles.render_thumbnail(t, title='Teste do layout em HTML', sub='novo').startswith(b'\\x89PNG')"],
             {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "HTML thumbnail layout renders", timeout=120)
 
+        # The engine starts ralph.sh itself (engine.run_workspace) with the
+        # app's PATH. On Windows a bare "bash" there found System32's WSL
+        # launcher, which exits 0 without running anything: the edit
+        # "finished" with no stage run. ralph always logs "Starting pipeline".
+        ws = Path(d) / "workspace" / "smoke"
+        ws.mkdir(parents=True)
+        (ws / "pipeline.json").write_text(json.dumps({
+            "video_path": str(wav), "video_name": "smoke", "type": "short", "language": "pt",
+            "current_stage": "done", "iteration": 1, "max_iterations": 1, "stages": {},
+        }))
+        out = run([str(python), "-c",
+                   "import sys, json; from pathlib import Path; from auto_edit import engine; evs = []; "
+                   "engine.run_workspace(Path(sys.argv[1]), emit=evs.append); print(json.dumps(evs))",
+                   str(ws)], {**env, "AUTO_EDIT_HOME": str(Path(d) / "home")}, "engine runs ralph.sh", timeout=120)
+        evs = json.loads(out.strip().splitlines()[-1])
+        if not any("Starting pipeline" in e.get("line", "") for e in evs):
+            raise SystemExit(f"FAIL the engine's bash never ran ralph.sh:\n{json.dumps(evs)[-1500:]}")
+        log("ok: ralph.sh started by the engine")
+
     port = "8799"
     proc = subprocess.Popen([str(python), "-m", "auto_edit.cli", "serve", "--port", port],
                             env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

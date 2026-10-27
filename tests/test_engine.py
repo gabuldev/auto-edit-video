@@ -334,6 +334,19 @@ class TestRunWorkspace:
         assert evs[-1]["type"] == "error"
         assert evs[-1]["stage"] == "execute"
 
+    def test_silent_exit_is_an_error(self, tmp_path, monkeypatch):
+        # Windows' WSL bash.exe exits 0 without ever running ralph.sh.
+        ws = _mkws(tmp_path, "vid")
+        ralph = tmp_path / "ralph.sh"
+        ralph.write_text("#!/bin/bash\n")
+        monkeypatch.setattr(engine, "ralph_path", lambda: ralph)
+
+        evs: list[dict] = []
+        rc = engine.run_workspace(ws, emit=evs.append, popen=lambda *a, **k: _FakeProc([], 0))
+        assert rc == 1
+        assert evs[-1]["type"] == "error"
+        assert "bash" in evs[-1]["message"]
+
     def test_missing_ralph_errors(self, tmp_path, monkeypatch):
         ws = _mkws(tmp_path, "vid")
         monkeypatch.setattr(engine, "ralph_path", lambda: tmp_path / "nope.sh")
