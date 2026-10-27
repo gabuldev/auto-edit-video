@@ -111,8 +111,22 @@ struct Embedded {
     bin: PathBuf,
 }
 
+/// Windows: resource_dir() comes canonicalized as `\\?\C:\...`. The bundled
+/// Git bash can't start from a path like that (it exits 0 without running
+/// ralph.sh), and it ends up in PATH and every engine variable.
+fn plain_path(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy().into_owned();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    p
+}
+
 fn embedded_engine(resource_dir: Option<PathBuf>) -> Option<Embedded> {
-    let root = resource_dir?.join("engine");
+    let root = plain_path(resource_dir?).join("engine");
     let python = if cfg!(windows) {
         root.join("python").join("python.exe")
     } else {
