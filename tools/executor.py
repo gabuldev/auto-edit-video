@@ -32,12 +32,30 @@ FILTER_SCRIPT_THRESHOLD = 100  # above this, write filter to file (avoids ARG_MA
 # Override with AUTO_EDIT_SEGMENT_THRESHOLD.
 DEFAULT_SEGMENT_THRESHOLD = 12
 
+# Above 1080p every frame is ~4x bigger (4K, often 10-bit), so even a handful
+# of branches is enough to OOM the single graph — 10 cuts of a 4K DJI file on
+# 16 GB died in execute. Those sources always go segment-by-segment.
+SINGLE_PASS_MAX_PIXELS = 1920 * 1080
+
 
 def _segment_threshold() -> int:
     try:
         return int(os.environ.get("AUTO_EDIT_SEGMENT_THRESHOLD", str(DEFAULT_SEGMENT_THRESHOLD)))
     except ValueError:
         return DEFAULT_SEGMENT_THRESHOLD
+
+
+def _use_segmented(video: Path, n_intervals: int) -> bool:
+    if n_intervals > _segment_threshold():
+        return True
+    # An explicit threshold wins; a single interval has no fan-out at all.
+    if n_intervals < 2 or "AUTO_EDIT_SEGMENT_THRESHOLD" in os.environ:
+        return False
+    try:
+        w, h = probe.video_size(video)
+    except Exception:
+        return False
+    return w * h > SINGLE_PASS_MAX_PIXELS
 
 # 8-bit 4:2:0 on every encode. A phone records 10-bit HDR, and without this the
 # edit stays 10-bit: H.264 High 10 doesn't play on iPhone/Safari, and the cover
@@ -416,8 +434,9 @@ def _run_ffmpeg_cuts(
     output: Path,
     reframe: tuple[int, int] | None = None,
 ) -> None:
-    # Many segments on a single graph OOM-kills FFmpeg; cut them one at a time.
-    if len(intervals) > _segment_threshold():
+    # Many segments (or a 4K source) on a single graph OOM-kills FFmpeg; cut
+    # them one at a time.
+    if _use_segmented(video, len(intervals)):
         _run_ffmpeg_cuts_segmented(video, intervals, output, reframe=reframe)
         return
 
