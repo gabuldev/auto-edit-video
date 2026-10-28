@@ -301,6 +301,25 @@ class TestRunFfmpegCutsRouting:
         executor._run_ffmpeg_cuts(Path("v.mp4"), intervals, Path("out.mp4"))
         assert seg_called == [True]
 
+    def test_4k_source_uses_segmented_below_threshold(self, monkeypatch):
+        from tools import executor
+        monkeypatch.delenv("AUTO_EDIT_SEGMENT_THRESHOLD", raising=False)
+        monkeypatch.setattr(executor.probe, "video_size", lambda p: (3840, 2160))
+        assert executor._use_segmented(Path("v.mp4"), 10) is True
+        assert executor._use_segmented(Path("v.mp4"), 1) is False
+
+    def test_1080p_source_keeps_single_pass(self, monkeypatch):
+        from tools import executor
+        monkeypatch.delenv("AUTO_EDIT_SEGMENT_THRESHOLD", raising=False)
+        monkeypatch.setattr(executor.probe, "video_size", lambda p: (1920, 1080))
+        assert executor._use_segmented(Path("v.mp4"), 10) is False
+
+    def test_explicit_threshold_overrides_resolution(self, monkeypatch):
+        from tools import executor
+        monkeypatch.setenv("AUTO_EDIT_SEGMENT_THRESHOLD", "50")
+        monkeypatch.setattr(executor.probe, "video_size", lambda p: (3840, 2160))
+        assert executor._use_segmented(Path("v.mp4"), 10) is False
+
     def test_bad_threshold_env_falls_back_to_default(self, monkeypatch):
         from tools import executor
         monkeypatch.setenv("AUTO_EDIT_SEGMENT_THRESHOLD", "not-a-number")
