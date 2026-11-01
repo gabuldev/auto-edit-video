@@ -11,8 +11,9 @@ problem — it writes a report and a feed-size preview for the creator to eyebal
 What each check needs:
 - text rules (:func:`check_main_text`): just the string — always runs.
 - feed preview (:func:`save_mobile_preview`): the output PNG — always runs.
-- overlap (:func:`overlap_fraction`), contrast (:func:`contrast_ratio`) and
-  cap-height (:func:`cap_height_px`): the text box / colors / face box, which
+- overlap (:func:`overlap_fraction`), contrast (:func:`contrast_ratio`),
+  cap-height (:func:`cap_height_px`) and "fits without shrinking": the text
+  box / colors / face box / line fit, which
   only the layout that drew the text knows. The Pillow path hands them in; the
   React renderer does not, so those checks are skipped there and the report
   comes back ``"parcial"`` (not ``"aprovada"``) whenever a check is skipped.
@@ -222,6 +223,7 @@ def evaluate(
     bg_rgb: tuple[int, int, int] | None = None,
     full_height: int | None = None,
     text_lines: int = 1,
+    text_fits: bool | None = None,
 ) -> dict:
     """Aggregate every check that has enough information into one report.
 
@@ -267,6 +269,17 @@ def evaluate(
     else:
         checks["mobile_text_height"] = None
 
+    # The font is never shrunk to make the hero text fit (tools/thumbnailer.py):
+    # a text that still overflows its lines at the fixed size is a failure, not
+    # something to paper over with a smaller font.
+    if text_fits is not None:
+        checks["fits_without_shrinking"] = {
+            "ok": bool(text_fits),
+            "reasons": [] if text_fits else ["texto não cabe no tamanho fixo — encurte, não encolha"],
+        }
+    else:
+        checks["fits_without_shrinking"] = None
+
     ran = [c for c in checks.values() if c is not None]
     skipped = any(c is None for c in checks.values())
     if any(not c["ok"] for c in ran):
@@ -279,17 +292,24 @@ def evaluate(
     return {"approved": approved, "checks": checks, "reasons": reasons}
 
 
-def run(workspace: Path, thumb_path: Path, main_text: str, **boxes) -> dict:
-    """Pipeline entry: evaluate, write a feed-size preview + thumbnail_qa.json. Never raises."""
+def run(workspace: Path, thumb_path: Path, main_text: str, *,
+        rewrite: dict | None = None, **boxes) -> dict:
+    """Pipeline entry: evaluate, write a feed-size preview + thumbnail_qa.json.
+
+    ``rewrite`` is what the thumbnailer changed before drawing (the original
+    hero text, the shorter one, and why), so the report shows both. Never
+    raises on a bad check; only writing the report itself can fail."""
     report: dict = {"thumbnail": thumb_path.name}
+    if rewrite:
+        report["main_text_rewrite"] = rewrite
     try:
         report.update(evaluate(main_text, **boxes))
-    except Exception as exc:  # noqa: BLE001 — QA must never break the stage
+    except (TypeError, ValueError, KeyError) as exc:  # malformed hints must never break the stage
         report.update({"approved": None, "error": f"{type(exc).__name__}: {exc}"})
     try:
         preview = save_mobile_preview(thumb_path, workspace / "thumbnail_168.png")
         report["mobile_preview"] = preview.name
-    except Exception as exc:  # noqa: BLE001 — a bad preview is not fatal either
+    except (OSError, ValueError) as exc:  # missing/unreadable PNG (PIL raises OSError): not fatal either
         report["mobile_preview_error"] = f"{type(exc).__name__}: {exc}"
     (workspace / "thumbnail_qa.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"

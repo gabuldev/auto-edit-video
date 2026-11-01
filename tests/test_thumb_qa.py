@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auto_edit import thumb_qa as qa
 
-
 # ── Text rules (item 5) ──────────────────────────────────────────────────────
 
 class TestTextRules:
@@ -172,9 +171,30 @@ class TestEvaluate:
             "ok curto",
             text_box=(0, 0, 400, 300), face_box=(900, 400, 1280, 720),
             text_rgb=(255, 255, 255), bg_rgb=(10, 10, 10), full_height=720,
+            text_fits=True,
         )
         assert r["approved"] is True
         assert all(c is not None for c in r["checks"].values())
+
+    def test_text_that_does_not_fit_fails_instead_of_shrinking(self):
+        r = qa.evaluate(
+            "ok curto",
+            text_box=(0, 0, 400, 300), face_box=(900, 400, 1280, 720),
+            text_rgb=(255, 255, 255), bg_rgb=(10, 10, 10), full_height=720,
+            text_fits=False,
+        )
+        assert r["approved"] is False
+        assert r["checks"]["fits_without_shrinking"]["ok"] is False
+
+    def test_unknown_fit_is_parcial(self):
+        # the React renderer does not report the fit → skipped, never "aprovada"
+        r = qa.evaluate(
+            "ok curto",
+            text_box=(0, 0, 400, 300), face_box=(900, 400, 1280, 720),
+            text_rgb=(255, 255, 255), bg_rgb=(10, 10, 10), full_height=720,
+        )
+        assert r["checks"]["fits_without_shrinking"] is None
+        assert r["approved"] is None
 
     def test_a_failure_beats_a_skip(self):
         # 6 words fails text_rules even though other checks are skipped
@@ -206,6 +226,14 @@ class TestRun:
         saved = json.loads((tmp_path / "thumbnail_qa.json").read_text())
         assert saved["approved"] is False  # 6 words > 4
         assert report["mobile_preview"] == "thumbnail_168.png"
+
+    def test_report_records_the_rewrite(self, tmp_path):
+        thumb = tmp_path / "thumbnail.png"
+        Image.new("RGB", (1280, 720), (0, 0, 0)).save(thumb)
+        rewrite = {"from": "ESP8266 X BALANÇA TOLEDO", "to": "BALANÇA VIROU SMART", "reasons": ["x"]}
+        qa.run(tmp_path, thumb, "BALANÇA VIROU SMART", rewrite=rewrite)
+        saved = json.loads((tmp_path / "thumbnail_qa.json").read_text(encoding="utf-8"))
+        assert saved["main_text_rewrite"]["from"] == "ESP8266 X BALANÇA TOLEDO"
 
     def test_missing_thumb_does_not_raise(self, tmp_path):
         report = qa.run(tmp_path, tmp_path / "nope.png", "ok curto")

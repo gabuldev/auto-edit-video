@@ -928,6 +928,43 @@ def _auto_size_font(
     return font, lines
 
 
+# The hero text is drawn at ONE size, chosen for legibility at feed size — never
+# shrunk to make a long text fit. Shrinking is how a 6-word title ends up
+# unreadable on a phone; a text that does not fit has to get shorter instead
+# (the rewrite in ``thumbnail()``), and if it still does not fit, QA says so.
+# 0.10 of the canvas width (128px on a long): each line lands at ~16.6px in the
+# 168x94 feed preview, well above thumb_qa.MIN_TEXT_PX, and a typical 4-word
+# hero still fits 2 lines in the narrow box beside the face. The old ceiling
+# (0.13) was only reachable because it shrank — as a FIXED size it pushes
+# ordinary 3-word texts ("MEU CARRO NOVO") onto a third line.
+HERO_SIZE_FRAC = 0.10
+HERO_MAX_LINES = 2
+
+
+def _hero_width(canvas_w: int, position: str) -> int:
+    return int(canvas_w * 0.55) if position in ("left", "right") else int(canvas_w * 0.72)
+
+
+def _hero_layout(font_path: Path | None, text: str, canvas_w: int,
+                 position: str) -> tuple[ImageFont.FreeTypeFont, list[str], bool]:
+    """Font, wrapped lines and whether the hero text fits — at the fixed size."""
+    font = _load_font(font_path, int(canvas_w * HERO_SIZE_FRAC))
+    lines = _wrap_text(text.upper(), font, _hero_width(canvas_w, position))
+    return font, lines, len(lines) <= HERO_MAX_LINES
+
+
+def hero_text_fits(text: str, video_type: str, position: str | None = None) -> bool:
+    """Whether ``text`` fits the hero box without shrinking the font.
+
+    Checked before rendering, so a text that would not fit is rewritten instead
+    of drawn small. The long layout defaults to the narrow box (text beside the
+    face): whether there will be a face is only known later, and a text that
+    fits the narrow box fits the wide one too."""
+    canvas_w = (SHORT_SIZE if video_type == "short" else LONG_SIZE)[0]
+    position = position or ("center" if video_type == "short" else "left")
+    return _hero_layout(_find_font(), text, canvas_w, position)[2]
+
+
 def _draw_text_with_outline(
     draw: ImageDraw.ImageDraw,
     position: tuple[int, int],
@@ -1058,12 +1095,9 @@ def _draw_thumbnail_text(
     sub_text_color = tuple(template.get("sub_text_color", [0, 0, 0]))
 
     main_text = main_text.upper()
-    max_text_width = int(w * 0.55) if position in ("left", "right") else int(w * 0.72)
-
-    main_font, main_lines = _auto_size_font(
-        font_path, main_text, max_text_width,
-        max_size=int(w * 0.13), min_size=int(w * 0.05), max_lines=2,
-    )
+    # Fixed size: a text that does not fit wraps onto more lines and QA flags
+    # it — it is never drawn smaller (see HERO_SIZE_FRAC).
+    main_font, main_lines, text_fits = _hero_layout(font_path, main_text, w, position)
     sample_bbox = main_font.getbbox("Ag")
     line_h = sample_bbox[3] - sample_bbox[1]
     line_spacing = int(line_h * 0.15)
@@ -1122,7 +1156,7 @@ def _draw_thumbnail_text(
             if crop.width and crop.height else (0, 0, 0)
         qa_out.update(
             text_box=text_box, text_rgb=(255, 255, 255),
-            bg_rgb=bg_rgb, text_lines=len(main_lines),
+            bg_rgb=bg_rgb, text_lines=len(main_lines), text_fits=text_fits,
         )
 
     draw = ImageDraw.Draw(img)
@@ -1549,6 +1583,102 @@ def _embed_cover_frame(workspace: Path, thumb_path: Path) -> None:
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 
+REWRITE_ATTEMPTS = 2
+
+_REWRITE_PROMPT = """O texto de capa (thumbnail) de um vídeo foi reprovado antes de ser desenhado.
+
+Texto atual: "{text}"
+Motivos: {reasons}
+Contexto do vídeo: {context}
+
+Reescreva o texto de capa mantendo a ideia e o idioma:
+- no máximo {max_words} palavras (é lido em 1 segundo, no celular);
+- no máximo {max_tech} termo técnico — nome de peça, sigla ou código vai no título, não na capa;
+- sem comparação "X" / "VS" entre termos técnicos;
+- curto o bastante pra caber em {max_lines} linhas em letra grande.
+
+Responda SOMENTE com JSON: {{"main_text": "..."}}"""
+
+
+def _parse_main_text(raw: str) -> str | None:
+    """The rewritten text from the model's answer (JSON, or a bare line)."""
+    raw = (raw or "").strip()
+    start, end = raw.find("{"), raw.rfind("}")
+    if start != -1 and end > start:
+        try:
+            value = json.loads(raw[start:end + 1]).get("main_text")
+        except (ValueError, AttributeError):
+            value = None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    line = raw.splitlines()[0].strip().strip("\"'") if raw else ""
+    return line or None
+
+
+def _shorten_main_text(text: str, reasons: list[str], *, video_type: str, context: str = "",
+                       ask=None) -> str | None:
+    """Ask the model for a hero text that passes the rules AND fits at the fixed size.
+
+    Each answer is re-checked; a second attempt carries what was still wrong.
+    Returns None when no agent answers or nothing acceptable comes back — the
+    caller keeps the original and QA reports it as REPROVADA."""
+    from auto_edit import agents
+
+    if ask is None:
+        def ask(prompt: str) -> str:
+            return agents.complete(prompt, timeout=90)
+
+    for attempt in range(1, REWRITE_ATTEMPTS + 1):
+        prompt = _REWRITE_PROMPT.format(
+            text=text, reasons="; ".join(reasons), context=context or "—",
+            max_words=thumb_qa.MAX_WORDS, max_tech=thumb_qa.MAX_TECH_TERMS,
+            max_lines=HERO_MAX_LINES,
+        )
+        try:
+            candidate = _parse_main_text(ask(prompt))
+        except (agents.AgentError, OSError) as exc:  # no agent answered: keep the original
+            print(f"[thumbnailer] reescrita do texto da capa indisponível: {exc}")
+            return None
+        if not candidate:
+            continue
+        rules = thumb_qa.check_main_text(candidate)
+        fits = hero_text_fits(candidate, video_type)
+        if rules["ok"] and fits:
+            return candidate
+        reasons = rules["reasons"] + ([] if fits else [f"não cabe em {HERO_MAX_LINES} linhas"])
+        text = candidate
+        print(f"[thumbnailer] reescrita {attempt}/{REWRITE_ATTEMPTS} ainda reprovada: {'; '.join(reasons)}")
+    return None
+
+
+def _gate_main_text(metadata: dict, metadata_path: Path, video_type: str, context: str,
+                    ask=None) -> dict | None:
+    """Before drawing: rewrite a hero text that breaks the rules or would not fit.
+
+    The accepted rewrite goes into metadata.json, so the app and `publish` see
+    the text that is actually on the thumbnail. Returns what changed (for the
+    QA report), or None when the original was already fine or nothing better
+    came back."""
+    thumb_data = metadata.setdefault("thumbnail", {})
+    title_key = "short_title" if video_type == "short" else "youtube_title"
+    original = thumb_data.get("main_text") or metadata.get(title_key, "")
+    if not original:
+        return None
+    rules = thumb_qa.check_main_text(original)
+    fits = hero_text_fits(original, video_type)
+    if rules["ok"] and fits:
+        return None
+    reasons = rules["reasons"] + ([] if fits else [f"não cabe em {HERO_MAX_LINES} linhas sem encolher a fonte"])
+    print(f"[thumbnailer] texto da capa reprovado ({'; '.join(reasons)}) — pedindo um mais curto")
+    shorter = _shorten_main_text(original, reasons, video_type=video_type, context=context, ask=ask)
+    if not shorter:
+        return {"from": original, "to": None, "reasons": reasons}
+    thumb_data["main_text"] = shorter
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[thumbnailer] texto da capa: {original!r} → {shorter!r}")
+    return {"from": original, "to": shorter, "reasons": reasons}
+
+
 def thumbnail(workspace: Path) -> None:
     """Main entry point — called by ralph.sh via run_python_tool."""
     pipeline = json.loads((workspace / "pipeline.json").read_text())
@@ -1561,6 +1691,10 @@ def thumbnail(workspace: Path) -> None:
     metadata = json.loads(metadata_path.read_text())
 
     video_type = pipeline.get("type", "short")
+
+    # A hero text that breaks the rules or would not fit is rewritten shorter
+    # BEFORE drawing — the font is never shrunk to make it fit.
+    rewrite = _gate_main_text(metadata, metadata_path, video_type, pipeline.get("context", ""))
 
     # The Pillow path fills this with the hero text box / colours / face box so
     # QA can check overlap, contrast and feed legibility. Stays empty when the
@@ -1576,9 +1710,17 @@ def thumbnail(workspace: Path) -> None:
     title_key = "short_title" if video_type == "short" else "youtube_title"
     main_text = thumb_data.get("main_text", metadata.get(title_key, ""))
     try:
-        thumb_qa.run(workspace, thumb, main_text, **qa_hints)
-    except Exception as exc:
+        report = thumb_qa.run(workspace, thumb, main_text, rewrite=rewrite, **qa_hints)
+    except OSError as exc:  # run() never raises on a bad check; only writing the report can
         print(f"[thumbnailer] QA skipped: {exc}")
+        report = {}
+
+    # Opt-in hard gate, like AUTO_EDIT_OVERLAYS_STRICT: by default a failed QA
+    # is reported (thumbnail_qa.json + the log line), not fatal.
+    if os.environ.get("AUTO_EDIT_THUMB_QA_STRICT") == "1" and report.get("approved") is False:
+        print("[thumbnailer] ERROR: QA reprovou a thumbnail (AUTO_EDIT_THUMB_QA_STRICT=1): "
+              + "; ".join(report.get("reasons", [])))
+        sys.exit(1)
 
     # Embed thumbnail as first frame so platforms pick it up as cover
     _embed_cover_frame(workspace, thumb)

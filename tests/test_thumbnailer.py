@@ -9,11 +9,17 @@ from PIL import Image, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tools import thumbnailer
 from auto_edit import styles as styles_mod
+from tools import thumbnailer
 from tools.thumbnailer import (
+    _BUILTIN_TEMPLATES,
+    _TEMPLATE_TO_STYLE,
     COVER_FRAMES,
     COVER_TAG,
+    FACE_ZONE_TOP,
+    IG_SAFE_BOT,
+    IG_SAFE_TOP,
+    _apply_grade,
     _assert_frame_rate_preserved,
     _combined_score,
     _cover_body_cmd,
@@ -21,20 +27,14 @@ from tools.thumbnailer import (
     _cover_concat_cmd,
     _cover_mux_cmd,
     _cover_strip_point,
+    _draw_sub_chip,
+    _draw_thumbnail_text,
     _forced_timestamp,
     _frame_source,
-    _score_mouth_closed,
-    _BUILTIN_TEMPLATES,
-    _TEMPLATE_TO_STYLE,
     _load_templates,
     _resolve_template,
     _safe_block_top,
-    _draw_sub_chip,
-    _draw_thumbnail_text,
-    _apply_grade,
-    IG_SAFE_TOP,
-    IG_SAFE_BOT,
-    FACE_ZONE_TOP,
+    _score_mouth_closed,
 )
 
 
@@ -808,3 +808,113 @@ class TestFaceCutout:
         thumbnailer._render_react({"kind": "long", "main_text": "x", "accent": [1, 2, 3], "face": "/r.png", "face_outline": "/c.png"}, tmp_path / "t.png")
         images = json.loads(log.read_text())["images"]
         assert images["rosto"] == "/r.png" and images["rosto_contorno"] == "/c.png"
+
+
+class TestNeverShrinkHeroText:
+    """Review item 6: a text that does not fit gets shorter, never smaller."""
+
+    def test_font_size_does_not_depend_on_text_length(self):
+        short_font, _, short_fits = thumbnailer._hero_layout(None, "FONE SUMIU", 1280, "center")
+        long_font, long_lines, long_fits = thumbnailer._hero_layout(
+            None, "ESSE TEXTO E LONGO DEMAIS PRA CABER NA CAPA DO VIDEO", 1280, "center",
+        )
+        assert short_font.size == long_font.size == int(1280 * thumbnailer.HERO_SIZE_FRAC)
+        assert short_fits is True
+        assert long_fits is False and len(long_lines) > thumbnailer.HERO_MAX_LINES
+
+    def test_draw_reports_overflow_to_qa(self):
+        img = Image.new("RGB", thumbnailer.SHORT_SIZE, (40, 40, 40))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        qa_out: dict = {}
+        _draw_thumbnail_text(img, "ESSE TEXTO E LONGO DEMAIS PRA CABER NA CAPA", None,
+                             template, "center", qa_out=qa_out)
+        assert qa_out["text_fits"] is False
+
+
+def _metadata_ws(tmp_path, main_text, video_type="long"):
+    meta = {"thumbnail": {"main_text": main_text}, "youtube_title": "t", "short_title": "t"}
+    path = tmp_path / "metadata.json"
+    path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    return meta, path
+
+
+class TestMainTextRewrite:
+    def test_good_text_is_not_sent_to_the_model(self, tmp_path):
+        meta, path = _metadata_ws(tmp_path, "FONE SUMIU")
+        calls = []
+        assert thumbnailer._gate_main_text(meta, path, "long", "", ask=calls.append) is None
+        assert calls == []
+
+    def test_bad_text_is_rewritten_and_saved(self, tmp_path):
+        meta, path = _metadata_ws(tmp_path, "ESP8266 X BALANÇA TOLEDO")
+        prompts = []
+
+        def ask(prompt):
+            prompts.append(prompt)
+            return '{"main_text": "BALANÇA FICOU SMART"}'
+
+        change = thumbnailer._gate_main_text(meta, path, "long", "balança antiga", ask=ask)
+        assert change == {"from": "ESP8266 X BALANÇA TOLEDO", "to": "BALANÇA FICOU SMART",
+                          "reasons": change["reasons"]}
+        assert "ESP8266" in prompts[0] and "balança antiga" in prompts[0]
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert saved["thumbnail"]["main_text"] == "BALANÇA FICOU SMART"
+
+    def test_second_attempt_when_the_first_is_still_bad(self, tmp_path):
+        meta, path = _metadata_ws(tmp_path, "codei sem ia por dois dias seguidos")
+        answers = iter(['{"main_text": "codei sem ia por dois dias"}', '{"main_text": "SEM IA DOIS DIAS"}'])
+        change = thumbnailer._gate_main_text(meta, path, "long", "", ask=lambda p: next(answers))
+        assert change["to"] == "SEM IA DOIS DIAS"
+
+    def test_no_agent_keeps_the_original(self, tmp_path):
+        from auto_edit.agents import AgentError
+
+        meta, path = _metadata_ws(tmp_path, "ESP8266 X BALANÇA TOLEDO")
+
+        def ask(prompt):
+            raise AgentError("nenhum agente")
+
+        change = thumbnailer._gate_main_text(meta, path, "long", "", ask=ask)
+        assert change["to"] is None
+        assert json.loads(path.read_text(encoding="utf-8"))["thumbnail"]["main_text"] == "ESP8266 X BALANÇA TOLEDO"
+
+    def test_parse_accepts_json_or_a_bare_line(self):
+        assert thumbnailer._parse_main_text('ok: {"main_text": "A B"}') == "A B"
+        assert thumbnailer._parse_main_text('"FONE SUMIU"\n') == "FONE SUMIU"
+        assert thumbnailer._parse_main_text("") is None
+
+
+class TestThumbnailEntryPoint:
+    """The whole entry point: gate → draw → QA report → optional strict fail."""
+
+    def _ws(self, tmp_path, monkeypatch, main_text):
+        (tmp_path / "pipeline.json").write_text(json.dumps({"type": "long", "context": "c"}))
+        _metadata_ws(tmp_path, main_text)
+
+        def fake_long(workspace, metadata, pipeline, qa_out=None):
+            out = workspace / "thumbnail.png"
+            Image.new("RGB", thumbnailer.LONG_SIZE, (0, 0, 0)).save(out)
+            # what the drawn layout would report: text right over the face
+            qa_out.update(text_box=(0, 0, 1280, 720), face_box=(900, 300, 1280, 720),
+                          text_rgb=(255, 255, 255), bg_rgb=(0, 0, 0), full_height=720,
+                          text_lines=1, text_fits=True)
+            return out
+
+        monkeypatch.setattr(thumbnailer, "_thumbnail_long", fake_long)
+        monkeypatch.setattr(thumbnailer, "_embed_cover_frame", lambda ws, thumb: None)
+        monkeypatch.setattr(thumbnailer, "_shorten_main_text", lambda *a, **k: None)
+
+    def test_text_over_face_is_reprovada_in_the_report(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, "FONE SUMIU")
+        monkeypatch.delenv("AUTO_EDIT_THUMB_QA_STRICT", raising=False)
+        thumbnailer.thumbnail(tmp_path)
+        report = json.loads((tmp_path / "thumbnail_qa.json").read_text(encoding="utf-8"))
+        assert report["approved"] is False
+        assert report["checks"]["text_not_over_face"]["ok"] is False
+
+    def test_strict_mode_fails_the_stage(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, "FONE SUMIU")
+        monkeypatch.setenv("AUTO_EDIT_THUMB_QA_STRICT", "1")
+        with pytest.raises(SystemExit) as exc:
+            thumbnailer.thumbnail(tmp_path)
+        assert exc.value.code == 1
