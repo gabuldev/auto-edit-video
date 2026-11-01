@@ -66,9 +66,22 @@ Your job is to generate compelling titles and descriptions optimized for the pla
 
 ## Thumbnail Text
 
-Generate a `thumbnail` object with text optimized for a video thumbnail image. This is NOT the title — it is the bold, visual text that grabs attention at a glance in the Instagram feed.
+Generate a `thumbnail` object with text optimized for a video thumbnail image.
+This is NOT the title — it is the bold, visual text that grabs attention at a
+glance. For a **long / YouTube** video the thumbnail competes in **YouTube
+search and suggested** (most views come from search), next to the title: it
+carries the emotion and the payoff, the title carries the keywords. For a
+**short / Reels** it competes in the vertical feed.
 
-- `main_text`: The hero text. 2–5 impactful words, read instantly. Carry a promise or tension. Same language as the video.
+- `main_text`: The hero text, read in under a second. **At most 4 words.**
+  Carry a promise or tension. Same language as the video.
+  - **At most 1 technical term.** Jargon (model/part names, specs, acronyms —
+    "ESP32", "ESP8266 X BALANÇA TOLEDO", "firmware") belongs in the TITLE, which
+    feeds search; the thumbnail stays plain and punchy. ❌ "ESP8266 X BALANÇA
+    TOLEDO" → ✅ "PESEI COM R$5" (spec goes to the title).
+  - It sits beside a cut-out of the creator's face on one side and, when it
+    helps, the video's object on the other — so write it to stand **alone**,
+    never to describe what's already in the picture.
 - `sub_text`: A **hook**, not a description. Máx 30 chars. Creates a curiosity/tension gap that only the video closes. Renders inside a colored chip for pop.
   - ❌ describes: "FEITA EM 3D", "REVIEW COMPLETO", "TUTORIAL"
   - ✅ hooks: "NINGUÉM FAZ ISSO", "SÓ R$100", "-70% DE ERRO", "E DEU CERTO?"

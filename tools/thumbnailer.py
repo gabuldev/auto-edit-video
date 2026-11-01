@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, render, styles, thumb_html  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import probe, render, styles, thumb_html, thumb_qa  # noqa: E402  -- needs the repo root on sys.path
 
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
@@ -1523,6 +1523,15 @@ def thumbnail(workspace: Path) -> None:
         thumb = _thumbnail_short(workspace, metadata, pipeline)
     else:
         thumb = _thumbnail_long(workspace, metadata, pipeline)
+
+    # QA: text rules + a 168px feed-size preview + thumbnail_qa.json. Never fatal.
+    thumb_data = metadata.get("thumbnail", {})
+    title_key = "short_title" if video_type == "short" else "youtube_title"
+    main_text = thumb_data.get("main_text", metadata.get(title_key, ""))
+    try:
+        thumb_qa.run(workspace, thumb, main_text)
+    except Exception as exc:
+        print(f"[thumbnailer] QA skipped: {exc}")
 
     # Embed thumbnail as first frame so platforms pick it up as cover
     _embed_cover_frame(workspace, thumb)
