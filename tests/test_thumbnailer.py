@@ -160,6 +160,77 @@ class TestDrawThumbnailText:
         out = _draw_thumbnail_text(img, "CAIU O FLUTTER", None, template, "center")
         assert out.size == (1080, 1920)
 
+    def test_qa_out_is_filled_with_text_box_and_colours(self):
+        img = Image.new("RGB", (1080, 1920), (40, 40, 40))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        qa_out: dict = {}
+        _draw_thumbnail_text(img, "CAIU O FLUTTER", None, template, "center", qa_out=qa_out)
+        assert qa_out["text_rgb"] == (255, 255, 255)
+        assert qa_out["text_lines"] >= 1
+        x0, y0, x1, y1 = qa_out["text_box"]
+        assert x1 > x0 and y1 > y0  # a real, non-empty box
+        assert len(qa_out["bg_rgb"]) == 3
+
+
+class TestQaWiring:
+    """The Pillow path hands the hero text box + face box to thumb_qa, so the
+    overlap / contrast / feed checks actually run (the review's item 1)."""
+
+    def test_long_pillow_fills_face_box_and_qa_runs_the_checks(self, tmp_path):
+        from auto_edit import thumb_qa
+
+        bg = Image.new("RGB", thumbnailer.LONG_SIZE, (20, 20, 20))
+        face = tmp_path / "face.png"
+        Image.new("RGBA", (300, 400), (200, 150, 120, 255)).save(face)
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        out = tmp_path / "thumbnail.png"
+        qa_out: dict = {}
+        thumbnailer._draw_long_pillow(
+            bg, out, "MEU CARRO NOVO", None, template, face, [], qa_out=qa_out,
+        )
+        # the Pillow path reported the face box and the frame height
+        assert qa_out["face_box"] is not None
+        assert qa_out["full_height"] == thumbnailer.LONG_SIZE[1]
+        # feeding those hints to run() exercises the real checks (not skipped)
+        report = thumb_qa.run(tmp_path, out, "MEU CARRO NOVO", **qa_out)
+        assert report["checks"]["text_not_over_face"] is not None
+        assert report["checks"]["contrast"] is not None
+        assert report["checks"]["mobile_text_height"] is not None
+        assert report["approved"] in (True, False)  # fully evaluated, never "parcial"
+
+    def test_default_layout_keeps_text_clear_of_the_face(self, tmp_path):
+        from auto_edit import thumb_qa
+
+        # the long layout puts the face bottom-right and the hero text left —
+        # the positions flow through to QA and the overlap check confirms it
+        bg = Image.new("RGB", thumbnailer.LONG_SIZE, (20, 20, 20))
+        face = tmp_path / "face.png"
+        Image.new("RGBA", (300, 400), (200, 150, 120, 255)).save(face)
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        out = tmp_path / "thumbnail.png"
+        qa_out: dict = {}
+        thumbnailer._draw_long_pillow(
+            bg, out, "MEU CARRO NOVO", None, template, face, [], qa_out=qa_out,
+        )
+        report = thumb_qa.run(tmp_path, out, "MEU CARRO NOVO", **qa_out)
+        assert report["checks"]["text_not_over_face"]["ok"] is True
+
+    def test_short_pillow_path_feeds_qa_without_a_face(self, tmp_path):
+        from auto_edit import thumb_qa
+
+        img = Image.new("RGB", thumbnailer.SHORT_SIZE, (20, 20, 20))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        qa_out: dict = {}
+        _draw_thumbnail_text(img, "OLHA ISSO", None, template, "center", qa_out=qa_out)
+        # a short has no face box → the overlap check is skipped (parcial), but
+        # the text box / colours still flow through for contrast
+        assert "face_box" not in qa_out
+        out = tmp_path / "thumbnail.png"
+        img.save(out)
+        report = thumb_qa.run(tmp_path, out, "OLHA ISSO", **qa_out)
+        assert report["checks"]["contrast"] is not None
+        assert report["checks"]["text_not_over_face"] is None
+
 
 class TestApplyGrade:
     def test_same_size_and_changes_pixels(self):

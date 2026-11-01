@@ -1043,8 +1043,13 @@ def _draw_thumbnail_text(
     sub_text: str | None,
     template: dict,
     position: str = "center",
+    qa_out: dict | None = None,
 ) -> Image.Image:
-    """Overlay main_text (branco condensado) e sub_text (chip accent) na safe zone."""
+    """Overlay main_text (branco condensado) e sub_text (chip accent) na safe zone.
+
+    When ``qa_out`` is a dict, it is filled with the hero text's bounding box,
+    colour, mean backdrop colour and line count so ``thumb_qa`` can check
+    overlap / contrast / feed legibility (it only runs on the Pillow path)."""
     img = img.convert("RGBA")
     font_path = _find_font()
     w, h = img.size
@@ -1092,9 +1097,33 @@ def _draw_thumbnail_text(
         text_x = w // 2
         anchor = "mm"
 
+    # Bounding box of the hero (main) text block, for QA.
+    main_block_w = max((main_font.getlength(line) for line in main_lines), default=0)
+    if anchor == "lm":
+        tb_x0, tb_x1 = text_x, text_x + main_block_w
+    elif anchor == "rm":
+        tb_x0, tb_x1 = text_x - main_block_w, text_x
+    else:
+        tb_x0, tb_x1 = text_x - main_block_w / 2, text_x + main_block_w / 2
+    text_box = (int(tb_x0), int(block_top), int(tb_x1), int(block_top + main_block_h))
+
     band_center = block_top + total_h // 2
     band_center = min(band_center, int(h * IG_SAFE_BOT) - int(line_h * 0.3))
     img = _draw_dark_band(img, band_center, total_h + int(line_h * 0.6))
+
+    if qa_out is not None:
+        # Mean backdrop the white text actually sits on (after the dark band),
+        # so the contrast check reflects what the eye sees.
+        crop = img.convert("RGB").crop(
+            (max(0, text_box[0]), max(0, text_box[1]),
+             min(w, text_box[2]), min(h, text_box[3]))
+        )
+        bg_rgb = tuple(int(c) for c in np.asarray(crop, dtype=np.float32).reshape(-1, 3).mean(axis=0)) \
+            if crop.width and crop.height else (0, 0, 0)
+        qa_out.update(
+            text_box=text_box, text_rgb=(255, 255, 255),
+            bg_rgb=bg_rgb, text_lines=len(main_lines),
+        )
 
     draw = ImageDraw.Draw(img)
     outline_w = max(6, int(line_h * 0.08))
@@ -1130,7 +1159,8 @@ def _draw_thumbnail_text(
 # ── Thumbnail flows ─────────────────────────────────────────────────────────
 
 
-def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
+def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict,
+                     qa_out: dict | None = None) -> Path:
     """Generate thumbnail for short video: best frame + template + bold text."""
     thumb_data = metadata.get("thumbnail", {})
     main_text = thumb_data.get("main_text", metadata.get("short_title", ""))
@@ -1157,7 +1187,8 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
         img = Image.open(frame_path)
         img = _crop_center(img, w, h)
         img = _apply_grade(img, template.get("grade"))
-        img = _draw_thumbnail_text(img, main_text, sub_text, template, position="center")
+        img = _draw_thumbnail_text(img, main_text, sub_text, template, position="center",
+                                   qa_out=qa_out)
         img.save(output, "PNG", quality=95)
     print(f"[thumbnailer] Short thumbnail → {output}")
 
@@ -1165,7 +1196,8 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict) -> Path:
     return output
 
 
-def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
+def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict,
+                    qa_out: dict | None = None) -> Path:
     """Generate thumbnail for long video: AI background + face + title."""
     thumb_data = metadata.get("thumbnail", {})
     main_text = thumb_data.get("main_text", metadata.get("youtube_title", ""))
@@ -1236,7 +1268,8 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
                 bg = _stylize_frame_bg(Image.open(frame_path))
             else:
                 bg = _generate_gradient_bg(w, h, style_hint)
-        _draw_long_pillow(bg, output, main_text, sub_text, template, face_path, logo_paths)
+        _draw_long_pillow(bg, output, main_text, sub_text, template, face_path, logo_paths,
+                          qa_out=qa_out)
     if frame_path is not None:
         frame_path.unlink(missing_ok=True)
     print(f"[thumbnailer] Long thumbnail → {output}")
@@ -1244,13 +1277,18 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict) -> Path:
 
 
 def _draw_long_pillow(bg: Image.Image, output: Path, main_text: str, sub_text: str | None,
-                      template: dict, face_path: Path | None, logo_paths: list[Path]) -> None:
-    """The Pillow layout (fallback when the React renderer isn't available)."""
+                      template: dict, face_path: Path | None, logo_paths: list[Path],
+                      qa_out: dict | None = None) -> None:
+    """The Pillow layout (fallback when the React renderer isn't available).
+
+    When ``qa_out`` is a dict it is filled with the hero text box / colours and
+    the face box (bottom-right), plus ``full_height``, for ``thumb_qa``."""
     w, h = LONG_SIZE
     bg = _crop_center(bg, w, h)
     img = bg.convert("RGBA")
 
     has_face = False
+    face_box: tuple[int, int, int, int] | None = None
     if face_path:
         face = Image.open(face_path).convert("RGBA")
         face_h = int(h * 0.75)
@@ -1261,13 +1299,18 @@ def _draw_long_pillow(bg: Image.Image, output: Path, main_text: str, sub_text: s
         # Position: bottom-right, flush
         img.paste(face, (w - face_w, h - face_h), face)
         has_face = True
+        face_box = (w - face_w, h - face_h, w, h)
         print(f"[thumbnailer] Face composited from {face_path.name}")
 
     # Text position: left (rule of thirds) if face on right, center otherwise
     text_pos = "left" if has_face else "center"
 
     img_rgb = img.convert("RGB")
-    img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, template, position=text_pos)
+    img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, template, position=text_pos,
+                                   qa_out=qa_out)
+    if qa_out is not None:
+        qa_out["face_box"] = face_box
+        qa_out["full_height"] = h
 
     if logo_paths:
         logo_pos = "top-left" if has_face else "top-right"
@@ -1519,17 +1562,21 @@ def thumbnail(workspace: Path) -> None:
 
     video_type = pipeline.get("type", "short")
 
+    # The Pillow path fills this with the hero text box / colours / face box so
+    # QA can check overlap, contrast and feed legibility. Stays empty when the
+    # React renderer drew the thumbnail → those checks are skipped ("parcial").
+    qa_hints: dict = {}
     if video_type == "short":
-        thumb = _thumbnail_short(workspace, metadata, pipeline)
+        thumb = _thumbnail_short(workspace, metadata, pipeline, qa_out=qa_hints)
     else:
-        thumb = _thumbnail_long(workspace, metadata, pipeline)
+        thumb = _thumbnail_long(workspace, metadata, pipeline, qa_out=qa_hints)
 
-    # QA: text rules + a 168px feed-size preview + thumbnail_qa.json. Never fatal.
+    # QA: text rules + a feed-size preview + thumbnail_qa.json. Never fatal.
     thumb_data = metadata.get("thumbnail", {})
     title_key = "short_title" if video_type == "short" else "youtube_title"
     main_text = thumb_data.get("main_text", metadata.get(title_key, ""))
     try:
-        thumb_qa.run(workspace, thumb, main_text)
+        thumb_qa.run(workspace, thumb, main_text, **qa_hints)
     except Exception as exc:
         print(f"[thumbnailer] QA skipped: {exc}")
 

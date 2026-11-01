@@ -42,6 +42,31 @@ class TestTextRules:
         assert not r["ok"]
         assert any("técnico" in x for x in r["reasons"])
 
+    def test_three_d_and_price_are_not_technical(self):
+        # "3D" is a dimension and "R$5" a price — plain language, not jargon.
+        assert not qa.is_technical("3D")
+        assert not qa.is_technical("4d")
+        assert not qa.is_technical("R$5")
+        assert not qa.is_technical("R$1.500")
+        assert qa.check_main_text("IMPRESSORA 3D")["ok"]
+        assert qa.technical_terms("PESEI COM R$5") == []
+
+    def test_punctuation_token_is_not_a_word(self):
+        # a lone em-dash must not count toward the 4-word budget
+        assert qa.word_count("CRIEI UM APP — SOZINHO") == 4
+        assert qa.check_main_text("CRIEI UM APP — SOZINHO")["ok"]
+
+    def test_versus_between_terms_flags_technical_excess(self):
+        # the task's bad example: one spec term + a versus comparison → reject
+        r = qa.check_main_text("ESP8266 X BALANÇA TOLEDO")
+        assert not r["ok"]
+        assert any("X/VS" in x for x in r["reasons"])
+
+    def test_versus_without_tech_is_allowed(self):
+        # a plain-language versus ("CARRO X MOTO") is a legit thumbnail style
+        r = qa.check_main_text("CARRO X MOTO")
+        assert r["ok"]
+
 
 # ── WCAG contrast (item 6) ───────────────────────────────────────────────────
 
@@ -78,6 +103,22 @@ class TestGeometry:
         assert qa.iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
         assert qa.iou((0, 0, 10, 10), (10, 10, 20, 20)) == 0.0
 
+    def test_big_text_fully_over_small_face_fails(self):
+        # The exact bug: a 1200×400 text box fully covering a 150×150 face.
+        # Measuring the face's coverage (not the text's) catches it.
+        face = (100, 100, 250, 250)
+        text = (0, 0, 1200, 400)
+        assert qa.overlap_fraction(face, text) == pytest.approx(1.0)  # face fully covered
+        assert qa.overlap_fraction(text, face) < 0.05                 # text barely touched
+        r = qa.evaluate("ok curto", text_box=text, face_box=face)
+        assert r["approved"] is False
+        assert r["checks"]["text_not_over_face"]["ok"] is False
+
+    def test_text_clear_of_face_passes(self):
+        # text on the left, face on the right — no overlap
+        r = qa.evaluate("ok curto", text_box=(0, 0, 400, 300), face_box=(900, 400, 1280, 720))
+        assert r["checks"]["text_not_over_face"]["ok"] is True
+
 
 # ── Mobile legibility (item 6) ───────────────────────────────────────────────
 
@@ -86,22 +127,59 @@ class TestMobile:
         # 200px tall text in a 720px-tall thumb → ~26px at 94px preview
         assert qa.cap_height_px((0, 0, 100, 200), 720) == pytest.approx(200 * 94 / 720, abs=0.1)
 
-    def test_save_mobile_preview(self, tmp_path):
+    def test_cap_height_divides_by_line_count(self):
+        # a 2-line block measures per line — two 8px lines must read as ~8px,
+        # not the 16px the whole block would suggest (the item-3 bug)
+        block = (0, 0, 100, 240)  # 240px block in a 720px thumb → 31.3px at feed
+        one = qa.cap_height_px(block, 720, lines=1)
+        two = qa.cap_height_px(block, 720, lines=2)
+        assert two == pytest.approx(one / 2, abs=0.1)
+
+    def test_two_small_lines_fail_mobile_height(self):
+        # a 2-line block that passes as one line fails once divided per line
+        r1 = qa.evaluate("ok", text_box=(0, 0, 100, 170), full_height=1080, text_lines=1)
+        r2 = qa.evaluate("ok", text_box=(0, 0, 100, 170), full_height=1080, text_lines=2)
+        assert r1["checks"]["mobile_text_height"]["ok"] is True
+        assert r2["checks"]["mobile_text_height"]["ok"] is False
+
+    def test_save_mobile_preview_landscape(self, tmp_path):
         src = tmp_path / "thumb.png"
         Image.new("RGB", (1280, 720), (10, 20, 30)).save(src)
         out = qa.save_mobile_preview(src, tmp_path / "prev.png")
         with Image.open(out) as im:
-            assert im.size == qa.MOBILE_SIZE
+            assert im.size == qa.MOBILE_SIZE  # 168×94
+
+    def test_save_mobile_preview_portrait_is_not_squashed(self, tmp_path):
+        # a vertical short (1080×1920) keeps its orientation: 94×168, not 168×94
+        src = tmp_path / "short.png"
+        Image.new("RGB", (1080, 1920), (10, 20, 30)).save(src)
+        out = qa.save_mobile_preview(src, tmp_path / "prev.png")
+        with Image.open(out) as im:
+            assert im.size == (94, 168)
 
 
 # ── evaluate / run ───────────────────────────────────────────────────────────
 
 class TestEvaluate:
-    def test_skipped_checks_are_null_not_failures(self):
-        r = qa.evaluate("peguei com r$5")  # only text given
+    def test_skipped_checks_are_parcial_not_approved(self):
+        r = qa.evaluate("peguei com r$5")  # only text given → can't check everything
         assert r["checks"]["contrast"] is None
         assert r["checks"]["text_not_over_face"] is None
-        assert r["approved"] is True  # the one check that ran passed
+        assert r["approved"] is None  # parcial: nothing failed, but checks were skipped
+
+    def test_all_checks_pass_is_approved(self):
+        r = qa.evaluate(
+            "ok curto",
+            text_box=(0, 0, 400, 300), face_box=(900, 400, 1280, 720),
+            text_rgb=(255, 255, 255), bg_rgb=(10, 10, 10), full_height=720,
+        )
+        assert r["approved"] is True
+        assert all(c is not None for c in r["checks"].values())
+
+    def test_a_failure_beats_a_skip(self):
+        # 6 words fails text_rules even though other checks are skipped
+        r = qa.evaluate("codei sem ia por dois dias")
+        assert r["approved"] is False
 
     def test_text_over_face_fails(self):
         r = qa.evaluate("ok curto", text_box=(0, 0, 100, 100), face_box=(0, 0, 100, 100))

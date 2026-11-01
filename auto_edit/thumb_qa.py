@@ -6,15 +6,16 @@ Addresses the recurring problems with the generated thumbnails (see the
 illegibility at feed size on a phone. Everything here is pure (Pillow + numpy
 only, both already core deps) and unit-tested; the pipeline wiring in
 ``tools/thumbnailer.py`` calls :func:`run` and never fails the stage on a QA
-problem — it writes a report and a 168px preview for the creator to eyeball.
+problem — it writes a report and a feed-size preview for the creator to eyeball.
 
 What each check needs:
 - text rules (:func:`check_main_text`): just the string — always runs.
-- 168px preview (:func:`save_mobile_preview`): the output PNG — always runs.
-- contrast (:func:`contrast_ratio`) and text/face overlap (:func:`overlap_fraction`)
-  and cap-height (:func:`cap_height_px`): the text box / colors / face box, which
-  only the layout that drew the text knows. The Pillow fallback has them; the
-  React renderer would need to emit a sidecar (a documented follow-up).
+- feed preview (:func:`save_mobile_preview`): the output PNG — always runs.
+- overlap (:func:`overlap_fraction`), contrast (:func:`contrast_ratio`) and
+  cap-height (:func:`cap_height_px`): the text box / colors / face box, which
+  only the layout that drew the text knows. The Pillow path hands them in; the
+  React renderer does not, so those checks are skipped there and the report
+  comes back ``"parcial"`` (not ``"aprovada"``) whenever a check is skipped.
 """
 from __future__ import annotations
 
@@ -39,9 +40,25 @@ _TECH_VOCAB = {
     "mediapipe", "pytorch", "tensorflow", "kubernetes", "docker", "webhook",
 }
 
+# Looks like a spec code (letters + digits) but reads as plain language on a
+# thumbnail — must NOT burn the technical-term quota.
+_NOT_TECH = (
+    re.compile(r"^\d+d$"),         # 3D, 4D, 2D — a dimension, not a part number
+    re.compile(r"^r\$[\d.,]+$"),   # R$5, R$1.500 — a price, not a spec
+)
+
+_VERSUS = {"x", "vs", "versus"}
+_PUNCT = ".,!?:;—-\"'“”…"
+
+
+def _norm(token: str) -> str:
+    """Token stripped of surrounding punctuation, lowercased."""
+    return token.strip(_PUNCT).lower()
+
 
 def word_count(text: str) -> int:
-    return len((text or "").split())
+    """Words in the text, ignoring punctuation-only tokens (a lone ``—``)."""
+    return sum(1 for tok in (text or "").split() if _norm(tok))
 
 
 def is_technical(token: str) -> bool:
@@ -50,28 +67,41 @@ def is_technical(token: str) -> bool:
     Deliberately NOT keyed on ALL-CAPS: thumbnail hero text is conventionally
     uppercase, so every word would look like an acronym. Two signals only:
     a known-jargon vocabulary, and model/spec codes (letters glued to digits).
-    Known acronyms worth flagging (NFC, API, …) live in the vocabulary.
+    Everyday letter+digit tokens (``3D``, ``R$5``) are excluded — they read as
+    plain language, not jargon.
     """
-    raw = token.strip(".,!?:;—-")
+    raw = token.strip(_PUNCT)
+    low = raw.lower()
     if not raw:
         return False
-    if raw.lower() in _TECH_VOCAB:
+    if any(p.match(low) for p in _NOT_TECH):
+        return False
+    if low in _TECH_VOCAB:
         return True
     # model/spec codes: letters + digits glued together (ESP32, M4, GPT-4, RTX3060)
-    if re.search(r"[A-Za-z]", raw) and re.search(r"\d", raw):
-        return True
-    return False
+    return bool(re.search(r"[A-Za-z]", raw) and re.search(r"\d", raw))
 
 
 def technical_terms(text: str) -> list[str]:
     """Distinct technical-looking tokens in the text, in order of appearance."""
     seen: list[str] = []
+    seen_keys: set[str] = set()
     for tok in (text or "").split():
         if is_technical(tok):
-            key = tok.strip(".,!?:;—-").lower()
-            if key not in {s.strip(".,!?:;—-").lower() for s in seen}:
+            key = _norm(tok)
+            if key not in seen_keys:
+                seen_keys.add(key)
                 seen.append(tok)
     return seen
+
+
+def _has_versus(text: str) -> bool:
+    """A standalone ``X`` / ``VS`` / ``VERSUS`` sitting between two words."""
+    toks = [_norm(t) for t in (text or "").split()]
+    for i, tok in enumerate(toks):
+        if tok in _VERSUS and 0 < i < len(toks) - 1 and toks[i - 1] and toks[i + 1]:
+            return True
+    return False
 
 
 def check_main_text(text: str, max_words: int = MAX_WORDS,
@@ -86,6 +116,10 @@ def check_main_text(text: str, max_words: int = MAX_WORDS,
         reasons.append(
             f"{len(tech)} termos técnicos {tech} (máx {max_tech}; o resto vai pro título)"
         )
+    # A versus construction ("A X B", "A VS B") with any spec term reads as a
+    # technical comparison — it belongs in the title, not the hero text.
+    if _has_versus(text) and tech:
+        reasons.append("comparação técnica (X/VS) — melhor no título")
     return {"ok": not reasons, "word_count": wc, "technical_terms": tech, "reasons": reasons}
 
 
@@ -96,7 +130,7 @@ MIN_CONTRAST = 4.5  # WCAG AA for normal text
 
 def _linearize(channel: float) -> float:
     c = channel / 255.0
-    return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
 def relative_luminance(rgb: tuple[int, int, int]) -> float:
@@ -143,19 +177,36 @@ def iou(a: Box, b: Box) -> float:
 
 MOBILE_SIZE = (168, 94)  # how a long thumbnail shows in the YouTube feed
 MIN_TEXT_PX = 12.0       # hero text smaller than this at feed size is unreadable
+MAX_FACE_OVERLAP = 0.05  # hero text may cover at most this fraction of the face
 
 
-def cap_height_px(text_box: Box, full_height: int, preview_height: int = MOBILE_SIZE[1]) -> float:
-    """Height of the hero text once the thumbnail is shrunk to feed size."""
-    if full_height <= 0:
+def cap_height_px(text_box: Box, full_height: int,
+                  preview_height: int = MOBILE_SIZE[1], lines: int = 1) -> float:
+    """Height of a single line of hero text once shrunk to feed size.
+
+    ``text_box`` is the whole hero block; dividing by ``lines`` recovers the
+    per-line height, which is what actually has to stay legible (a two-line
+    block twice as tall is not twice as readable)."""
+    if full_height <= 0 or lines <= 0:
         return 0.0
-    return (text_box[3] - text_box[1]) * preview_height / full_height
+    block = (text_box[3] - text_box[1]) * preview_height / full_height
+    return block / lines
 
 
-def save_mobile_preview(src_png: Path, dst_png: Path, size: tuple[int, int] = MOBILE_SIZE) -> Path:
-    """Write a feed-size preview of the thumbnail for a quick phone-legibility look."""
+def _preview_size(width: int, height: int) -> tuple[int, int]:
+    """Feed-size preview, keeping orientation: 168×94 landscape, 94×168 portrait."""
+    return MOBILE_SIZE if width >= height else (MOBILE_SIZE[1], MOBILE_SIZE[0])
+
+
+def save_mobile_preview(src_png: Path, dst_png: Path,
+                        size: tuple[int, int] | None = None) -> Path:
+    """Write a feed-size preview of the thumbnail for a quick phone-legibility look.
+
+    When ``size`` is None the preview keeps the source orientation, so a
+    vertical short (1080×1920) is not squashed into a landscape box."""
     with Image.open(src_png) as im:
-        im.convert("RGB").resize(size, Image.LANCZOS).save(dst_png, "PNG")
+        target = size or _preview_size(im.width, im.height)
+        im.convert("RGB").resize(target, Image.LANCZOS).save(dst_png, "PNG")
     return dst_png
 
 
@@ -170,62 +221,75 @@ def evaluate(
     text_rgb: tuple[int, int, int] | None = None,
     bg_rgb: tuple[int, int, int] | None = None,
     full_height: int | None = None,
+    text_lines: int = 1,
 ) -> dict:
     """Aggregate every check that has enough information into one report.
 
-    A check that lacks its inputs is reported as ``null`` (skipped), never as a
-    failure. ``approved`` is False only when a check that RAN failed.
+    A check that lacks its inputs is reported as ``null`` (skipped). ``approved``
+    is False when a check that RAN failed, True when every check ran and passed,
+    and None (``"parcial"``) when nothing failed but some check was skipped.
     """
     checks: dict[str, dict | None] = {}
     checks["text_rules"] = check_main_text(main_text)
 
     if text_box is not None and face_box is not None:
-        frac = overlap_fraction(text_box, face_box)
+        # Fraction of the FACE the text covers — a big text box fully over a
+        # small face must fail, which measuring the text's own coverage misses.
+        frac = overlap_fraction(face_box, text_box)
+        ok = frac < MAX_FACE_OVERLAP
         checks["text_not_over_face"] = {
-            "ok": frac < 0.10,
-            "overlap_fraction": round(frac, 3),
-            "reasons": [] if frac < 0.10 else [f"texto cobre {frac:.0%} do rosto"],
+            "ok": ok,
+            "face_covered_fraction": round(frac, 3),
+            "reasons": [] if ok else [f"texto cobre {frac:.0%} do rosto (máx {MAX_FACE_OVERLAP:.0%})"],
         }
     else:
         checks["text_not_over_face"] = None
 
     if text_rgb is not None and bg_rgb is not None:
         ratio = contrast_ratio(text_rgb, bg_rgb)
+        ok = ratio >= MIN_CONTRAST
         checks["contrast"] = {
-            "ok": ratio >= MIN_CONTRAST,
+            "ok": ok,
             "ratio": round(ratio, 2),
-            "reasons": [] if ratio >= MIN_CONTRAST else [f"contraste {ratio:.1f}:1 (< {MIN_CONTRAST}:1)"],
+            "reasons": [] if ok else [f"contraste {ratio:.1f}:1 (< {MIN_CONTRAST}:1)"],
         }
     else:
         checks["contrast"] = None
 
     if text_box is not None and full_height:
-        px = cap_height_px(text_box, full_height)
+        px = cap_height_px(text_box, full_height, lines=max(1, text_lines))
+        ok = px >= MIN_TEXT_PX
         checks["mobile_text_height"] = {
-            "ok": px >= MIN_TEXT_PX,
-            "px_at_168": round(px, 1),
-            "reasons": [] if px >= MIN_TEXT_PX else [f"texto com {px:.0f}px a 168px (< {MIN_TEXT_PX:.0f}px)"],
+            "ok": ok,
+            "px_at_feed": round(px, 1),
+            "reasons": [] if ok else [f"texto com {px:.0f}px no feed (< {MIN_TEXT_PX:.0f}px)"],
         }
     else:
         checks["mobile_text_height"] = None
 
     ran = [c for c in checks.values() if c is not None]
-    approved = all(c["ok"] for c in ran)
+    skipped = any(c is None for c in checks.values())
+    if any(not c["ok"] for c in ran):
+        approved: bool | None = False
+    elif skipped:
+        approved = None  # nothing failed, but we could not check everything → parcial
+    else:
+        approved = True
     reasons = [r for c in ran for r in c.get("reasons", [])]
     return {"approved": approved, "checks": checks, "reasons": reasons}
 
 
 def run(workspace: Path, thumb_path: Path, main_text: str, **boxes) -> dict:
-    """Pipeline entry: evaluate, write a 168px preview + thumbnail_qa.json. Never raises."""
+    """Pipeline entry: evaluate, write a feed-size preview + thumbnail_qa.json. Never raises."""
     report: dict = {"thumbnail": thumb_path.name}
     try:
         report.update(evaluate(main_text, **boxes))
-    except Exception as exc:  # QA must never break the stage
+    except Exception as exc:  # noqa: BLE001 — QA must never break the stage
         report.update({"approved": None, "error": f"{type(exc).__name__}: {exc}"})
     try:
         preview = save_mobile_preview(thumb_path, workspace / "thumbnail_168.png")
         report["mobile_preview"] = preview.name
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — a bad preview is not fatal either
         report["mobile_preview_error"] = f"{type(exc).__name__}: {exc}"
     (workspace / "thumbnail_qa.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
