@@ -293,8 +293,11 @@ def evaluate(
 
 
 def run(workspace: Path, thumb_path: Path, main_text: str, *,
-        rewrite: dict | None = None, **boxes) -> dict:
+        rewrite: dict | None = None, name: str = "thumbnail", **boxes) -> dict:
     """Pipeline entry: evaluate, write a feed-size preview + thumbnail_qa.json.
+
+    ``name`` prefixes the files: thumbnail_168.png / thumbnail_qa.json for the
+    main thumbnail, thumbnail_b_168.png / thumbnail_b_qa.json for a variation.
 
     ``rewrite`` is what the thumbnailer changed before drawing (the original
     hero text, the shorter one, and why), so the report shows both. Never
@@ -307,13 +310,14 @@ def run(workspace: Path, thumb_path: Path, main_text: str, *,
     except (TypeError, ValueError, KeyError) as exc:  # malformed hints must never break the stage
         report.update({"approved": None, "error": f"{type(exc).__name__}: {exc}"})
     try:
-        preview = save_mobile_preview(thumb_path, workspace / "thumbnail_168.png")
+        preview = save_mobile_preview(thumb_path, workspace / f"{name}_168.png")
         report["mobile_preview"] = preview.name
     except (OSError, ValueError) as exc:  # missing/unreadable PNG (PIL raises OSError): not fatal either
         report["mobile_preview_error"] = f"{type(exc).__name__}: {exc}"
-    (workspace / "thumbnail_qa.json").write_text(
+    (workspace / f"{name}_qa.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     status = {True: "aprovada", False: "REPROVADA", None: "parcial"}.get(report.get("approved"))
-    print(f"[thumbnailer] QA: {status}" + (f" — {'; '.join(report['reasons'])}" if report.get("reasons") else ""))
+    label = "" if name == "thumbnail" else f" ({name})"
+    print(f"[thumbnailer] QA{label}: {status}" + (f" — {'; '.join(report['reasons'])}" if report.get("reasons") else ""))
     return report

@@ -6,6 +6,10 @@ import { parse, ELEMENT_NODE, TEXT_NODE } from "ultrahtml";
 import { fitted, type Measurer } from "./text";
 
 type Values = Record<string, string>;
+/** One `data-fit` text as drawn: its size and the range the layout declares.
+ * `fits` = it came out inside that range (≥ `min`) without being clipped —
+ * below `min` (down to FIT_FLOOR) is the text being shrunk to fit. */
+export type FitReport = { size: number; min: number; max: number; ok: boolean; fits: boolean };
 const FIT_FLOOR = 24;
 const SLOTS = /\{\{\s*([a-z0-9_.]+)\s*\}\}/g;
 const HAS_SLOT = /\{\{\s*[a-z0-9_.]+\s*\}\}/;
@@ -52,6 +56,7 @@ export function htmlTree(
   defaultFont: string,
   w: number,
   h: number,
+  fits?: FitReport[],
 ): any {
   const fill = (s: string) => s.replace(SLOTS, (_, k) => values[k] ?? "");
   const fonts = new Set(Object.keys(measure));
@@ -108,6 +113,7 @@ export function htmlTree(
           if (typeof style[key] === "string") style[key] = scalePx(style[key], k);
         }
       }
+      fits?.push({ size: r.size, min: f.min, max: f.max, ok: r.ok, fits: r.ok && r.size >= f.min });
       style.fontSize = r.size;
       style.lineHeight ??= lh;
       if (!r.ok) {

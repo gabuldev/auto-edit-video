@@ -335,12 +335,17 @@ def detail(
 ARTIFACT_SUFFIXES = {
     "video": "_final.mp4",
     "thumbnail": "_thumbnail.png",
+    # the B/C variations for YouTube's Testar e comparar (auto_edit/thumb_variants.py)
+    "thumbnail_b": "_thumbnail_b.png",
+    "thumbnail_c": "_thumbnail_c.png",
     "captions": ".srt",
     "notes": ".txt",
 }
 ARTIFACT_MIME = {
     "video": "video/mp4",
     "thumbnail": "image/png",
+    "thumbnail_b": "image/png",
+    "thumbnail_c": "image/png",
     "captions": "text/plain; charset=utf-8",
     "notes": "text/plain; charset=utf-8",
 }
@@ -349,7 +354,7 @@ ARTIFACT_MIME = {
 def artifact_path(video_id: str, kind: str) -> Path | None:
     """Absolute path of one finished artifact, or None when it isn't there.
 
-    Only the four known kinds resolve, and only from the folder this
+    Only the known kinds (ARTIFACT_SUFFIXES) resolve, and only from the folder this
     workspace delivered to — this is what the API serves to the player.
     """
     suffix = ARTIFACT_SUFFIXES.get(kind)

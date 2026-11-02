@@ -589,7 +589,7 @@ open(out, "wb").write(b"PNG")
         monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, **kw: frame)
         seen = {}
 
-        def react(spec, output):
+        def react(spec, output, **kw):
             seen.update(spec)
             output.write_bytes(b"PNG")
             return True
@@ -608,7 +608,7 @@ open(out, "wb").write(b"PNG")
         monkeypatch.setattr(thumbnailer, "_generate_imagen_bg", lambda *a, **kw: None)
         monkeypatch.setattr(thumbnailer, "_frame_source", lambda ws, p: ("v.mp4", {"duration": 10.0}))
         monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, **kw: frame)
-        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: False)
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output, **kw: False)
         out = thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "Título", "sub_text": "sub"}}, {})
         assert Image.open(out).size == thumbnailer.LONG_SIZE
         assert not frame.exists()  # the temporary frame is cleaned up
@@ -683,13 +683,13 @@ class TestHtmlLayout:
         monkeypatch.setattr(thumbnailer, "_pick_best_frame", lambda *a, with_ts=False, **kw: (frame, 30.0) if with_ts else frame)
         monkeypatch.setattr(thumbnailer, "_style_html", lambda: html)
         seen = {}
-        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: seen.update(spec) or output.write_bytes(b"PNG") or True)
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output, **kw: seen.update(spec) or output.write_bytes(b"PNG") or True)
         return frame, second, seen
 
     def test_long_picks_a_second_frame_only_when_used(self, monkeypatch, tmp_path):
         frame, second, seen = self._long(monkeypatch, tmp_path, self.HTML)
         calls = []
-        monkeypatch.setattr(thumbnailer, "_pick_second_frame", lambda v, d, ws, ts: calls.append(ts) or second)
+        monkeypatch.setattr(thumbnailer, "_pick_second_frame", lambda v, d, ws, ts, maker=False: calls.append(ts) or second)
         thumbnailer._thumbnail_long(tmp_path, {"thumbnail": {"main_text": "T"}}, {})
         assert calls == [30.0] and seen["frame2"] == str(second) and not second.exists()
 
@@ -726,7 +726,7 @@ class TestFaceCutout:
         monkeypatch.setattr(thumbnailer, "_style_html", lambda: html)
         monkeypatch.setattr(thumbnailer, "_find_face_asset", lambda: face_asset)
         seen = {}
-        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output: seen.update(spec) or output.write_bytes(b"PNG") or True)
+        monkeypatch.setattr(thumbnailer, "_render_react", lambda spec, output, **kw: seen.update(spec) or output.write_bytes(b"PNG") or True)
         return frame, seen
 
     def test_layout_with_face_gets_the_cutout(self, monkeypatch, tmp_path):
@@ -891,7 +891,7 @@ class TestThumbnailEntryPoint:
         (tmp_path / "pipeline.json").write_text(json.dumps({"type": "long", "context": "c"}))
         _metadata_ws(tmp_path, main_text)
 
-        def fake_long(workspace, metadata, pipeline, qa_out=None):
+        def fake_long(workspace, metadata, pipeline, qa_out=None, variants=None):
             out = workspace / "thumbnail.png"
             Image.new("RGB", thumbnailer.LONG_SIZE, (0, 0, 0)).save(out)
             # what the drawn layout would report: text right over the face

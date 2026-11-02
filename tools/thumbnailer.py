@@ -8,7 +8,11 @@ The layout is a React component (renderer/, `auto-edit-render`: Satori +
 resvg, no browser). If the renderer is missing or fails, the Pillow layout
 below draws it instead (AUTO_EDIT_THUMB_RENDERER=pillow forces that).
 
-Output: workspace/thumbnail.png
+Output: workspace/thumbnail.png — and, for a long, two more variations for
+YouTube's "Testar e comparar": thumbnail_b.png (the person cut out on one side,
+the text on the other) and thumbnail_c.png (the object/second frame big, a
+smaller expressive face). AUTO_EDIT_THUMB_VARIANTS=0 (or `long
+--no-thumb-variants`) makes only the first one.
 
 Usage: python tools/thumbnailer.py <workspace_dir>
 """
@@ -25,7 +29,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, render, styles, thumb_html, thumb_qa  # noqa: E402  -- needs the repo root on sys.path
+from auto_edit import expression, probe, render, styles, thumb_html, thumb_qa  # noqa: E402  -- needs the repo root on sys.path
 
 # ── Dimensions ──────────────────────────────────────────────────────────────
 
@@ -244,8 +248,12 @@ def _renderer_cmd() -> list[str] | None:
     return render.command()
 
 
-def _run_renderer(cmd: list[str], spec: dict, output: Path) -> str | None:
-    """Run `auto-edit-render thumbnail`; None when the PNG came out, else why not."""
+def _run_renderer(cmd: list[str], spec: dict, output: Path, report: dict | None = None) -> str | None:
+    """Run `auto-edit-render thumbnail`; None when the PNG came out, else why not.
+
+    The renderer prints one JSON line about the hero text (did it fit at its
+    size without shrinking, its lines and box): merged into ``report``. An
+    older renderer prints nothing — then nothing is merged (QA: "parcial")."""
     with tempfile.TemporaryDirectory(prefix="auto-edit-thumb-") as tmp:
         spec_file = Path(tmp) / "spec.json"
         spec_file.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
@@ -256,7 +264,50 @@ def _run_renderer(cmd: list[str], spec: dict, output: Path) -> str | None:
             return str(exc)
     if res.returncode != 0 or not output.is_file():
         return (res.stderr or res.stdout).strip()[-300:] or f"exit {res.returncode}"
+    if report is not None:
+        report.update(_renderer_report(res.stdout))
     return None
+
+
+def _renderer_report(stdout: str) -> dict:
+    """The renderer's text report (last JSON line of stdout), or {}."""
+    for line in reversed((stdout or "").strip().splitlines()):
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        return data if isinstance(data, dict) else {}
+    return {}
+
+
+def _react_qa_hints(report: dict, spec: dict) -> dict:
+    """thumb_qa hints from the renderer's report. Every layout says whether the
+    text fit without shrinking; the default layout also says where the text
+    sits, so the feed-height check (and, with a face, the overlap) runs too."""
+    hints: dict = {}
+    if isinstance(report.get("text_fits"), bool):
+        hints["text_fits"] = report["text_fits"]
+    box = report.get("text_box")
+    if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
+        hints["text_box"] = tuple(box)
+        hints["full_height"] = spec.get("height")
+        hints["text_lines"] = int(report.get("text_lines") or 1)
+        if spec.get("kind") == "long":
+            # Thumbnail.tsx: the face is drawn bottom-right at 78% of the height
+            hints["face_box"] = _default_face_box(spec.get("face"), spec["width"], spec["height"])
+    return {k: v for k, v in hints.items() if v is not None}
+
+
+def _default_face_box(face: str | None, w: int, h: int) -> tuple[int, int, int, int] | None:
+    if not face:
+        return None
+    try:
+        with Image.open(face) as im:
+            ratio = im.width / im.height
+    except (OSError, ZeroDivisionError):
+        return None
+    fh = h * 0.78
+    return (int(w - fh * ratio), int(h - fh), w, h)
 
 
 def _style_html() -> str | None:
@@ -270,13 +321,15 @@ def _style_html() -> str | None:
 FACE_FRAMES = 6  # other moments looked at when the main frame shows no face
 
 
-def _face_cutout(frame: Path, workspace: Path, video_path: str | None = None, duration: float = 0.0) -> dict | None:
+def _face_cutout(frame: Path, workspace: Path, video_path: str | None = None, duration: float = 0.0,
+                 force: bool = False) -> dict | None:
     """The person cut out of the frame, only when the style's layout shows a
-    face ({{rosto}} / {{rosto_contorno}}). No face in the main frame (a desk
-    shot): the biggest face from other moments of the video. Downloads the
-    models the first time; any failure means a thumbnail without the face."""
+    face ({{rosto}} / {{rosto_contorno}}) — or always with ``force`` (the B/C
+    variations). No face in the main frame (a desk shot): the biggest face
+    from other moments of the video. Downloads the models the first time;
+    any failure means a thumbnail without the face."""
     html = _style_html()
-    if not html or not {"rosto", "rosto_contorno"} & thumb_html.placeholders(html):
+    if not force and (not html or not {"rosto", "rosto_contorno"} & thumb_html.placeholders(html)):
         return None
     from auto_edit import face_cutout
 
@@ -303,10 +356,16 @@ def _face_cutout(frame: Path, workspace: Path, video_path: str | None = None, du
     return cut
 
 
-def _render_react(spec: dict, output: Path) -> bool:
+def _render_react(spec: dict, output: Path, qa_out: dict | None = None,
+                  html: str | None = None) -> bool:
     """Render the thumbnail with the active style's HTML layout (long only),
     else the React layout. False (and why) when it can't — the caller then
-    draws it with Pillow."""
+    draws it with Pillow. ``html`` draws that layout instead of the style's
+    (the B/C variations), with the style's fonts and colors; it never falls
+    back to the React layout (that would just be A again).
+
+    ``qa_out`` gets the renderer's report on the hero text (see
+    :func:`_react_qa_hints`)."""
     cmd = _renderer_cmd()
     font = _render_font()
     tokens = None
@@ -316,6 +375,13 @@ def _render_react(spec: dict, output: Path) -> bool:
         font = styles.title_font(tokens) or font
     except Exception as exc:  # a broken style never costs the thumbnail
         print(f"[thumbnailer] style ignored ({exc})")
+    report: dict = {}
+    if html is not None:
+        if tokens is not None:
+            tokens = {**tokens, "thumbnail": {**tokens["thumbnail"], "html": html}}
+        if cmd is None or tokens is None:
+            print("[thumbnailer] Variation layout unavailable (no renderer / style) — using Pillow")
+            return False
     if cmd is not None and tokens is not None and spec.get("kind") == "long" and "html" in tokens["thumbnail"]:
         try:
             hspec = styles.html_spec(
@@ -325,22 +391,29 @@ def _render_react(spec: dict, output: Path) -> bool:
                         "rosto_contorno": spec.get("face_outline") or spec.get("face"),
                         "logo": (spec.get("logos") or [None])[0]},
             )
-            why = _run_renderer(cmd, {"kind": "long", **hspec}, output)
+            why = _run_renderer(cmd, {"kind": "long", **hspec}, output, report)
         except Exception as exc:
             why = str(exc)
         if why is None:
             print("[thumbnailer] Rendered with the style's HTML layout")
+            if qa_out is not None:
+                qa_out.update(_react_qa_hints(report, spec))
             return True
+        if html is not None:
+            print(f"[thumbnailer] Variation layout failed: {why} — using Pillow")
+            return False
         print(f"[thumbnailer] HTML layout failed: {why} — using the default layout")
     if cmd is None or font is None:
         why = "no renderer (auto-edit-render)" if cmd is None else f"no static font ({', '.join(RENDER_FONTS)})"
         print(f"[thumbnailer] React layout unavailable: {why} — using Pillow")
         return False
-    why = _run_renderer(cmd, {**spec, "font": str(font)}, output)
+    why = _run_renderer(cmd, {**spec, "font": str(font)}, output, report)
     if why is not None:
         print(f"[thumbnailer] React renderer failed: {why} — using Pillow")
         return False
     print("[thumbnailer] Rendered with the React layout")
+    if qa_out is not None:
+        qa_out.update(_react_qa_hints(report, spec))
     return True
 
 
@@ -566,7 +639,7 @@ def _score_brightness(gray: np.ndarray) -> float:
     return max(0.0, 1.0 - abs(mean - optimal) / optimal)
 
 
-def _score_frame(img: Image.Image) -> dict:
+def _score_frame(img: Image.Image, with_expression: bool = True) -> dict:
     """Score a frame across multiple quality dimensions."""
     small = img.resize((320, int(320 * img.height / img.width)), Image.LANCZOS)
     rgb = np.array(small)
@@ -578,18 +651,28 @@ def _score_frame(img: Image.Image) -> dict:
     brightness = _score_brightness(gray)
     mouth_closed = _score_mouth_closed(rgb)
 
-    return {
+    scores = {
         "sharpness": sharpness,
         "face": face,
         "clarity": clarity,
         "brightness": brightness,
         "mouth_closed": mouth_closed,
     }
+    # Optional (the `expression` extra, mediapipe): how expressive the face is.
+    # Absent → the score below is exactly the old one.
+    expr = expression.score(np.array(img.convert("RGB"))) if with_expression else None
+    if expr is not None:
+        scores["expression"] = expr
+    return scores
 
 
 # Strong enough to sink a talking frame, small enough that a visible talking
 # face still beats a frame with no face in it (face term spans ~0-25 points).
 MOUTH_WEIGHT = 12.0
+# A smile / surprise (expression score 0..1, only with mediapipe): worth about
+# as much as a shut mouth — enough to pick the expressive frame among the ones
+# where the face shows, never enough to beat a frame where it shows better.
+EXPRESSION_WEIGHT = 15.0
 
 
 def _combined_score(scores: dict) -> float:
@@ -598,13 +681,16 @@ def _combined_score(scores: dict) -> float:
     Face visibility dominates; the mouth-closed term is strong enough to sink a
     talking frame but not to override a clearly better-framed shot.
     """
-    return (
+    total = (
         scores["face"] * 50.0
         + scores.get("mouth_closed", 1.0) * MOUTH_WEIGHT
         + scores["sharpness"] / 500.0
         + scores["clarity"] / 10.0
         + scores["brightness"] * 5.0
     )
+    if scores.get("expression") is not None:
+        total += scores["expression"] * EXPRESSION_WEIGHT
+    return total
 
 
 def _forced_timestamp() -> float | None:
@@ -710,11 +796,68 @@ def _pick_best_frame(
 
 SECOND_FRAME_GAP = 0.15  # of the duration, away from the main frame
 
+# A maker / 3D-printing video: the second frame should show the THING (the
+# printer, the AMS/BMCU, the printed part), not the person.
+MAKER_KEYWORDS = frozenset({
+    "3d", "impressora", "impressoras", "impressao", "imprimir", "impresso", "impressa",
+    "filamento", "filamentos", "bambu", "ams", "bmcu", "peca", "pecas", "maker",
+    "cnc", "arduino", "esp32", "esp8266", "solda", "soldar", "firmware", "hardware",
+    "petg", "tpu", "nozzle", "extrusora", "resina", "laser",
+})
+OBJECT_WEIGHT = 30.0  # object score 0..1 → the other second-frame terms span ~0-15
 
-def _pick_second_frame(video_path: str, duration: float, workspace: Path, main_ts: float) -> Path | None:
+
+def _plain_words(text: str) -> set[str]:
+    import unicodedata
+
+    flat = "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+    return set("".join(c if c.isalnum() else " " for c in flat).split())
+
+
+def _is_maker_video(metadata: dict, pipeline: dict) -> bool:
+    """The metadata stage put the video in the "maker" template (impressão 3D,
+    hardware, firmware, montagens), or its context/title says so."""
+    thumb = metadata.get("thumbnail") if isinstance(metadata.get("thumbnail"), dict) else {}
+    if thumb.get("template") == "maker" or _STYLE_HINT_COMPAT.get(thumb.get("style_hint") or "") == "maker":
+        return True
+    text = " ".join(str(x or "") for x in (pipeline.get("context"), metadata.get("youtube_title"),
+                                           thumb.get("main_text")))
+    return bool(_plain_words(text) & MAKER_KEYWORDS)
+
+
+def _score_object(rgb: np.ndarray) -> float:
+    """0..1: how much the middle of the frame shows a detailed, coloured thing
+    (a printer, a board, a printed part) rather than a person or a plain wall:
+    edge density + colour in the centre, minus skin anywhere."""
+    h, w = rgb.shape[:2]
+    c = rgb[int(h * 0.2):int(h * 0.8), int(w * 0.2):int(w * 0.8)].astype(np.float32)
+    if c.size == 0:
+        return 0.0
+    gray = c.mean(axis=2)
+    gx = np.abs(np.diff(gray, axis=1))[:-1, :]
+    gy = np.abs(np.diff(gray, axis=0))[:, :-1]
+    detail = min(1.0, float(((gx > 18) | (gy > 18)).mean()) / 0.25)
+    colour = min(1.0, float((c.max(axis=2) - c.min(axis=2)).mean()) / 255.0 / 0.35)
+    skin = float(_skin_mask(rgb).mean())
+    return max(0.0, min(1.0, 0.6 * detail + 0.4 * colour - 1.5 * skin))
+
+
+def _second_frame_score(img: Image.Image, maker: bool) -> float:
+    s = _score_frame(img, with_expression=False)
+    score = s["sharpness"] / 500.0 + s["clarity"] / 10.0 + s["brightness"] * 5.0 - s["face"] * 50.0
+    if maker:
+        small = np.array(img.convert("RGB").resize((320, max(1, int(320 * img.height / img.width)))))
+        score += _score_object(small) * OBJECT_WEIGHT
+    return score
+
+
+def _pick_second_frame(video_path: str, duration: float, workspace: Path, main_ts: float,
+                       maker: bool = False) -> Path | None:
     """A second frame for layouts with {{frame2}}: another moment of the video
     (≥ 15% of it away from the main frame), sharp and bright, preferably
-    without the face — it usually shows what the video is about."""
+    without the face — it usually shows what the video is about. In a maker
+    video (`maker`) the frame that shows the object (printer, AMS/BMCU, part)
+    wins."""
     margin = max(1.0, duration * 0.05)
     step = (duration - 2 * margin) / max(NUM_CANDIDATES - 1, 1)
     timestamps = [margin + i * step for i in range(NUM_CANDIDATES)]
@@ -724,11 +867,11 @@ def _pick_second_frame(video_path: str, duration: float, workspace: Path, main_t
         path = workspace / f"_thumb_second_{i}.jpg"
         try:
             _extract_frame(video_path, ts, path)
-            s = _score_frame(Image.open(path))
+            with Image.open(path) as img:
+                score = _second_frame_score(img, maker)
         except Exception:
             path.unlink(missing_ok=True)
             continue
-        score = s["sharpness"] / 500.0 + s["clarity"] / 10.0 + s["brightness"] * 5.0 - s["face"] * 50.0
         if best is None or score > best[0]:
             if best is not None:
                 best[1].unlink(missing_ok=True)
@@ -1217,7 +1360,7 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict,
 
     spec = {"kind": "short", "width": w, "height": h, "main_text": main_text, "sub_text": sub_text,
             "accent": list(template.get("accent", [255, 220, 0])), "background": str(frame_path)}
-    if not _render_react(spec, output):
+    if not _render_react(spec, output, qa_out=qa_out):
         img = Image.open(frame_path)
         img = _crop_center(img, w, h)
         img = _apply_grade(img, template.get("grade"))
@@ -1231,8 +1374,11 @@ def _thumbnail_short(workspace: Path, metadata: dict, pipeline: dict,
 
 
 def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict,
-                    qa_out: dict | None = None) -> Path:
-    """Generate thumbnail for long video: AI background + face + title."""
+                    qa_out: dict | None = None, variants: dict | None = None) -> Path:
+    """Generate thumbnail for long video: AI background + face + title.
+
+    ``variants``: a dict to fill with the B/C variations (see
+    :func:`_render_variants`); None makes only this one (A), exactly as before."""
     thumb_data = metadata.get("thumbnail", {})
     main_text = thumb_data.get("main_text", metadata.get("youtube_title", ""))
     sub_text = thumb_data.get("sub_text")
@@ -1248,34 +1394,42 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict,
 
     w, h = LONG_SIZE
     output = workspace / "thumbnail.png"
-    face_path = _find_face_asset()
+    face_asset = face_path = _find_face_asset()
     logo_paths = _find_logo_assets(thumb_data.get("logos"))
+    html = _style_html()
+    style_uses_frame2 = bool(html and "frame2" in thumb_html.placeholders(html))
+    want_variants = variants is not None
+    maker = _is_maker_video(metadata, pipeline)
 
-    # Background: try Imagen → frame from video → gradient (last resort)
+    # Background: try Imagen → frame from video → gradient (last resort).
+    # The B/C variations always need the video's frames, even under Imagen.
     bg = _generate_imagen_bg(w, h, style_hint, context)
     frame_path: Path | None = None
     frame2_path: Path | None = None
-    if bg is None:
+    video_path: str | None = None
+    duration = 0.0
+    if bg is None or want_variants:
         video_path, transcription = _frame_source(workspace, pipeline)
         duration = transcription.get("duration", 30.0)
         energy_peak = _find_energy_peak(transcription)
         try:
-            html = _style_html()
-            if html and "frame2" in thumb_html.placeholders(html):
+            if style_uses_frame2 or want_variants:
                 frame_path, main_ts = _pick_best_frame(video_path, duration, workspace, energy_peak, with_ts=True)
                 try:
-                    frame2_path = _pick_second_frame(video_path, duration, workspace, main_ts)
+                    frame2_path = _pick_second_frame(video_path, duration, workspace, main_ts, maker=maker)
                 except Exception as exc:
                     print(f"[thumbnailer] Second frame failed ({exc})")
             else:
                 frame_path = _pick_best_frame(video_path, duration, workspace, energy_peak)
-            print("[thumbnailer] Using best-scored video frame as background")
+            if bg is None:
+                print("[thumbnailer] Using best-scored video frame as background")
         except Exception:
             print("[thumbnailer] Frame extraction failed — using gradient fallback")
 
+    # A: the face only when the style's layout shows one (as before)
     face_outline: str | None = None
-    if face_path is None and frame_path is not None:
-        cut = _face_cutout(frame_path, workspace, video_path, duration)  # a frame means bg is None: both set
+    if face_path is None and frame_path is not None and bg is None:
+        cut = _face_cutout(frame_path, workspace, video_path, duration)
         if cut:
             face_path, face_outline = cut["rosto"], str(cut["rosto_contorno"])
 
@@ -1290,11 +1444,9 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict,
                 "background": str(background) if background else None,
                 "face": str(face_path) if face_path else None,
                 "face_outline": face_outline,
-                "frame2": str(frame2_path) if frame2_path else None,
+                "frame2": str(frame2_path) if frame2_path and style_uses_frame2 else None,
                 "logos": [str(p) for p in logo_paths]}
-        rendered = _render_react(spec, output)
-    if frame2_path is not None:
-        frame2_path.unlink(missing_ok=True)
+        rendered = _render_react(spec, output, qa_out=qa_out)
 
     if not rendered:
         if bg is None:
@@ -1304,19 +1456,102 @@ def _thumbnail_long(workspace: Path, metadata: dict, pipeline: dict,
                 bg = _generate_gradient_bg(w, h, style_hint)
         _draw_long_pillow(bg, output, main_text, sub_text, template, face_path, logo_paths,
                           qa_out=qa_out)
+    print(f"[thumbnailer] Long thumbnail → {output}")
+
+    if want_variants:
+        # B/C: the person cut out of the video always (a photo in
+        # assets/thumbnails/faces wins), whatever the style shows.
+        vface: dict | None = None
+        if face_asset is not None:
+            vface = {"rosto": face_asset, "rosto_contorno": face_asset}
+        elif face_outline is not None and face_path is not None:
+            vface = {"rosto": face_path, "rosto_contorno": Path(face_outline)}
+        elif frame_path is not None:
+            vface = _face_cutout(frame_path, workspace, video_path, duration, force=True)
+        variants.update(_render_variants(
+            workspace, main_text=main_text, sub_text=sub_text, template=template,
+            frame=frame_path, frame2=frame2_path, face=vface,
+        ))
+
+    if frame2_path is not None:
+        frame2_path.unlink(missing_ok=True)
     if frame_path is not None:
         frame_path.unlink(missing_ok=True)
-    print(f"[thumbnailer] Long thumbnail → {output}")
     return output
+
+
+# ── A/B/C variations (YouTube "Testar e comparar") ───────────────────────────
+
+def variants_enabled(pipeline: dict) -> bool:
+    """B/C are made for a long unless AUTO_EDIT_THUMB_VARIANTS=0 (or `long
+    --no-thumb-variants`, kept in pipeline.json). A short never gets them:
+    YouTube takes no custom thumbnail (nor a test) for a Short."""
+    if pipeline.get("type", "short") == "short":
+        return False
+    env = os.environ.get("AUTO_EDIT_THUMB_VARIANTS", "").strip().lower()
+    if env in ("0", "false", "no", "off", "a"):
+        return False
+    return pipeline.get("thumb_variants", True) is not False
+
+
+def _render_variants(workspace: Path, *, main_text: str, sub_text: str | None, template: dict,
+                     frame: Path | None, frame2: Path | None, face: dict | None) -> dict:
+    """Draw B and C. Returns {"B": {"path", "qa_hints"} | {"skipped": why}, "C": …}.
+
+    B = the person cut out on the left, the text on the right (over the main
+    frame) — the mirror of A's usual face-right layout, so the test compares
+    two compositions. C = the object / second frame big, the face smaller (its frame
+    was picked for the expression). Rendered with the variation's own HTML
+    layout (thumb_variants.py) in the active style's fonts and colors; Pillow
+    when the renderer can't."""
+    from auto_edit import thumb_variants as tv
+
+    out: dict = {}
+    accent = list(template.get("accent", [255, 220, 0]))
+    jobs = {
+        "B": (tv.LAYOUT_B, frame, None, 0.75, "left", "sem rosto recortado do vídeo" if not face else None),
+        "C": (tv.LAYOUT_C, frame2, frame, 0.5, "right", "sem segundo frame do vídeo" if not frame2 else None),
+    }
+    for vid, (layout, bg_frame, frame_b, face_frac, side, why_not) in jobs.items():
+        target = workspace / tv.file_name(vid)
+        target.unlink(missing_ok=True)  # never deliver a stale one from an earlier run
+        if why_not or bg_frame is None:
+            out[vid] = {"skipped": why_not or "sem frame do vídeo"}
+            print(f"[thumbnailer] Variação {vid} pulada: {out[vid]['skipped']}")
+            continue
+        hints: dict = {}
+        spec = {"kind": "long", "width": LONG_SIZE[0], "height": LONG_SIZE[1],
+                "main_text": main_text, "sub_text": sub_text, "accent": accent,
+                "background": str(bg_frame), "frame2": str(bg_frame) if vid == "C" else (str(frame_b) if frame_b else None),
+                "face": str(face["rosto"]) if face else None,
+                "face_outline": str(face["rosto_contorno"]) if face else None,
+                "logos": []}
+        try:
+            if not _render_react(spec, target, qa_out=hints, html=layout):
+                hints = {}
+                _draw_long_pillow(_stylize_frame_bg(Image.open(bg_frame)), target, main_text, sub_text,
+                                  template, Path(face["rosto"]) if face else None, [],
+                                  qa_out=hints, face_frac=face_frac, face_side=side)
+        except (OSError, ValueError) as exc:
+            target.unlink(missing_ok=True)
+            out[vid] = {"skipped": f"falhou ao desenhar ({exc})"}
+            print(f"[thumbnailer] Variação {vid} falhou: {exc}")
+            continue
+        out[vid] = {"path": target, "qa_hints": hints}
+        print(f"[thumbnailer] Variação {vid} → {target}")
+    return out
 
 
 def _draw_long_pillow(bg: Image.Image, output: Path, main_text: str, sub_text: str | None,
                       template: dict, face_path: Path | None, logo_paths: list[Path],
-                      qa_out: dict | None = None) -> None:
+                      qa_out: dict | None = None, face_frac: float = 0.75,
+                      face_side: str = "right") -> None:
     """The Pillow layout (fallback when the React renderer isn't available).
 
-    When ``qa_out`` is a dict it is filled with the hero text box / colours and
-    the face box (bottom-right), plus ``full_height``, for ``thumb_qa``."""
+    The face sits at the bottom of ``face_side`` ("right", or "left" for the
+    B variation) and the text on the other side. When ``qa_out`` is a dict it
+    is filled with the hero text box / colours and the face box, plus
+    ``full_height``, for ``thumb_qa``."""
     w, h = LONG_SIZE
     bg = _crop_center(bg, w, h)
     img = bg.convert("RGBA")
@@ -1325,19 +1560,20 @@ def _draw_long_pillow(bg: Image.Image, output: Path, main_text: str, sub_text: s
     face_box: tuple[int, int, int, int] | None = None
     if face_path:
         face = Image.open(face_path).convert("RGBA")
-        face_h = int(h * 0.75)
+        face_h = int(h * face_frac)
         face_ratio = face.width / face.height
         face_w = int(face_h * face_ratio)
         face = face.resize((face_w, face_h), Image.LANCZOS)
 
-        # Position: bottom-right, flush
-        img.paste(face, (w - face_w, h - face_h), face)
+        # Position: bottom corner of its side, flush
+        x = 0 if face_side == "left" else w - face_w
+        img.paste(face, (x, h - face_h), face)
         has_face = True
-        face_box = (w - face_w, h - face_h, w, h)
+        face_box = (x, h - face_h, x + face_w, h)
         print(f"[thumbnailer] Face composited from {face_path.name}")
 
     # Text position: left (rule of thirds) if face on right, center otherwise
-    text_pos = "left" if has_face else "center"
+    text_pos = ("right" if face_side == "left" else "left") if has_face else "center"
 
     img_rgb = img.convert("RGB")
     img_rgb = _draw_thumbnail_text(img_rgb, main_text, sub_text, template, position=text_pos,
@@ -1347,7 +1583,7 @@ def _draw_long_pillow(bg: Image.Image, output: Path, main_text: str, sub_text: s
         qa_out["full_height"] = h
 
     if logo_paths:
-        logo_pos = "top-left" if has_face else "top-right"
+        logo_pos = "top-left" if has_face and face_side != "left" else "top-right"
         img_rgb = _composite_logos(img_rgb, logo_paths, logo_pos)
         img_rgb = img_rgb.convert("RGB")
 
@@ -1679,6 +1915,47 @@ def _gate_main_text(metadata: dict, metadata_path: Path, video_type: str, contex
     return {"from": original, "to": shorter, "reasons": reasons}
 
 
+def _register_variants(workspace: Path, metadata_path: Path, report_a: dict, variants: dict | None,
+                       main_text: str, rewrite: dict | None, strict: bool) -> None:
+    """QA each B/C and record A/B/C in metadata.json (``thumbnail_variants``)
+    for YouTube's Testar e comparar. Without variations (a short, or
+    AUTO_EDIT_THUMB_VARIANTS=0) the key is removed and stale B/C files go."""
+    from auto_edit import thumb_variants as tv
+
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if variants is None:
+        for vid in ("B", "C"):
+            (workspace / tv.file_name(vid)).unlink(missing_ok=True)
+        if metadata.pop("thumbnail_variants", None) is not None:
+            metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        return
+    items = [tv.entry("A", report_a)]
+    for vid in ("B", "C"):
+        info = variants.get(vid) or {"skipped": "não gerada"}
+        if "path" not in info:
+            items.append(tv.entry(vid, skipped=info.get("skipped")))
+            continue
+        try:
+            rep = thumb_qa.run(workspace, info["path"], main_text, rewrite=rewrite,
+                               name=tv.qa_stem(vid), **info.get("qa_hints", {}))
+        except OSError as exc:
+            print(f"[thumbnailer] QA da variação {vid} pulado: {exc}")
+            rep = {}
+        if strict and rep.get("approved") is False:
+            Path(info["path"]).unlink(missing_ok=True)
+            items.append(tv.entry(vid, skipped="reprovada no QA: " + "; ".join(rep.get("reasons", []))))
+            print(f"[thumbnailer] Variação {vid} descartada (AUTO_EDIT_THUMB_QA_STRICT=1)")
+            continue
+        items.append(tv.entry(vid, rep))
+    metadata["thumbnail_variants"] = items
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    made = [v["id"] for v in tv.generated(metadata)]
+    print(f"[thumbnailer] Variações pro Testar e comparar: {', '.join(made)}")
+
+
 def thumbnail(workspace: Path) -> None:
     """Main entry point — called by ralph.sh via run_python_tool."""
     pipeline = json.loads((workspace / "pipeline.json").read_text())
@@ -1700,10 +1977,11 @@ def thumbnail(workspace: Path) -> None:
     # QA can check overlap, contrast and feed legibility. Stays empty when the
     # React renderer drew the thumbnail → those checks are skipped ("parcial").
     qa_hints: dict = {}
+    variants: dict | None = {} if variants_enabled(pipeline) else None
     if video_type == "short":
         thumb = _thumbnail_short(workspace, metadata, pipeline, qa_out=qa_hints)
     else:
-        thumb = _thumbnail_long(workspace, metadata, pipeline, qa_out=qa_hints)
+        thumb = _thumbnail_long(workspace, metadata, pipeline, qa_out=qa_hints, variants=variants)
 
     # QA: text rules + a feed-size preview + thumbnail_qa.json. Never fatal.
     thumb_data = metadata.get("thumbnail", {})
@@ -1715,9 +1993,13 @@ def thumbnail(workspace: Path) -> None:
         print(f"[thumbnailer] QA skipped: {exc}")
         report = {}
 
+    strict = os.environ.get("AUTO_EDIT_THUMB_QA_STRICT") == "1"
+    _register_variants(workspace, metadata_path, report, variants, main_text, rewrite, strict)
+
     # Opt-in hard gate, like AUTO_EDIT_OVERLAYS_STRICT: by default a failed QA
-    # is reported (thumbnail_qa.json + the log line), not fatal.
-    if os.environ.get("AUTO_EDIT_THUMB_QA_STRICT") == "1" and report.get("approved") is False:
+    # is reported (thumbnail_qa.json + the log line), not fatal. Only A can
+    # fail the stage; a failed B/C is dropped from the test instead.
+    if strict and report.get("approved") is False:
         print("[thumbnailer] ERROR: QA reprovou a thumbnail (AUTO_EDIT_THUMB_QA_STRICT=1): "
               + "; ".join(report.get("reasons", [])))
         sys.exit(1)

@@ -130,3 +130,26 @@ def retention(
         console.print(ret.format_summary(data), markup=False)
     if failed and not all_videos:
         raise typer.Exit(1)
+
+
+@insights_app.command("import-ctr")
+def import_ctr(csv_file: Path = typer.Argument(..., help="CSV exportado do YouTube Studio (Análises → Modo avançado → Exportar)")) -> None:
+    """Importa o CTR e as impressões do CSV do YouTube Studio.
+
+    A API não entrega CTR pra canal: exporte a tabela no Studio com a métrica
+    "Taxa de cliques de impressões" e importe aqui. O resto das métricas fica
+    como o `sync` deixou.
+    """
+    from auto_edit.insights import studio_csv
+
+    if not csv_file.is_file():
+        console.print(f"[red]Arquivo não encontrado: {escape(str(csv_file))}[/red]")
+        raise typer.Exit(1)
+    try:
+        res = studio_csv.import_file(_open(), csv_file)
+    except studio_csv.StudioCsvError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]CTR de {res.rows} vídeos importado[/green]"
+                  + (f" ({res.new_videos} ainda não estavam no store)" if res.new_videos else "")
+                  + (f"; {res.skipped} sem CTR/impressões." if res.skipped else "."))

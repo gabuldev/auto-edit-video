@@ -47,7 +47,8 @@ type FitBox = { box: number; maxH: number; max: number; min: number; maxLines: n
 export function fitted(text: string, o: FitBox, width: Measurer): { size: number; ok: boolean } {
   const lh = o.lineHeight ?? 1.02;
   const box = o.box * 0.98;
-  for (let size = Math.floor(o.max); size > o.min; size -= 2) {
+  // down to `min` itself: a text that fits exactly at the floor did fit
+  for (let size = Math.floor(o.max); size >= o.min; size -= 2) {
     const lines = wrap(text, size, box, width);
     if (lines.length <= o.maxLines && lines.every((l) => width(l, size) <= box) && lines.length * size * lh <= o.maxH) {
       return { size, ok: true };
