@@ -9,11 +9,17 @@ from PIL import Image, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tools import thumbnailer
 from auto_edit import styles as styles_mod
+from tools import thumbnailer
 from tools.thumbnailer import (
+    _BUILTIN_TEMPLATES,
+    _TEMPLATE_TO_STYLE,
     COVER_FRAMES,
     COVER_TAG,
+    FACE_ZONE_TOP,
+    IG_SAFE_BOT,
+    IG_SAFE_TOP,
+    _apply_grade,
     _assert_frame_rate_preserved,
     _combined_score,
     _cover_body_cmd,
@@ -21,20 +27,14 @@ from tools.thumbnailer import (
     _cover_concat_cmd,
     _cover_mux_cmd,
     _cover_strip_point,
+    _draw_sub_chip,
+    _draw_thumbnail_text,
     _forced_timestamp,
     _frame_source,
-    _score_mouth_closed,
-    _BUILTIN_TEMPLATES,
-    _TEMPLATE_TO_STYLE,
     _load_templates,
     _resolve_template,
     _safe_block_top,
-    _draw_sub_chip,
-    _draw_thumbnail_text,
-    _apply_grade,
-    IG_SAFE_TOP,
-    IG_SAFE_BOT,
-    FACE_ZONE_TOP,
+    _score_mouth_closed,
 )
 
 
@@ -159,6 +159,77 @@ class TestDrawThumbnailText:
         template = _BUILTIN_TEMPLATES["templates"]["dev"]
         out = _draw_thumbnail_text(img, "CAIU O FLUTTER", None, template, "center")
         assert out.size == (1080, 1920)
+
+    def test_qa_out_is_filled_with_text_box_and_colours(self):
+        img = Image.new("RGB", (1080, 1920), (40, 40, 40))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        qa_out: dict = {}
+        _draw_thumbnail_text(img, "CAIU O FLUTTER", None, template, "center", qa_out=qa_out)
+        assert qa_out["text_rgb"] == (255, 255, 255)
+        assert qa_out["text_lines"] >= 1
+        x0, y0, x1, y1 = qa_out["text_box"]
+        assert x1 > x0 and y1 > y0  # a real, non-empty box
+        assert len(qa_out["bg_rgb"]) == 3
+
+
+class TestQaWiring:
+    """The Pillow path hands the hero text box + face box to thumb_qa, so the
+    overlap / contrast / feed checks actually run (the review's item 1)."""
+
+    def test_long_pillow_fills_face_box_and_qa_runs_the_checks(self, tmp_path):
+        from auto_edit import thumb_qa
+
+        bg = Image.new("RGB", thumbnailer.LONG_SIZE, (20, 20, 20))
+        face = tmp_path / "face.png"
+        Image.new("RGBA", (300, 400), (200, 150, 120, 255)).save(face)
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        out = tmp_path / "thumbnail.png"
+        qa_out: dict = {}
+        thumbnailer._draw_long_pillow(
+            bg, out, "MEU CARRO NOVO", None, template, face, [], qa_out=qa_out,
+        )
+        # the Pillow path reported the face box and the frame height
+        assert qa_out["face_box"] is not None
+        assert qa_out["full_height"] == thumbnailer.LONG_SIZE[1]
+        # feeding those hints to run() exercises the real checks (not skipped)
+        report = thumb_qa.run(tmp_path, out, "MEU CARRO NOVO", **qa_out)
+        assert report["checks"]["text_not_over_face"] is not None
+        assert report["checks"]["contrast"] is not None
+        assert report["checks"]["mobile_text_height"] is not None
+        assert report["approved"] in (True, False)  # fully evaluated, never "parcial"
+
+    def test_default_layout_keeps_text_clear_of_the_face(self, tmp_path):
+        from auto_edit import thumb_qa
+
+        # the long layout puts the face bottom-right and the hero text left —
+        # the positions flow through to QA and the overlap check confirms it
+        bg = Image.new("RGB", thumbnailer.LONG_SIZE, (20, 20, 20))
+        face = tmp_path / "face.png"
+        Image.new("RGBA", (300, 400), (200, 150, 120, 255)).save(face)
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        out = tmp_path / "thumbnail.png"
+        qa_out: dict = {}
+        thumbnailer._draw_long_pillow(
+            bg, out, "MEU CARRO NOVO", None, template, face, [], qa_out=qa_out,
+        )
+        report = thumb_qa.run(tmp_path, out, "MEU CARRO NOVO", **qa_out)
+        assert report["checks"]["text_not_over_face"]["ok"] is True
+
+    def test_short_pillow_path_feeds_qa_without_a_face(self, tmp_path):
+        from auto_edit import thumb_qa
+
+        img = Image.new("RGB", thumbnailer.SHORT_SIZE, (20, 20, 20))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        qa_out: dict = {}
+        _draw_thumbnail_text(img, "OLHA ISSO", None, template, "center", qa_out=qa_out)
+        # a short has no face box → the overlap check is skipped (parcial), but
+        # the text box / colours still flow through for contrast
+        assert "face_box" not in qa_out
+        out = tmp_path / "thumbnail.png"
+        img.save(out)
+        report = thumb_qa.run(tmp_path, out, "OLHA ISSO", **qa_out)
+        assert report["checks"]["contrast"] is not None
+        assert report["checks"]["text_not_over_face"] is None
 
 
 class TestApplyGrade:
@@ -737,3 +808,113 @@ class TestFaceCutout:
         thumbnailer._render_react({"kind": "long", "main_text": "x", "accent": [1, 2, 3], "face": "/r.png", "face_outline": "/c.png"}, tmp_path / "t.png")
         images = json.loads(log.read_text())["images"]
         assert images["rosto"] == "/r.png" and images["rosto_contorno"] == "/c.png"
+
+
+class TestNeverShrinkHeroText:
+    """Review item 6: a text that does not fit gets shorter, never smaller."""
+
+    def test_font_size_does_not_depend_on_text_length(self):
+        short_font, _, short_fits = thumbnailer._hero_layout(None, "FONE SUMIU", 1280, "center")
+        long_font, long_lines, long_fits = thumbnailer._hero_layout(
+            None, "ESSE TEXTO E LONGO DEMAIS PRA CABER NA CAPA DO VIDEO", 1280, "center",
+        )
+        assert short_font.size == long_font.size == int(1280 * thumbnailer.HERO_SIZE_FRAC)
+        assert short_fits is True
+        assert long_fits is False and len(long_lines) > thumbnailer.HERO_MAX_LINES
+
+    def test_draw_reports_overflow_to_qa(self):
+        img = Image.new("RGB", thumbnailer.SHORT_SIZE, (40, 40, 40))
+        template = _BUILTIN_TEMPLATES["templates"]["dev"]
+        qa_out: dict = {}
+        _draw_thumbnail_text(img, "ESSE TEXTO E LONGO DEMAIS PRA CABER NA CAPA", None,
+                             template, "center", qa_out=qa_out)
+        assert qa_out["text_fits"] is False
+
+
+def _metadata_ws(tmp_path, main_text, video_type="long"):
+    meta = {"thumbnail": {"main_text": main_text}, "youtube_title": "t", "short_title": "t"}
+    path = tmp_path / "metadata.json"
+    path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    return meta, path
+
+
+class TestMainTextRewrite:
+    def test_good_text_is_not_sent_to_the_model(self, tmp_path):
+        meta, path = _metadata_ws(tmp_path, "FONE SUMIU")
+        calls = []
+        assert thumbnailer._gate_main_text(meta, path, "long", "", ask=calls.append) is None
+        assert calls == []
+
+    def test_bad_text_is_rewritten_and_saved(self, tmp_path):
+        meta, path = _metadata_ws(tmp_path, "ESP8266 X BALANÇA TOLEDO")
+        prompts = []
+
+        def ask(prompt):
+            prompts.append(prompt)
+            return '{"main_text": "BALANÇA FICOU SMART"}'
+
+        change = thumbnailer._gate_main_text(meta, path, "long", "balança antiga", ask=ask)
+        assert change == {"from": "ESP8266 X BALANÇA TOLEDO", "to": "BALANÇA FICOU SMART",
+                          "reasons": change["reasons"]}
+        assert "ESP8266" in prompts[0] and "balança antiga" in prompts[0]
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert saved["thumbnail"]["main_text"] == "BALANÇA FICOU SMART"
+
+    def test_second_attempt_when_the_first_is_still_bad(self, tmp_path):
+        meta, path = _metadata_ws(tmp_path, "codei sem ia por dois dias seguidos")
+        answers = iter(['{"main_text": "codei sem ia por dois dias"}', '{"main_text": "SEM IA DOIS DIAS"}'])
+        change = thumbnailer._gate_main_text(meta, path, "long", "", ask=lambda p: next(answers))
+        assert change["to"] == "SEM IA DOIS DIAS"
+
+    def test_no_agent_keeps_the_original(self, tmp_path):
+        from auto_edit.agents import AgentError
+
+        meta, path = _metadata_ws(tmp_path, "ESP8266 X BALANÇA TOLEDO")
+
+        def ask(prompt):
+            raise AgentError("nenhum agente")
+
+        change = thumbnailer._gate_main_text(meta, path, "long", "", ask=ask)
+        assert change["to"] is None
+        assert json.loads(path.read_text(encoding="utf-8"))["thumbnail"]["main_text"] == "ESP8266 X BALANÇA TOLEDO"
+
+    def test_parse_accepts_json_or_a_bare_line(self):
+        assert thumbnailer._parse_main_text('ok: {"main_text": "A B"}') == "A B"
+        assert thumbnailer._parse_main_text('"FONE SUMIU"\n') == "FONE SUMIU"
+        assert thumbnailer._parse_main_text("") is None
+
+
+class TestThumbnailEntryPoint:
+    """The whole entry point: gate → draw → QA report → optional strict fail."""
+
+    def _ws(self, tmp_path, monkeypatch, main_text):
+        (tmp_path / "pipeline.json").write_text(json.dumps({"type": "long", "context": "c"}))
+        _metadata_ws(tmp_path, main_text)
+
+        def fake_long(workspace, metadata, pipeline, qa_out=None):
+            out = workspace / "thumbnail.png"
+            Image.new("RGB", thumbnailer.LONG_SIZE, (0, 0, 0)).save(out)
+            # what the drawn layout would report: text right over the face
+            qa_out.update(text_box=(0, 0, 1280, 720), face_box=(900, 300, 1280, 720),
+                          text_rgb=(255, 255, 255), bg_rgb=(0, 0, 0), full_height=720,
+                          text_lines=1, text_fits=True)
+            return out
+
+        monkeypatch.setattr(thumbnailer, "_thumbnail_long", fake_long)
+        monkeypatch.setattr(thumbnailer, "_embed_cover_frame", lambda ws, thumb: None)
+        monkeypatch.setattr(thumbnailer, "_shorten_main_text", lambda *a, **k: None)
+
+    def test_text_over_face_is_reprovada_in_the_report(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, "FONE SUMIU")
+        monkeypatch.delenv("AUTO_EDIT_THUMB_QA_STRICT", raising=False)
+        thumbnailer.thumbnail(tmp_path)
+        report = json.loads((tmp_path / "thumbnail_qa.json").read_text(encoding="utf-8"))
+        assert report["approved"] is False
+        assert report["checks"]["text_not_over_face"]["ok"] is False
+
+    def test_strict_mode_fails_the_stage(self, tmp_path, monkeypatch):
+        self._ws(tmp_path, monkeypatch, "FONE SUMIU")
+        monkeypatch.setenv("AUTO_EDIT_THUMB_QA_STRICT", "1")
+        with pytest.raises(SystemExit) as exc:
+            thumbnailer.thumbnail(tmp_path)
+        assert exc.value.code == 1

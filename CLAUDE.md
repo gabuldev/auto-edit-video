@@ -146,6 +146,7 @@ decrescente e marca os candidatos que se sobrepõem.
 | `AUTO_EDIT_OUTPUT` | `workspace/output` | Pasta onde o `finalize` entrega os vídeos prontos (app: Configurações → Pastas → Pasta de saída). Cada workspace grava no `pipeline.json` (`output_dir`) onde entregou, então trocar a pasta não perde os vídeos já feitos; workspace antigo sem esse campo continua em `workspace/output` |
 | `AUTO_EDIT_FFMPEG` | — | ffmpeg com libass pro stage caption (se o do PATH não tiver o filtro `subtitles`) |
 | `AUTO_EDIT_THUMB_TS` | — | Força o frame da thumbnail num timestamp (segundos), pulando a seleção automática |
+| `AUTO_EDIT_THUMB_QA_STRICT` | — | `1` faz o stage `thumbnail` falhar quando o QA da capa reprova (texto sobre o rosto, contraste, legibilidade no feed, texto que não cabe). Por padrão só relata em `thumbnail_qa.json`. O texto da capa nunca é desenhado menor pra caber: antes de desenhar, um texto reprovado é reescrito mais curto pelo agente (até 2 tentativas) e gravado no `metadata.json` |
 | `AUTO_EDIT_THUMB_RENDERER` | — | `pillow` desenha a thumbnail com o layout antigo (Pillow) em vez do React (`renderer/`) |
 | `AUTO_EDIT_RENDER_BIN` | — | Caminho do `auto-edit-render`. Sem ele: o do PATH (o app traz no `bin/` do motor) ou, num checkout, `bun run renderer/src/cli.tsx` |
 | `AUTO_EDIT_ASSETS_OVERLAYS` | — | Pasta com os MP4s de overlay próprios, com fundo verde (`ctas.mp4`, `lowerthid_gabul.mp4`). Opcionais: sem eles o React desenha. Tem prioridade sobre `assets/overlays/`. Também via `--overlays-dir` no `long`/`apply-overlays` |
