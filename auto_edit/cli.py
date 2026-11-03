@@ -223,6 +223,7 @@ def _run_pipeline(
     plan_id: Optional[str] = None,
     cold_open: bool = False,
     reorder: bool = False,
+    thumb_variants: bool = True,
 ) -> None:
     if not video.exists():
         console.print(f"[red]Error:[/red] File not found: {video}")
@@ -253,6 +254,8 @@ def _run_pipeline(
         pl.set_cold_open(ws)
     if reorder:
         pl.set_reorder(ws)
+    if not thumb_variants:
+        pl.set_thumb_variants(ws, False)
     console.print(f"[cyan]Type:[/cyan] {video_type}")
     console.print(f"[cyan]Context:[/cyan] {context or '(none)'}")
     if pl.load(ws).get("cold_open"):
@@ -377,6 +380,7 @@ def long(
     ),
     cold_open: bool = typer.Option(True, "--cold-open/--no-cold-open", help="Abre o vídeo com o melhor momento (teaser) antes da abertura normal."),
     reorder: bool = typer.Option(True, "--reorder/--no-reorder", help="Deixa o agente mudar a ordem dos blocos (ex.: demo antes da explicação)."),
+    thumb_variants: bool = typer.Option(True, "--thumb-variants/--no-thumb-variants", help="Gera as thumbnails B e C pro Testar e comparar do YouTube (sem: só a A)."),
 ) -> None:
     """Edit a long-form video (no captions, generates YouTube metadata)."""
     if whisper_model not in VALID_MODELS:
@@ -400,6 +404,7 @@ def long(
         plan_id=pid,
         cold_open=cold_open,
         reorder=reorder,
+        thumb_variants=thumb_variants,
     )
 
 

@@ -26,13 +26,17 @@ import satori from "satori";
 import { Resvg, initWasm } from "@resvg/resvg-wasm";
 // Embedded in the compiled executable (no native addon to extract or sign).
 import wasmFile from "@resvg/resvg-wasm/index_bg.wasm" with { type: "file" };
-import { Thumbnail, type ThumbnailSpec } from "./Thumbnail";
+import { Thumbnail, layout, type ThumbnailSpec } from "./Thumbnail";
 import { measurer } from "./text";
 import { dataUrl } from "./images";
 import { previewOverlay, renderOverlay } from "./overlay";
-import { htmlTree } from "./html";
+import { htmlTree, type FitReport } from "./html";
 
-async function thumbnailSvg(raw: any): Promise<string> {
+// What `thumbnail` reports on stdout (one JSON line) about the hero text, for
+// the QA in tools/thumbnailer.py: did it fit at its size, without shrinking?
+type TextReport = { text_fits: boolean; text_lines?: number; text_box?: number[]; fit?: FitReport[] };
+
+async function thumbnailSvg(raw: any, report?: TextReport): Promise<string> {
   const font = fs.readFileSync(raw.font);
   const spec: ThumbnailSpec = {
     ...raw,
@@ -41,14 +45,19 @@ async function thumbnailSvg(raw: any): Promise<string> {
     logos: (raw.logos || []).map(dataUrl),
   };
   const fontData = font.buffer.slice(font.byteOffset, font.byteOffset + font.byteLength);
-  return satori(<Thumbnail spec={spec} measure={measurer(fontData)} />, {
+  const measure = measurer(fontData);
+  if (report) {
+    const { info } = layout(spec, measure);
+    Object.assign(report, { text_fits: info.fits, text_lines: info.lines, text_box: info.text_box });
+  }
+  return satori(<Thumbnail spec={spec} measure={measure} />, {
     width: spec.width,
     height: spec.height,
     fonts: [{ name: "Display", data: fontData, weight: 400, style: "normal" }],
   });
 }
 
-async function htmlSvg(raw: any): Promise<string> {
+async function htmlSvg(raw: any, report?: TextReport): Promise<string> {
   const fonts = (raw.fonts || []).map((f: any) => {
     const b = fs.readFileSync(f.path);
     return { name: String(f.name), weight: f.weight || 400, data: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer };
@@ -58,7 +67,10 @@ async function htmlSvg(raw: any): Promise<string> {
   for (const f of fonts) measure[f.name] ??= measurer(f.data);
   const images: Record<string, string | null> = {};
   for (const [k, p] of Object.entries(raw.images || {})) images[k] = p ? dataUrl(p as string) : null;
-  const tree = htmlTree(raw.html, raw.values || {}, images, measure, fonts[0].name, raw.width, raw.height);
+  const fit: FitReport[] = [];
+  const tree = htmlTree(raw.html, raw.values || {}, images, measure, fonts[0].name, raw.width, raw.height, fit);
+  // A layout without data-fit draws its title at a fixed size: nothing shrank.
+  if (report) Object.assign(report, { text_fits: fit.every((f) => f.fits), fit });
   return satori(tree, {
     width: raw.width,
     height: raw.height,
@@ -77,7 +89,9 @@ try {
   if (cmd === "thumbnail" && args.length === 2) {
     await initWasm(fs.readFileSync(wasmFile));
     const spec = readSpec(args[0]);
-    writePng(spec.html ? await htmlSvg(spec) : await thumbnailSvg(spec), spec.width, args[1]);
+    const report: TextReport = { text_fits: true };
+    writePng(spec.html ? await htmlSvg(spec, report) : await thumbnailSvg(spec, report), spec.width, args[1]);
+    console.log(JSON.stringify(report));
   } else if (cmd === "overlay" && args.length === 2) {
     await initWasm(fs.readFileSync(wasmFile));
     console.log(JSON.stringify(await renderOverlay(readSpec(args[0]), args[1])));
@@ -93,7 +107,7 @@ try {
           : await thumbnailSvg({ ...spec, kind: spec.thumbnail_kind || "long" });
     writePng(svg, spec.width, args[1]);
   } else if (cmd === "--version") {
-    console.log("auto-edit-render 4");
+    console.log("auto-edit-render 5");
   } else {
     console.error("usage: auto-edit-render thumbnail|preview <spec.json> <out.png> | overlay <spec.json> <out_dir>");
     process.exit(2);

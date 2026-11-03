@@ -31,6 +31,8 @@ auto-edit = "auto_edit.cli:app"
 test = ["pytest>=8.0"]
 mcp = ["mcp>=1.0.0"]
 api = ["flask>=3.0"]
+# Expression score for the thumbnail face frame (auto_edit/expression.py); optional
+expression = ["mediapipe>=0.10.14"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

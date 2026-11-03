@@ -108,3 +108,22 @@ test("stroke and shadow shrink with a fitted title (they were sized for max)", (
   expect(s.WebkitTextStroke).toBe(`${+(10 * k).toFixed(1)}px #000`);
   expect(s.textShadow).toBe(`${+(8 * k).toFixed(1)}px ${+(8 * k).toFixed(1)}px 0 #000`);
 });
+
+test("data-fit reports each fitted text: inside its range fits, below min does not", () => {
+  const fits: any[] = [];
+  // the long title only fits a 400px box below the declared min (60) → shrunk
+  htmlTree('<div><span data-fit="linhas:2;min:60;max:160" style="width:400px;height:300px">{{titulo}}</span></div>', V, {}, { Anton: m }, "Anton", 1280, 720, fits);
+  expect(fits.length).toBe(1);
+  expect(fits[0].size).toBeLessThan(60);
+  expect(fits[0].fits).toBe(false);
+
+  const ok: any[] = [];
+  htmlTree('<div><span data-fit="linhas:2;min:20;max:100" style="width:1200px;height:400px">{{titulo_fim}}</span></div>', V, {}, { Anton: m }, "Anton", 1280, 720, ok);
+  expect(ok[0]).toMatchObject({ ok: true, fits: true, size: 100 });
+});
+
+test("a layout without data-fit reports nothing to fail", () => {
+  const fits: any[] = [];
+  htmlTree('<div><span style="font-size:80px">{{titulo}}</span></div>', V, {}, { Anton: m }, "Anton", 1280, 720, fits);
+  expect(fits).toEqual([]);
+});

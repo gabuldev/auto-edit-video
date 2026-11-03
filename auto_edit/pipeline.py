@@ -115,6 +115,13 @@ def set_cold_open(workspace: Path, enabled: bool = True) -> None:
     save(workspace, p)
 
 
+def set_thumb_variants(workspace: Path, enabled: bool = True) -> None:
+    """Make (or not) the B/C thumbnails of a long (kept across `resume`)."""
+    p = load(workspace)
+    p["thumb_variants"] = bool(enabled)
+    save(workspace, p)
+
+
 def set_stage_status(workspace: Path, stage: str, status: str, error: str | None = None) -> dict:
     """Mark a stage as running/complete/failed and update current_stage."""
     pipeline = load(workspace)
@@ -282,12 +289,22 @@ def finalize(workspace: Path) -> Path:
         shutil.copy2(thumb_src, thumb_dst)
         print(f"[finalize] Thumbnail → {thumb_dst}")
 
-    # Write metadata txt
     metadata_path = workspace / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else None
+
+    # B/C thumbnails for YouTube's Testar e comparar (A is the one above)
+    from auto_edit import thumb_variants
+    for v in thumb_variants.generated(metadata or {}):
+        src = workspace / thumb_variants.file_name(v["id"])
+        if v["id"] != "A" and src.is_file():
+            dst = output_dir / thumb_variants.delivered_name(video_name, v["id"])
+            shutil.copy2(src, dst)
+            print(f"[finalize] Thumbnail {v['id']} → {dst}")
+
+    # Write metadata txt
     txt_dst = output_dir / f"{video_name}.txt"
-    if metadata_path.exists():
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        _write_metadata_txt(txt_dst, metadata, pipeline["type"])
+    if metadata is not None:
+        _write_metadata_txt(txt_dst, metadata, pipeline["type"], video_name)
 
     # Aggregate and display token usage stats
     token_stats = _aggregate_token_stats(workspace)
@@ -392,7 +409,7 @@ def next_video(metadata: dict | None) -> dict | None:
     }
 
 
-def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
+def _write_metadata_txt(path: Path, metadata: dict, video_type: str, video_name: str | None = None) -> None:
     lines = []
     if video_type in ("short", "reels"):
         lines += [
@@ -425,6 +442,8 @@ def _write_metadata_txt(path: Path, metadata: dict, video_type: str) -> None:
         if alternatives:
             lines += ["", "TÍTULOS ALTERNATIVOS (Testar e comparar no Studio):"]
             lines += [f"- {t}" for t in alternatives]
+        from auto_edit import thumb_variants
+        lines += thumb_variants.txt_lines(metadata, video_name or path.stem)
         nv = next_video(metadata)
         if nv:
             lines += ["", "PRÓXIMO VÍDEO (tela final, últimos 20s):", f"{nv['title']} — {nv['url']}"]
