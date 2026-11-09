@@ -23,7 +23,8 @@ Endpoints
     PUT  /api/videos/<id>/captions   {position, offset, size, hidden}
     POST /api/videos/<id>/captions/preview  {ajuste} → PNG
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
-    GET  /api/videos/<id>/file/<kind>  (video | thumbnail | captions | notes)
+    GET  /api/videos/<id>/file/<kind>  (video | thumbnail | thumbnail_b | thumbnail_c | captions | notes)
+    PUT  /api/videos/<id>/thumbnail  {variant: A|B|C}  qual thumbnail vai na publicação
     POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder (kind source = o vídeo original)
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run, cold_open, reorder,
@@ -170,6 +171,16 @@ def create_app(jobs: engine.JobManager | None = None):
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify(data)
+
+    @app.put("/api/videos/<video_id>/thumbnail")
+    def choose_thumbnail(video_id: str):
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify({"thumbnails": engine.set_thumbnail_choice(video_id, body.get("variant"))})
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/videos/<video_id>/captions")
     def video_captions(video_id: str):

@@ -165,7 +165,10 @@ function syncForm() {
 
   const notes = [];
   if (state.data?.type === "short") notes.push("Short: o YouTube não aceita thumbnail personalizada pela API — ele escolhe o frame.");
-  else if (state.data?.thumbnail) notes.push("A thumbnail gerada vai junto.");
+  else if (state.data?.thumbnail) {
+    const v = state.data.thumbnail_variant;
+    notes.push(v && v !== "A" ? `A thumbnail ${v} vai junto (escolhida no card do vídeo).` : "A thumbnail gerada vai junto.");
+  }
   if (el("pub-comment-on").checked && el("pub-privacy").value === "private") {
     notes.push("Vídeo privado não aceita comentário: escolha não listado/público ou poste depois pelo Studio.");
   }
@@ -361,6 +364,12 @@ function wire() {
   });
   el("pub-comment-on").addEventListener("change", () => {
     el("pub-comment").hidden = !el("pub-comment-on").checked;
+    syncForm();
+  });
+  // The Resultado screen picked another A/B/C: the note under the form follows.
+  document.addEventListener("thumbnail-chosen", (e) => {
+    if (!state.data || e.detail?.id !== state.id) return;
+    state.data = { ...state.data, thumbnail_variant: e.detail.variant };
     syncForm();
   });
   el("pub-history").addEventListener("click", (e) => {

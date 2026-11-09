@@ -24,6 +24,14 @@ export const video = (id) => json(`/api/videos/${encodeURIComponent(id)}`);
 
 export const result = (id) => json(`/api/videos/${encodeURIComponent(id)}/result`);
 
+/** Qual variação da thumbnail (A/B/C) vai na publicação. */
+export const chooseThumbnail = (id, variant) =>
+  json(`/api/videos/${encodeURIComponent(id)}/thumbnail`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ variant }),
+  });
+
 export const plan = (id) => json(`/api/videos/${encodeURIComponent(id)}/plan`);
 
 export const savePlan = (id, kept_segments) =>

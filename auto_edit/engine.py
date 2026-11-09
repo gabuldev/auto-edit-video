@@ -669,8 +669,80 @@ def result(video_id: str) -> dict | None:
         "status": overall_status(p),
         "metadata": metadata if isinstance(metadata, dict) else None,
         "files": files,
+        "thumbnails": thumbnail_options(video_id),
         "token_stats": p.get("token_stats"),
     }
+
+
+# ── Thumbnail A/B/C: qual vai na publicação ───────────────────────────────────
+
+# Variation id → the artifact kind it is served as (ARTIFACT_SUFFIXES).
+THUMB_KINDS = {"A": "thumbnail", "B": "thumbnail_b", "C": "thumbnail_c"}
+
+
+def _thumbnail_items(video_id: str, ws: Path) -> list[dict]:
+    """The variations that exist in the output folder, in A/B/C order, with
+    what metadata.json says about them (layout, QA). A workspace from before
+    the variations has just A."""
+    from auto_edit import thumb_variants as tv
+
+    metadata = _read_json(ws / "metadata.json")
+    recorded = {v["id"]: v for v in tv.generated(metadata)} if isinstance(metadata, dict) else {}
+    items = []
+    for variant, kind in THUMB_KINDS.items():
+        if artifact_path(video_id, kind) is None:
+            continue
+        info = recorded.get(variant, {})
+        items.append({
+            "id": variant,
+            "kind": kind,
+            "layout": info.get("layout") or tv.LABELS[variant],
+            "qa": info.get("qa"),
+            "qa_reasons": info.get("qa_reasons") or [],
+        })
+    return items
+
+
+def chosen_thumbnail(video_id: str) -> str | None:
+    """The variation that goes with the upload: the saved choice while its
+    file exists, else A (else the first one there is). None without any."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return None
+    ids = [i["id"] for i in _thumbnail_items(video_id, ws)]
+    if not ids:
+        return None
+    choice = pl.load(ws).get("thumbnail_choice")
+    if choice in ids:
+        return choice
+    return "A" if "A" in ids else ids[0]
+
+
+def thumbnail_options(video_id: str) -> list[dict]:
+    """What the Resultado screen lists: each variation, and which one is chosen."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        return []
+    chosen = chosen_thumbnail(video_id)
+    return [{**i, "chosen": i["id"] == chosen} for i in _thumbnail_items(video_id, ws)]
+
+
+def set_thumbnail_choice(video_id: str, variant: str) -> list[dict]:
+    """Save which variation the upload uses (pipeline.json `thumbnail_choice`).
+
+    FileNotFoundError for an unknown workspace, ValueError for a variation
+    that doesn't exist for this video.
+    """
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    variant = str(variant or "").strip().upper()
+    if variant not in {i["id"] for i in _thumbnail_items(video_id, ws)}:
+        raise ValueError(f"thumbnail {variant or '?'} não existe pra este vídeo")
+    p = pl.load(ws)
+    p["thumbnail_choice"] = variant
+    pl.save(ws, p)
+    return thumbnail_options(video_id)
 
 
 # ── Cut plan (read + edit) ────────────────────────────────────────────────────
@@ -1050,7 +1122,9 @@ def publish_state(video_id: str) -> dict | None:
             "privacy": "private",
         },
         # A API não aceita thumbnail personalizada em Shorts.
-        "thumbnail": not is_short and artifact_path(video_id, "thumbnail") is not None,
+        "thumbnail": not is_short and chosen_thumbnail(video_id) is not None,
+        # Which variation (A/B/C) goes with the upload — the API takes only one.
+        "thumbnail_variant": None if is_short else chosen_thumbnail(video_id),
         # Legenda como faixa só no long (o short já tem legenda queimada).
         "captions": not is_short and artifact_path(video_id, "captions") is not None,
         "pinned_comment": (metadata or {}).get("pinned_comment") if isinstance(metadata, dict) else None,
@@ -1583,7 +1657,9 @@ class JobManager:
             language=p.get("language"),
         )
         video = artifact_path(video_id, "video")
-        thumbnail = artifact_path(video_id, "thumbnail") if state["thumbnail"] else None
+        thumbnail = None
+        if state["thumbnail"]:
+            thumbnail = artifact_path(video_id, THUMB_KINDS[state["thumbnail_variant"]])
         # Long only: the short already has its captions burned in.
         captions = None
         if state["captions"] and fields.get("captions", True):

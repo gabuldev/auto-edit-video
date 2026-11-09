@@ -411,7 +411,20 @@
           <div class="res-watch-grid">
             <section class="res-area res-thumb-area" id="res-thumb-box" hidden>
               <div class="area-title">Thumbnail</div>
+              <div class="thumb-variants" id="res-thumb-variants" role="tablist" aria-label="Variações da thumbnail" hidden></div>
               <img id="res-thumb" class="thumb-img" alt="thumbnail gerada" />
+              <div class="thumb-info" id="res-thumb-info" hidden>
+                <div class="thumb-info-row">
+                  <span id="res-thumb-layout"></span>
+                  <span class="chip" id="res-thumb-qa"><span class="d"></span><span id="res-thumb-qa-text"></span></span>
+                </div>
+                <ul class="thumb-reasons dim" id="res-thumb-reasons" hidden></ul>
+                <div class="thumb-info-row">
+                  <button class="btn btn-sm" type="button" id="btn-thumb-use">Usar esta na publicação</button>
+                  <span class="thumb-chosen" id="res-thumb-chosen" hidden>✓ vai na publicação</span>
+                </div>
+                <p class="dim" id="res-thumb-hint">A API do YouTube envia uma só. Pra rodar o Testar e comparar, suba as outras no Studio (estão na pasta, ícone abaixo).</p>
+              </div>
             </section>
 
             <section class="res-area">
