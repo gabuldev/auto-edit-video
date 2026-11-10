@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auto_edit import api, engine
+from auto_edit import agents, api, engine
 from auto_edit import shorts as sh
 
 
@@ -273,6 +273,39 @@ class TestClipper:
         rc = engine.run_clipper(ws, emit=evs.append, popen=lambda *a, **k: _Proc([], 2))
         assert rc == 2
         assert evs[-1]["type"] == "error"
+
+    def _fail_clipper(self, ws, tmp_path, monkeypatch, popen):
+        ralph = tmp_path / "ralph.sh"
+        ralph.write_text("#!/bin/bash\n")
+        monkeypatch.setattr(engine, "ralph_path", lambda: ralph)
+        evs: list[dict] = []
+        engine.run_clipper(ws, emit=evs.append, popen=popen)
+        return evs[-1]
+
+    def test_run_clipper_tells_when_the_video_exceeds_the_model(self, tmp_path, monkeypatch):
+        ws = _long_ws(tmp_path)
+        reason = f"este vídeo {agents.MODEL_LIMIT_MARK} qwen2.5:7b. Escolha outro agente em Configurações"
+
+        def popen(*a, **k):
+            (ws / ".output_clip.txt").write_text(reason + "\n", encoding="utf-8")
+            return _Proc([], 1)
+
+        assert self._fail_clipper(ws, tmp_path, monkeypatch, popen)["message"] == reason
+
+    def test_run_clipper_ignores_the_output_of_a_previous_run(self, tmp_path, monkeypatch):
+        ws = _long_ws(tmp_path)
+        (ws / ".output_clip.txt").write_text(f"este vídeo {agents.MODEL_LIMIT_MARK} x\n", encoding="utf-8")
+        ev = self._fail_clipper(ws, tmp_path, monkeypatch, lambda *a, **k: _Proc([], 1))
+        assert ev["message"] == "o clipper falhou"
+
+    def test_run_clipper_keeps_the_generic_message_for_other_failures(self, tmp_path, monkeypatch):
+        ws = _long_ws(tmp_path)
+
+        def popen(*a, **k):
+            (ws / ".output_clip.txt").write_text("ollama fora do ar\n", encoding="utf-8")
+            return _Proc([], 1)
+
+        assert self._fail_clipper(ws, tmp_path, monkeypatch, popen)["message"] == "o clipper falhou"
 
 
 def test_queued_status():

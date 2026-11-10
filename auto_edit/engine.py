@@ -27,6 +27,7 @@ from pathlib import Path
 from queue import Queue
 from typing import Callable, Iterator
 
+from auto_edit import agents
 from auto_edit import pipeline as pl
 from auto_edit import retention as ret
 from auto_edit.chapters import description_with_chapters
@@ -1628,6 +1629,8 @@ def run_clipper(
 
     env = _ralph_env(ralph, language)
     env["AUTO_EDIT_CLIP_MAX_DUR"] = f"{max_duration:g}"
+    agent_output = ws / ".output_clip.txt"
+    agent_output.unlink(missing_ok=True)  # o motivo mostrado tem que ser desta execução
     proc = popen(
         [
             shell.bash(env), shell.native_path(ralph), "--agent", shell.native_path(ws.resolve()),
@@ -1656,8 +1659,17 @@ def run_clipper(
     if rc == 0:
         emit({"type": "done", "status": "done"})
     else:
-        emit({"type": "error", "status": "failed", "message": "o clipper falhou"})
+        emit({"type": "error", "status": "failed", "message": _clipper_failure(agent_output)})
     return rc
+
+
+def _clipper_failure(agent_output: Path) -> str:
+    """Why the clipper failed, in words the person can act on."""
+    try:
+        text = agent_output.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return "o clipper falhou"
+    return text if agents.MODEL_LIMIT_MARK in text else "o clipper falhou"
 
 
 def run_workspace(
