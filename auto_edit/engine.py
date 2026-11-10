@@ -883,6 +883,207 @@ def write_plan(video_id: str, kept_segments: list[dict]) -> dict:
     return read_plan(video_id) or {}
 
 
+def _workspace(video_id: str) -> Path:
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    return ws
+
+
+def resolve_video(ref: str) -> str | None:
+    """Workspace id for what a person (or Claude) calls a video: the id itself,
+    or the path of the original file. With several edits of the same file,
+    the most recent one. None when nothing matches."""
+    ref = str(ref or "").strip()
+    if not ref:
+        return None
+    root = library_root()
+    if "/" not in ref and "\\" not in ref and (root / ref / "pipeline.json").exists():
+        return ref
+    try:
+        target = Path(os.path.expanduser(ref)).resolve()
+    except (OSError, RuntimeError):
+        return None
+    matches = []
+    for pj in root.glob("*/pipeline.json"):
+        data = _read_json(pj)
+        if not isinstance(data, dict) or not data.get("video_path"):
+            continue
+        try:
+            same = Path(data["video_path"]).resolve() == target
+        except (OSError, RuntimeError):
+            same = False
+        if same:
+            matches.append((str(data.get("created_at") or ""), pj.parent.name))
+    if matches:
+        return max(matches)[1]
+    stem = root / target.stem
+    return target.stem if (stem / "pipeline.json").exists() else None
+
+
+def _subtract(segments: list[dict], windows: list[tuple[float, float]], min_piece: float = 0.1) -> list[dict]:
+    """Kept segments minus the windows; pieces keep their summary."""
+    out = []
+    for seg in segments:
+        pieces = [(float(seg["start"]), float(seg["end"]))]
+        for ws_, we in windows:
+            nxt = []
+            for s_, e_ in pieces:
+                if we <= s_ or ws_ >= e_:
+                    nxt.append((s_, e_))
+                    continue
+                if ws_ > s_:
+                    nxt.append((s_, ws_))
+                if we < e_:
+                    nxt.append((we, e_))
+            pieces = nxt
+        for s_, e_ in pieces:
+            if e_ - s_ >= min_piece:
+                piece = {"start": s_, "end": e_}
+                if seg.get("summary"):
+                    piece["summary"] = seg["summary"]
+                out.append(piece)
+    return out
+
+
+def cut_range(video_id: str, start: float, end: float, *, timeline: str = "edited") -> dict:
+    """Remove a window from the cut plan ("tira de 2:10 a 2:25").
+
+    `timeline="edited"` (default) is the time of the video the person
+    watched — what the executor last rendered, or the planned cut; it may
+    span a cut and become two windows of the original. `"original"` is the
+    raw recording. Takes effect on the next render (resume from execute).
+    """
+    from auto_edit import effects as fx
+
+    ws = _workspace(video_id)
+    start, end = float(start), float(end)
+    if end <= start:
+        raise ValueError("end precisa ser maior que start")
+    plan = read_plan(video_id)
+    if not plan or not plan.get("kept_segments"):
+        raise ValueError("este vídeo ainda não tem plano de cortes")
+    if timeline == "edited":
+        windows = fx.to_original(start, end, fx.playback(ws))
+        if not windows:
+            raise ValueError("esse trecho está fora do vídeo editado")
+    elif timeline == "original":
+        windows = [(start, end)]
+    else:
+        raise ValueError("timeline é edited ou original")
+    kept = _subtract(plan["kept_segments"], windows)
+    if not kept:
+        raise ValueError("isso cortaria o vídeo inteiro")
+    data = write_plan(video_id, kept)
+    data["removed_windows"] = [{"start": s_, "end": e_} for s_, e_ in windows]
+    return data
+
+
+# ── Pedidos livres: efeitos (zoom / b-roll) ───────────────────────────────────
+
+
+def _source_dir(ws: Path) -> Path | None:
+    vp = pl.load(ws).get("video_path")
+    return Path(vp).parent if vp else None
+
+
+def read_effects(video_id: str) -> dict:
+    """The effects of a workspace, each with where it plays in the edited
+    video, plus notes about the ones that wouldn't render."""
+    from auto_edit import effects as fx
+
+    ws = _workspace(video_id)
+    raw = fx.load(ws)
+    valid, notes = fx.validate(raw, _source_dir(ws))
+    play = fx.playback(ws)
+    placed, more = fx.plan_effects(valid, play)
+    return {
+        "id": video_id,
+        "effects": [{"index": i, **e} for i, e in enumerate(placed)],
+        "stored": len(raw),
+        "notes": notes + more,
+        "edited_duration": round(fx.edited_duration(play), 3) if play else None,
+        # Effects are burned at execute: after a change, resume from there.
+        "rerender_from": "execute",
+    }
+
+
+def add_effect(video_id: str, effect: dict, *, timeline: str = "edited") -> dict:
+    """Add a zoom / b-roll. Times in the edited video by default (what the
+    person watched), stored in original time. ValueError with the reason
+    when it can't render (bad type, missing file, lands on a cut, overlaps)."""
+    from auto_edit import effects as fx
+
+    ws = _workspace(video_id)
+    if not isinstance(effect, dict):
+        raise ValueError("efeito precisa ser um objeto")
+    base = _source_dir(ws)
+    try:
+        start, end = float(effect["start"]), float(effect["end"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("efeito precisa de start e end numéricos") from exc
+    play = fx.playback(ws)
+    if timeline == "edited":
+        if not play:
+            raise ValueError("este vídeo ainda não tem corte: use timeline=original")
+        pieces = fx.to_original(start, end, play)
+        if not pieces:
+            raise ValueError("esse trecho está fora do vídeo editado")
+    elif timeline == "original":
+        pieces = [(start, end)]
+    else:
+        raise ValueError("timeline é edited ou original")
+
+    new = []
+    offset = float(effect.get("offset") or 0)
+    for s_, e_ in pieces:
+        try:
+            item = fx.clean({**effect, "start": s_, "end": e_, "offset": offset}, base)
+        except fx.EffectError as exc:
+            if len(pieces) > 1 and "curto demais" in str(exc):
+                offset += e_ - s_
+                continue  # a sliver on the far side of a cut
+            raise ValueError(str(exc)) from exc
+        new.append(item)
+        offset += e_ - s_
+    if not new:
+        raise ValueError("efeito curto demais depois de recortado pelos cortes")
+
+    existing = fx.load(ws)
+    valid, _ = fx.validate(existing, base)
+    for item in new:
+        if any(fx._overlaps(item, other) for other in valid):
+            raise ValueError(f"já tem um {item['type']} nesse trecho")
+    if play:
+        _, notes = fx.plan_effects(new, play)
+        if notes and len(notes) == len(new):
+            raise ValueError("esse trecho foi cortado do vídeo: o efeito não apareceria")
+    if len(existing) + len(new) > fx.MAX_EFFECTS:
+        raise ValueError(f"máximo de {fx.MAX_EFFECTS} efeitos")
+    fx.save(ws, existing + new)
+    return read_effects(video_id)
+
+
+def remove_effect(video_id: str, index: int | None = None) -> dict:
+    """Remove one effect (by the index read_effects shows) or, with None, all."""
+    from auto_edit import effects as fx
+
+    ws = _workspace(video_id)
+    if index is None:
+        fx.save(ws, [])
+        return read_effects(video_id)
+    shown = read_effects(video_id)["effects"]
+    if not 0 <= int(index) < len(shown):
+        raise ValueError(f"não existe efeito {index}")
+    target = shown[int(index)]
+    keep = [e for e in fx.load(ws)
+            if not (e.get("type") == target["type"]
+                    and abs(float(e.get("start", -1)) - target["start"]) < 1e-3
+                    and abs(float(e.get("end", -1)) - target["end"]) < 1e-3)]
+    fx.save(ws, keep)
+    return read_effects(video_id)
+
+
 # ── Shorts derivados (read model) ─────────────────────────────────────────────
 
 
@@ -1195,8 +1396,17 @@ def retention_state(video_id: str) -> dict | None:
         "id": video_id,
         "youtube_id": ret.youtube_id(ws),
         "data": ret.load(ws),
+        # This video vs the ones of its type published before it.
+        "versus_previous": ret.versus_previous(library_root(), ws),
         "account": youtube_account(),
     }
+
+
+def retention_trend(video_type: str | None = None) -> dict:
+    """The channel's retention over time and with/without the planner's lessons."""
+    if video_type not in (None, "long", "short"):
+        raise ValueError("type é long ou short")
+    return ret.trend(library_root(), video_type)
 
 
 def refresh_retention(video_id: str, *, fetch: Callable[[str], list] | None = None) -> dict:
@@ -1635,45 +1845,61 @@ class JobManager:
         anything the user has to fix (not done, not connected, bad fields,
         already published without `force`, busy).
         """
-        ws = library_root() / video_id
-        if not (ws / "pipeline.json").exists():
-            raise FileNotFoundError(f"no workspace for: {video_id}")
-        state = publish_state(video_id)
-        if not state["eligible"]:
-            raise yt.PublishError(state["reason"])
-        if not yt.is_connected():
-            raise yt.PublishError("YouTube não conectado. Conecte a conta antes de publicar.")
-        if yt.on_youtube(state["published"]) and not force:
-            raise yt.PublishError("este vídeo já foi enviado pro YouTube")
-        if self._busy(video_id):
+        if (library_root() / video_id / "pipeline.json").exists() and self._busy(video_id):
             raise yt.PublishError(f"{video_id} já tem um job rodando")
+        job = prepare_publish(video_id, fields, force=force)
+        return self._spawn(video_id, "publish", lambda emit: run_publish_youtube(emit=emit, **job))
 
-        p = pl.load(ws)
-        body = yt.build_body(
-            title=fields.get("title", ""),
-            description=fields.get("description", ""),
-            tags=fields.get("tags") or [],
-            privacy=fields.get("privacy") or "private",
-            publish_at=fields.get("publish_at") or None,
-            language=p.get("language"),
-        )
-        video = artifact_path(video_id, "video")
-        thumbnail = None
-        if state["thumbnail"]:
-            thumbnail = artifact_path(video_id, THUMB_KINDS[state["thumbnail_variant"]])
-        # Long only: the short already has its captions burned in.
-        captions = None
-        if state["captions"] and fields.get("captions", True):
-            captions = artifact_path(video_id, "captions")
-        comment = (fields.get("comment") or "").strip() or None
-        return self._spawn(
-            video_id,
-            "publish",
-            lambda emit: run_publish_youtube(
-                ws, body, video=video, thumbnail=thumbnail, emit=emit,
-                captions=captions, language=p.get("language"), comment=comment,
-            ),
-        )
+
+def prepare_publish(video_id: str, fields: dict, *, force: bool = False) -> dict:
+    """Everything an upload needs (the kwargs of run_publish_youtube but `emit`),
+    after the checks: FileNotFoundError / PublishError like publish_youtube."""
+    ws = library_root() / video_id
+    if not (ws / "pipeline.json").exists():
+        raise FileNotFoundError(f"no workspace for: {video_id}")
+    state = publish_state(video_id)
+    if not state["eligible"]:
+        raise yt.PublishError(state["reason"])
+    if not yt.is_connected():
+        raise yt.PublishError("YouTube não conectado. Conecte a conta antes de publicar.")
+    if yt.on_youtube(state["published"]) and not force:
+        raise yt.PublishError("este vídeo já foi enviado pro YouTube")
+
+    p = pl.load(ws)
+    body = yt.build_body(
+        title=fields.get("title", ""),
+        description=fields.get("description", ""),
+        tags=fields.get("tags") or [],
+        privacy=fields.get("privacy") or "private",
+        publish_at=fields.get("publish_at") or None,
+        language=p.get("language"),
+    )
+    video = artifact_path(video_id, "video")
+    thumbnail = None
+    if state["thumbnail"]:
+        thumbnail = artifact_path(video_id, THUMB_KINDS[state["thumbnail_variant"]])
+    # Long only: the short already has its captions burned in.
+    captions = None
+    if state["captions"] and fields.get("captions", True):
+        captions = artifact_path(video_id, "captions")
+    comment = (fields.get("comment") or "").strip() or None
+    return {
+        "ws": ws, "body": body, "video": video, "thumbnail": thumbnail,
+        "captions": captions, "language": p.get("language"), "comment": comment,
+    }
+
+
+def publish_now(video_id: str, fields: dict, *, force: bool = False) -> dict:
+    """Upload and wait (MCP / scripts): the publish.json entry plus the log."""
+    job = prepare_publish(video_id, fields, force=force)
+    log: list[str] = []
+
+    def emit(ev: Event) -> None:
+        if ev.get("type") == "log":
+            log.append(ev["line"])
+
+    entry = run_publish_youtube(emit=emit, **job)
+    return {**entry, "log": log}
 
 
 # ── Pipeline runner (streams ralph.sh) ────────────────────────────────────────

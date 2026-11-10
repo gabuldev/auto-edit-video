@@ -129,6 +129,7 @@ def build_prompt(stage: str, workspace: Path, prompt_file: Path) -> str:
                 '- Avoid a “podcast slow” cadence unless the content demands it.'
             )
         learned = _retention_lessons(workspace, video_type)
+        _note_lessons(workspace, learned)
         if learned:
             sections += [
                 "\n## Onde o público saiu nos teus vídeos recentes (sinal, não regra)",
@@ -352,6 +353,20 @@ def _retention_lessons(workspace: Path, video_type: str) -> str:
         return retention.lessons(workspace.parent, "short" if video_type == "short" else "long")
     except Exception:
         return ""
+
+
+def _note_lessons(workspace: Path, learned: str) -> None:
+    """Record in pipeline.json how many videos' drops this plan saw, so the
+    retention trend can tell the edits planned with them apart. Best effort."""
+    try:
+        from auto_edit import pipeline as pl
+        from auto_edit import retention
+
+        p = pl.load(workspace)
+        p[retention.LESSONS_KEY] = learned.count("\n### ") + (1 if learned.startswith("### ") else 0)
+        pl.save(workspace, p)
+    except Exception:
+        pass
 
 
 def _performance_section(video_type: str) -> str:

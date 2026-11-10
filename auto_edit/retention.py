@@ -243,6 +243,147 @@ def format_summary(data: dict) -> str:
     return "\n".join(lines)
 
 
+# ── Evolução: a retenção melhorando de vídeo pra vídeo ────────────────────────
+
+# pipeline.json: how many recent videos' drops the planner saw when it planned
+# this one (runner.py writes it). Absent = planned before this was recorded.
+LESSONS_KEY = "retention_lessons"
+TREND_METRICS = ("at_30s", "at_60s", "at_half", "relative_median")
+
+
+def _published_at(ws: Path, data: dict, pipeline: dict) -> str:
+    """When it went out: the first upload (or its schedule), else when it was
+    edited — what orders the trend."""
+    uploads = (_read(ws / "publish.json") or {}).get("youtube") or []
+    for up in uploads:
+        when = up.get("publish_at") or up.get("published_at")
+        if when:
+            return str(when)
+    return str(pipeline.get("created_at") or data.get("fetched_at") or "")
+
+
+def _avg(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 4) if values else None
+
+
+def _compare(older: list[dict], newer: list[dict]) -> dict:
+    out = {}
+    for m in TREND_METRICS:
+        a = _avg([r[m] for r in older if r.get(m) is not None])
+        b = _avg([r[m] for r in newer if r.get(m) is not None])
+        out[m] = {"before": a, "after": b,
+                  "delta": None if a is None or b is None else round(b - a, 4)}
+    return out
+
+
+def trend(library: Path, video_type: str | None = None) -> dict:
+    """Every analyzed video in publish order, and whether retention is going up.
+
+    `summary[type]` compares the older half with the newer half and, when both
+    exist, the videos planned *with* the retention lessons against the ones
+    planned without — the loop the planner closes.
+    """
+    rows = []
+    for path in Path(library).glob(f"*/{RETENTION_NAME}"):
+        data = _read(path)
+        ws = path.parent
+        pipeline = _read(ws / "pipeline.json") or {}
+        kind = pipeline.get("type")
+        if not isinstance(data, dict) or kind not in ("long", "short"):
+            continue
+        if video_type and kind != video_type:
+            continue
+        metadata = _read(ws / "metadata.json") or {}
+        lessons = pipeline.get(LESSONS_KEY)
+        rows.append({
+            "id": ws.name,
+            "type": kind,
+            "title": metadata.get("youtube_title") or metadata.get("short_title") or pipeline.get("name") or ws.name,
+            "youtube_id": data.get("video_id"),
+            "published_at": _published_at(ws, data, pipeline),
+            "duration": data.get("duration"),
+            **{m: data.get(m) for m in TREND_METRICS},
+            "lessons": lessons if isinstance(lessons, int) else None,
+            "drops": len(data.get("drops") or []),
+        })
+    rows.sort(key=lambda r: r["published_at"])
+
+    summary = {}
+    for kind in ("long", "short"):
+        mine = [r for r in rows if r["type"] == kind]
+        if not mine:
+            continue
+        entry: dict = {"count": len(mine)}
+        if len(mine) >= 2:
+            half = len(mine) // 2
+            entry["older_vs_newer"] = {"older": half, "newer": len(mine) - half,
+                                       **_compare(mine[:half], mine[half:])}
+        with_ = [r for r in mine if r["lessons"]]
+        without = [r for r in mine if not r["lessons"]]
+        if with_ and without:
+            entry["with_vs_without_lessons"] = {"without": len(without), "with": len(with_),
+                                                **_compare(without, with_)}
+        summary[kind] = entry
+    return {"videos": rows, "summary": summary}
+
+
+def versus_previous(library: Path, ws: Path) -> dict | None:
+    """This video against the average of the ones of its type published before
+    it — the line the retention card shows. None without both."""
+    ws = Path(ws)
+    data = trend(library)
+    rows = data["videos"]
+    me = next((r for r in rows if r["id"] == ws.name), None)
+    if me is None:
+        return None
+    before = [r for r in rows if r["type"] == me["type"] and r["published_at"] < me["published_at"]]
+    if not before:
+        return None
+    cmp = _compare(before, [me])
+    return {"previous": len(before), "lessons": me["lessons"], **cmp}
+
+
+def _pp(delta: float | None) -> str:
+    if delta is None:
+        return ""
+    return f" ({'+' if delta >= 0 else ''}{delta * 100:.1f} pp)"
+
+
+def format_trend(data: dict) -> str:
+    """Human summary for the CLI / MCP."""
+    rows = data.get("videos") or []
+    if not rows:
+        return ("Nenhum vídeo com retenção analisada ainda. Rode `auto-edit insights retention --all` "
+                "depois que os vídeos publicados tiverem 24–48h.")
+    lines = []
+    for kind, entry in (data.get("summary") or {}).items():
+        lines.append(f"{kind}: {entry['count']} vídeo(s) analisado(s)")
+        ovn = entry.get("older_vs_newer")
+        if ovn:
+            lines.append(f"  mais antigos ({ovn['older']}) → mais recentes ({ovn['newer']}):")
+            for m, label in (("at_30s", "aos 30s"), ("at_60s", "aos 60s"), ("at_half", "na metade")):
+                c = ovn[m]
+                if c["before"] is not None and c["after"] is not None:
+                    lines.append(f"    {label}: {_pct(c['before'])} → {_pct(c['after'])}{_pp(c['delta'])}")
+        wvl = entry.get("with_vs_without_lessons")
+        if wvl:
+            c = wvl["at_30s"]
+            lines.append(
+                f"  planejados com as lições de retenção ({wvl['with']}) vs sem ({wvl['without']}): "
+                f"aos 30s {_pct(c['after'])} vs {_pct(c['before'])}{_pp(c['delta'])}"
+            )
+    lines.append("")
+    lines.append("Por vídeo (ordem de publicação):")
+    for r in rows:
+        when = (r["published_at"] or "")[:10]
+        learned = " · com lições" if r["lessons"] else ""
+        lines.append(
+            f"  {when}  [{r['type']}] 30s {_pct(r['at_30s'])} · 60s {_pct(r['at_60s'])} · "
+            f"metade {_pct(r['at_half'])}{learned}  {r['title']}"
+        )
+    return "\n".join(lines)
+
+
 class RetentionError(RuntimeError):
     """Nothing to analyze yet (not published, no curve) — shown as is."""
 

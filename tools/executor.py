@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from auto_edit import probe, sequence, snap  # noqa: E402
+from auto_edit import effects, probe, sequence, snap  # noqa: E402
 from auto_edit.intervals import (  # noqa: E402,F401  -- names kept for callers/tests
     MIN_INTERVAL_DURATION,
     build_keep_intervals as _build_keep_intervals,
@@ -169,6 +169,12 @@ def execute(workspace: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+    # Pedidos livres (effects.json: zoom / b-roll), validados e recortados pelo
+    # que de fato toca. Nunca derruba o stage: falhou, fica só com os cortes.
+    if effects.load(workspace):
+        for line in effects.apply(workspace, _get_video_codec()):
+            print(f"[executor] {line}")
     print(f"[executor] Done → {output}")
 
 

@@ -29,7 +29,7 @@ auto-edit = "auto_edit.cli:app"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
-mcp = ["mcp>=1.0.0"]
+mcp = ["mcp>=1.0.0,<2"]  # 2.x renamed FastMCP (mcp_server.py)
 api = ["flask>=3.0"]
 # Expression score for the thumbnail face frame (auto_edit/expression.py); optional
 expression = ["mediapipe>=0.10.14"]
