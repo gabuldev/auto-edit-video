@@ -179,6 +179,8 @@ OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 if not OLLAMA_URL.startswith("http"):
     OLLAMA_URL = f"http://{OLLAMA_URL}"
 OLLAMA_CONTEXT = int(os.environ.get("AUTO_EDIT_OLLAMA_CTX", "32768"))
+# Trecho fixo da recusa por tamanho: o motor procura ele pra mostrar o motivo na tela.
+MODEL_LIMIT_MARK = "não cabe no limite do modelo"
 
 
 def _ollama(path: str, body: dict | None = None, timeout: float | None = 10) -> dict:
@@ -253,8 +255,8 @@ def run_ollama(prompt: str, *, model: str | None = None, timeout: float | None =
     needed = len(prompt) // 3 + 4096
     if needed > OLLAMA_CONTEXT:
         raise AgentError(
-            f"prompt de ~{needed} tokens não cabe no contexto de {OLLAMA_CONTEXT} do modelo local — "
-            "aumente AUTO_EDIT_OLLAMA_CTX ou escolha um fallback nas Configurações"
+            f"este vídeo {MODEL_LIMIT_MARK} {model} (precisa de ~{needed} tokens, ele aceita {OLLAMA_CONTEXT}). "
+            "Escolha outro agente em Configurações"
         )
     message: dict = {"role": "user", "content": prompt}
     if images:
