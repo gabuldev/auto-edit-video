@@ -25,6 +25,11 @@ Endpoints
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
     GET  /api/videos/<id>/file/<kind>  (video | thumbnail | thumbnail_b | thumbnail_c | captions | notes)
     PUT  /api/videos/<id>/thumbnail  {variant: A|B|C}  qual thumbnail vai na publicação
+    POST /api/videos/<id>/plan/cut   {start, end, timeline: edited|original}  tira um trecho (vale no próximo execute)
+    GET  /api/videos/<id>/effects    zoom / b-roll pedidos (com onde tocam no vídeo editado)
+    POST /api/videos/<id>/effects    {type: zoom|broll, start, end, scale?, file?, timeline?}
+    DELETE /api/videos/<id>/effects[/<index>]  remove um (ou todos)
+    GET  /api/insights/trend?type=   retenção do canal ao longo do tempo (com/sem as lições)
     POST /api/videos/<id>/open/<kind>  {reveal}  abre no app padrão / no Finder (kind source = o vídeo original)
     POST /api/edit                 {video_path, type, context, language,
                                     whisper_model, max_iterations, dry_run, cold_open, reorder,
@@ -179,6 +184,55 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify({"thumbnails": engine.set_thumbnail_choice(video_id, body.get("variant"))})
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/videos/<video_id>/plan/cut")
+    def cut_plan_range(video_id: str):
+        body = request.get_json(silent=True) or {}
+        try:
+            data = engine.cut_range(
+                video_id, body.get("start"), body.get("end"),
+                timeline=body.get("timeline") or "edited",
+            )
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(data)
+
+    @app.get("/api/videos/<video_id>/effects")
+    def video_effects(video_id: str):
+        try:
+            return jsonify(engine.read_effects(video_id))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+    @app.post("/api/videos/<video_id>/effects")
+    def add_video_effect(video_id: str):
+        body = request.get_json(silent=True) or {}
+        timeline = body.pop("timeline", None) or "edited"
+        try:
+            return jsonify(engine.add_effect(video_id, body, timeline=timeline))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.delete("/api/videos/<video_id>/effects")
+    @app.delete("/api/videos/<video_id>/effects/<int:index>")
+    def remove_video_effect(video_id: str, index: int | None = None):
+        try:
+            return jsonify(engine.remove_effect(video_id, index))
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.get("/api/insights/trend")
+    def retention_trend():
+        try:
+            return jsonify(engine.retention_trend(request.args.get("type") or None))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 

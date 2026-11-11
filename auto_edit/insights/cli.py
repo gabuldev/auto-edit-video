@@ -132,6 +132,16 @@ def retention(
         raise typer.Exit(1)
 
 
+@insights_app.command()
+def trend(video_type: Optional[str] = typer.Option(None, "--type", "-t", help="long ou short")) -> None:
+    """A retenção melhorando? Vídeos analisados em ordem de publicação, antigos
+    vs recentes e planejados com vs sem as lições de retenção."""
+    if video_type not in (None, "long", "short"):
+        console.print("[red]--type é long ou short[/red]")
+        raise typer.Exit(1)
+    console.print(escape(ret.format_trend(ret.trend(workspace_root(), video_type))))
+
+
 @insights_app.command("import-ctr")
 def import_ctr(csv_file: Path = typer.Argument(..., help="CSV exportado do YouTube Studio (Análises → Modo avançado → Exportar)")) -> None:
     """Importa o CTR e as impressões do CSV do YouTube Studio.
