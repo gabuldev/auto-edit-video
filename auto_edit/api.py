@@ -7,8 +7,12 @@ progress. It is intentionally thin: all logic lives in `engine`. Flask is an
 optional dependency (`pip install "auto-edit-video[api]"`); importing this
 module never requires it — only `create_app()` / `serve()` do.
 
+The contract is `auto_edit/openapi.yaml` (served at /api/openapi.json);
+`tests/test_openapi.py` keeps it and these routes in step.
+
 Endpoints
-    GET  /api/health
+    GET  /api/health                 {ok, api_version, version}
+    GET  /api/openapi.json           the contract
     GET  /api/library
     GET  /api/browse?dir=            (folders + videos of a directory)
     GET  /api/recordings             Biblioteca: vídeos da pasta de entrada (subpastas até 3 níveis) + edições de cada
@@ -79,11 +83,28 @@ Endpoints
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterator
 
 from auto_edit import engine
 from auto_edit import shorts as sh
 from auto_edit.publish import youtube as yt
+
+
+SPEC_PATH = Path(__file__).with_name("openapi.yaml")
+
+
+@lru_cache(maxsize=1)
+def spec() -> dict:
+    """The OpenAPI contract (auto_edit/openapi.yaml)."""
+    import yaml
+
+    return yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
+
+
+def api_version() -> str:
+    return str(spec()["info"]["version"])
 
 
 def _sse(events: Iterator[dict]) -> Iterator[str]:
@@ -116,7 +137,18 @@ def create_app(jobs: engine.JobManager | None = None):
 
     @app.get("/api/health")
     def health():
-        return jsonify({"ok": True, "repo_root": str(engine.repo_root())})
+        from auto_edit import __version__
+
+        return jsonify({
+            "ok": True,
+            "api_version": api_version(),
+            "version": __version__,
+            "repo_root": str(engine.repo_root()),
+        })
+
+    @app.get("/api/openapi.json")
+    def openapi():
+        return jsonify(spec())
 
     @app.get("/api/library")
     def library():
