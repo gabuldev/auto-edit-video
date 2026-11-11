@@ -321,6 +321,14 @@ select.input:not([multiple]) {
 .res-area { min-width: 0; }
 .area-title { margin-bottom: 12px; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #5b6472; font-weight: 600; }
 .res-thumb-area { margin-right: 28px; padding-right: 28px; border-right: 1px solid var(--border-soft); }
+.thumb-variants { display: flex; gap: 6px; margin-bottom: 10px; }
+.thumb-variants .btn-sm.on { border-color: var(--accent); color: var(--accent); }
+.thumb-variants .btn-sm .mark { margin-left: 4px; color: var(--accent); }
+.thumb-info { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; max-width: calc(var(--media-h) * var(--ar)); font-size: 12.5px; }
+.thumb-info-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.thumb-reasons { margin: 0; padding-left: 18px; }
+.thumb-chosen { color: var(--accent); font-weight: 600; }
+.thumb-info p.dim { margin: 0; }
 .res-watch-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 22px 24px; }
 /* The stage takes the video's own shape, so a vertical short isn't framed in black bars. */
 .res-stage { position: relative; isolation: isolate; flex: 0 1 auto; width: min(100%, calc(var(--media-h) * var(--ar))); aspect-ratio: var(--ar); border-radius: 8px; overflow: hidden; background: #000; }

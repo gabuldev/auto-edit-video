@@ -8,7 +8,7 @@ import { mountPublish, unmountPublish } from "./publish.js";
 import { mountCaptionAdjust, unmountCaptionAdjust } from "./caption-adjust.js";
 import { mountRetention } from "./retention.js";
 
-const state = { id: null, data: null, capMounted: false, stamp: Date.now() };
+const state = { id: null, data: null, capMounted: false, stamp: Date.now(), thumbView: null };
 
 const FIELDS = [
   ["short_title", "Título do short"],
@@ -46,7 +46,10 @@ function fieldHTML(key, label, value) {
 const FOLDER = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
 
 function fileHTML(kind, info) {
-  const label = { video: "Vídeo final", thumbnail: "Thumbnail", captions: "Legendas (.srt)", notes: "Metadata (.txt)" }[kind] || kind;
+  const label = {
+    video: "Vídeo final", thumbnail: "Thumbnail A", thumbnail_b: "Thumbnail B", thumbnail_c: "Thumbnail C",
+    captions: "Legendas (.srt)", notes: "Metadata (.txt)",
+  }[kind] || kind;
   return `
   <div class="file">
     <span class="file-kind">${label}</span>
@@ -89,12 +92,9 @@ function render(d) {
   } else {
     el("cap-card").hidden = true;
   }
-  el("res-thumb-box").hidden = !files.thumbnail;
-  if (files.thumbnail) {
-    el("res-thumb").src = `${api.API}/api/videos/${encodeURIComponent(d.id)}/file/thumbnail`;
-  }
+  renderThumbs(d);
 
-  const kinds = ["video", "thumbnail", "captions", "notes"].filter((k) => files[k]);
+  const kinds = ["video", "thumbnail", "thumbnail_b", "thumbnail_c", "captions", "notes"].filter((k) => files[k]);
   el("res-files").innerHTML = kinds.map((k) => fileHTML(k, files[k])).join("");
   el("res-nofiles").hidden = kinds.length > 0;
 
@@ -102,6 +102,68 @@ function render(d) {
   const rows = meta ? FIELDS.filter(([k]) => meta[k] != null && valueText(meta[k]).trim()) : [];
   el("res-meta").innerHTML = rows.map(([k, label]) => fieldHTML(k, label, meta[k])).join("");
   el("res-nometa").hidden = rows.length > 0;
+}
+
+const QA = {
+  aprovada: ["done", "QA aprovou"],
+  reprovada: ["failed", "QA reprovou"],
+  parcial: ["idle", "QA parcial"],
+};
+
+// A/B/C: the tabs preview each one; "Usar esta" picks what goes with the upload.
+function renderThumbs(d) {
+  const thumbs = d.thumbnails || [];
+  el("res-thumb-box").hidden = thumbs.length === 0;
+  if (!thumbs.length) return;
+  if (!thumbs.some((t) => t.id === state.thumbView)) {
+    state.thumbView = (thumbs.find((t) => t.chosen) || thumbs[0]).id;
+  }
+  const view = thumbs.find((t) => t.id === state.thumbView);
+  const many = thumbs.length > 1;
+
+  el("res-thumb-variants").hidden = !many;
+  el("res-thumb-variants").innerHTML = thumbs
+    .map((t) => `<button class="btn btn-sm${t.id === view.id ? " on" : ""}" type="button" role="tab"
+      aria-selected="${t.id === view.id}" data-thumb="${t.id}" title="${escapeHtml(t.layout)}">${t.id}${
+        t.chosen ? '<span class="mark" aria-label="vai na publicação">✓</span>' : ""}</button>`)
+    .join("");
+
+  // ?t= : regravar troca o arquivo e o webview guarda cache.
+  const src = `${api.API}/api/videos/${encodeURIComponent(d.id)}/file/${view.kind}?t=${state.stamp}`;
+  if (el("res-thumb").getAttribute("src") !== src) el("res-thumb").setAttribute("src", src);
+  el("res-thumb").alt = `thumbnail ${view.id}: ${view.layout}`;
+
+  // Nothing to choose with only A: the box stays as it always was.
+  el("res-thumb-info").hidden = !many;
+  if (!many) return;
+  el("res-thumb-layout").textContent = `${view.id} · ${view.layout}`;
+  const [cls, text] = QA[view.qa] || [];
+  el("res-thumb-qa").hidden = !cls;
+  if (cls) {
+    el("res-thumb-qa").className = `chip ${cls}`;
+    el("res-thumb-qa-text").textContent = text;
+  }
+  const reasons = view.qa_reasons || [];
+  el("res-thumb-reasons").hidden = reasons.length === 0;
+  el("res-thumb-reasons").innerHTML = reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("");
+  el("btn-thumb-use").hidden = view.chosen || d.type === "short";
+  el("res-thumb-chosen").hidden = !view.chosen;
+}
+
+async function useThumb(variant) {
+  el("btn-thumb-use").disabled = true;
+  try {
+    const { thumbnails } = await api.chooseThumbnail(state.id, variant);
+    state.data = { ...state.data, thumbnails };
+    renderThumbs(state.data);
+    // The Publicar card says which one goes along.
+    document.dispatchEvent(new CustomEvent("thumbnail-chosen", { detail: { id: state.id, variant } }));
+  } catch (err) {
+    el("res-error").hidden = false;
+    el("res-error").textContent = `não deu pra escolher a thumbnail: ${err.message || err}`;
+  } finally {
+    el("btn-thumb-use").disabled = false;
+  }
 }
 
 async function load(id) {
@@ -138,6 +200,12 @@ function wire() {
   document.querySelector('[data-screen="result"]').addEventListener("click", (e) => {
     const btn = e.target.closest("button.copy");
     if (btn) copy(btn.dataset.copy, btn);
+    const tab = e.target.closest("button[data-thumb]");
+    if (tab && state.data) {
+      state.thumbView = tab.dataset.thumb;
+      renderThumbs(state.data);
+    }
+    if (e.target.closest("#btn-thumb-use") && state.thumbView) useThumb(state.thumbView);
     const open = e.target.closest("button[data-open]");
     if (open) {
       // O motor abre pelo sistema: a janela do Tauri não segue link de download.
@@ -165,6 +233,7 @@ export default {
     state.id = id;
     state.stamp = Date.now();
     state.capMounted = false;
+    state.thumbView = null;
     el("res-video").removeAttribute("src");
     delete el("res-player").dataset.measured;
     el("btn-res-shorts").hidden = true;
