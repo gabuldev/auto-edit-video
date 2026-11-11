@@ -121,6 +121,7 @@ def test_publish_job_uploads_the_chosen_one(lib, monkeypatch):
 
 
 def test_api_put_thumbnail(lib):
+    pytest.importorskip("flask")
     _ws(lib)
     client = api.create_app().test_client()
     r = client.put("/api/videos/vid/thumbnail", json={"variant": "B"})
