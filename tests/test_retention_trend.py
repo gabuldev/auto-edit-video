@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from auto_edit import api, engine, retention as ret, runner
 
 
@@ -79,6 +81,7 @@ def test_runner_records_how_many_lessons_the_plan_saw(tmp_path):
 
 
 def test_engine_and_api(tmp_path, monkeypatch):
+    pytest.importorskip("flask")
     monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
     monkeypatch.setenv("AUTO_EDIT_HOME", str(tmp_path / "home"))
     _channel(tmp_path)

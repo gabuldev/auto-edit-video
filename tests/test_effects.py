@@ -238,6 +238,7 @@ def test_resolve_video_by_id_and_by_path(lib):
 
 
 def test_api_effects_and_cut(lib):
+    pytest.importorskip("flask")
     c = api.create_app().test_client()
     r = c.post("/api/videos/vid/effects", json={"type": "zoom", "start": 12, "end": 15})
     assert r.status_code == 200 and len(r.get_json()["effects"]) == 1
