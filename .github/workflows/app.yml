@@ -1,0 +1,78 @@
+name: App (Flutter)
+
+# The Flutter desktop app (app/) and what it builds on: the Dart client and
+# the contract it is generated from.
+on:
+  pull_request:
+    branches: [main]
+    paths: ["app/**", "packages/**", "auto_edit/openapi.yaml", ".github/workflows/app.yml"]
+  push:
+    branches: [main]
+    paths: ["app/**", "packages/**", "auto_edit/openapi.yaml", ".github/workflows/app.yml"]
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # engine_integration_test starts a real `auto-edit serve`
+      - name: Install the engine
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api]"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+        env:
+          AUTO_EDIT_BIN: auto-edit
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: macos-latest
+            target: macos
+          - os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build ${{ matrix.target }} --release
