@@ -200,6 +200,15 @@ O contrato é `auto_edit/openapi.yaml` (OpenAPI 3.1, servido em
 contrário) e confere as respostas reais contra os schemas — rota nova ou campo
 novo entra no spec no mesmo PR (minor do `info.version`; quebra = major).
 
+O cliente Dart (app Flutter desktop e celular) é `packages/auto_edit_client`,
+**gerado** do spec por `python scripts/gen_dart_client.py` (modelos + um
+método por operationId em `lib/src/generated/`; não editar à mão). Escritos à
+mão: `transport.dart` (endereço — `EngineConfig.local()`, IP de casa ou nuvem
+— token `Bearer`, `ApiException`) e o SSE com reconexão (o motor reenvia o
+histórico do job a cada conexão; o cliente pula o que já entregou). Mudou o
+spec → rode o gerador no mesmo PR; o job `dart-client` da CI falha se o
+gerado estiver velho e roda `dart test` contra um `auto-edit serve` real.
+
 ```
 GET  /api/health                  # {ok, api_version, version}
 GET  /api/openapi.json            # o contrato

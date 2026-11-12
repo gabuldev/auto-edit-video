@@ -65,3 +65,43 @@ jobs:
 
       - name: Check formatting
         run: ruff check auto_edit/ tools/ tests/ --select E,F,W --ignore E501
+
+  # Dart client of the engine API (packages/auto_edit_client), generated from
+  # auto_edit/openapi.yaml: stale generated code fails here, and the
+  # integration test drives a real `auto-edit serve`.
+  dart-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/auto_edit_client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          # pinned: `dart format` output changes between versions (gen --check)
+          sdk: 3.13.4
+
+      - name: Install the engine
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api]"
+
+      - name: Generated client is up to date
+        working-directory: .
+        run: python scripts/gen_dart_client.py --check
+
+      - run: dart pub get
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      - name: Test (unit + integration)
+        run: dart test
+        env:
+          AUTO_EDIT_BIN: auto-edit
