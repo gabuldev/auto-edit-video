@@ -102,7 +102,8 @@ void main() {
     final events = await client.api.jobEvents(started.jobId).toList().timeout(const Duration(seconds: 60));
     expect(events.first.type, 'log');
     expect(events.map((e) => e.stage), contains('done'));
-    expect(events.last.type, 'done', reason: log.toString());
+    final lines = events.map((e) => e.line ?? e.toJson().toString()).join('\n');
+    expect(events.last.type, 'done', reason: lines);
     expect(events.last.output, endsWith('clip_final.mp4'));
     expect(File(events.last.output!).existsSync(), isTrue);
   });

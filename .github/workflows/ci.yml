@@ -86,6 +86,10 @@ jobs:
           # pinned: `dart format` output changes between versions (gen --check)
           sdk: 3.13.4
 
+      # ralph.sh (the job the integration test follows) refuses to start without it
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install the engine
         working-directory: .
         run: |
