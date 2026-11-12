@@ -1,0 +1,14 @@
+name: auto_edit_client
+description: Client of the auto-edit engine API, generated from auto_edit/openapi.yaml.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  http: ^1.2.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0
