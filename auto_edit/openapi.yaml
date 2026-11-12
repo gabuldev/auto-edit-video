@@ -1,0 +1,1831 @@
+openapi: 3.1.0
+info:
+  title: auto-edit engine API
+  # Bump the minor for an addition (new route, new optional field), the major
+  # for a change a client already in the hands of people would break on.
+  version: "1.0.0"
+  description: |
+    The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
+    Every frontend (the desktop app, the phone as a remote, the cloud) talks to
+    the engine through this contract: JSON, plus Server-Sent Events for live
+    progress (`/api/jobs/{job_id}/events`, `/api/videos/{video_id}/events`).
+
+    Errors are JSON `{"error": "<message>"}` with a 4xx status; some carry the
+    id that wasn't found. Long work (edit, resume, shorts, publish, AI styles)
+    answers 202 with a `job_id` and reports through the job's SSE stream.
+
+    `tests/test_openapi.py` checks this file against the Flask routes and the
+    shape of the real answers, so it can't drift from the code.
+servers:
+  - url: http://127.0.0.1:8760
+tags:
+  - name: engine
+  - name: library
+  - name: videos
+  - name: plan
+  - name: captions
+  - name: effects
+  - name: jobs
+  - name: shorts
+  - name: publish
+  - name: retention
+  - name: styles
+  - name: settings
+  - name: agents
+
+paths:
+  /api/health:
+    get:
+      tags: [engine]
+      operationId: health
+      summary: "The engine is up, and which contract it speaks"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Health"}
+
+  /api/openapi.json:
+    get:
+      tags: [engine]
+      operationId: openapi
+      summary: "This contract, as JSON"
+      responses:
+        "200":
+          description: "The OpenAPI document"
+          content:
+            application/json:
+              schema: {type: object}
+
+  /api/library:
+    get:
+      tags: [library]
+      operationId: listLibrary
+      summary: "Every edit (workspace), newest first, with its live status"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [videos]
+                properties:
+                  videos:
+                    type: array
+                    items: {$ref: "#/components/schemas/VideoSummary"}
+
+  /api/browse:
+    get:
+      tags: [library]
+      operationId: browse
+      summary: "Sub-folders and videos of a directory (default the inbox)"
+      parameters:
+        - {name: dir, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Browse"}
+
+  /api/recordings:
+    get:
+      tags: [library]
+      operationId: listRecordings
+      summary: "Biblioteca — the videos in the inbox (sub-folders up to 3 levels), each with its edits"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Recordings"}
+
+  /api/recordings/thumb:
+    get:
+      tags: [library]
+      operationId: recordingThumb
+      summary: "JPEG thumbnail of a video inside the inbox (only there)"
+      parameters:
+        - {name: path, in: query, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: "The thumbnail"
+          content:
+            image/jpeg: {schema: {type: string, format: binary}}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/folders:
+    get:
+      tags: [library]
+      operationId: getFolders
+      summary: "The inbox and output folders, as the pipeline uses them now"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Folders"}
+
+  /api/folders/{which}/open:
+    post:
+      tags: [library]
+      operationId: openFolder
+      summary: "Open the inbox or the output folder in the file manager (this machine)"
+      parameters:
+        - name: which
+          in: path
+          required: true
+          schema: {type: string, enum: [inbox, output]}
+      responses:
+        "200": {$ref: "#/components/responses/Opened"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/video-file:
+    get:
+      tags: [library]
+      operationId: videoFileInfo
+      summary: "Name and size of a video picked or dropped in \"Novo edit\""
+      parameters:
+        - {name: path, in: query, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: "It is a video the pipeline opens"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/VideoFile"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/edit:
+    post:
+      tags: [jobs]
+      operationId: startEdit
+      summary: "Start editing a video (job)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EditRequest"}
+      responses:
+        "202": {$ref: "#/components/responses/JobStarted"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [videos]
+      operationId: getVideo
+      summary: "Full status of one edit, with plan and metadata summaries"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/VideoDetail"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [videos]
+      operationId: deleteVideo
+      summary: "Stop it, then delete the workspace and its output files (never the source video)"
+      responses:
+        "200":
+          description: "Removed"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, removed]
+                properties:
+                  id: {type: string}
+                  removed: {type: array, items: {type: string}}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+
+  /api/videos/{video_id}/stop:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    post:
+      tags: [jobs]
+      operationId: stopVideo
+      summary: "Stop whatever runs on this video (job, a stray ralph, the queue)"
+      responses:
+        "200":
+          description: "Stopped"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, stopped, reset_stages]
+                properties:
+                  id: {type: string}
+                  stopped: {type: array, items: {type: string}}
+                  reset_stages: {type: array, items: {type: string}}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/resume:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    post:
+      tags: [jobs]
+      operationId: resumeVideo
+      summary: "Run the pipeline again from a stage (job)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_stage]
+              properties:
+                from_stage: {type: string, description: "extract, plan, review, evaluate, execute, overlay, caption, metadata…"}
+                overlays_dir: {type: [string, "null"]}
+                caption_only: {type: boolean, description: "short: rewrite only the burned captions"}
+      responses:
+        "202": {$ref: "#/components/responses/JobStarted"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/events:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [jobs]
+      operationId: videoEvents
+      summary: "Live events of this video's current job (SSE)"
+      responses:
+        "200": {$ref: "#/components/responses/EventStream"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/jobs/{job_id}/events:
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [jobs]
+      operationId: jobEvents
+      summary: "Live events of a job (SSE); history first, then live"
+      responses:
+        "200": {$ref: "#/components/responses/EventStream"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/plan:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [plan]
+      operationId: getPlan
+      summary: "The cut plan, with what is said in each kept segment"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Plan"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [plan]
+      operationId: savePlan
+      summary: "Replace the kept segments (rewrites reviewed_plan.json; the agent's version is kept)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kept_segments]
+              properties:
+                kept_segments:
+                  type: array
+                  minItems: 1
+                  items: {$ref: "#/components/schemas/SegmentInput"}
+      responses:
+        "200":
+          description: "The saved plan"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Plan"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/plan/cut:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    post:
+      tags: [plan]
+      operationId: cutRange
+      summary: "Take a window out of the plan (takes effect on the next execute)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [start, end]
+              properties:
+                start: {type: number}
+                end: {type: number}
+                timeline: {$ref: "#/components/schemas/Timeline"}
+      responses:
+        "200":
+          description: "The plan after the cut"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: "#/components/schemas/Plan"}
+                  - type: object
+                    required: [removed_windows]
+                    properties:
+                      removed_windows:
+                        type: array
+                        items: {$ref: "#/components/schemas/Window"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/effects:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [effects]
+      operationId: listEffects
+      summary: "Zoom / B-roll asked for, with where each plays in the edited video"
+      responses:
+        "200": {$ref: "#/components/responses/Effects"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    post:
+      tags: [effects]
+      operationId: addEffect
+      summary: "Add a zoom or a B-roll (burned at execute; resume from there)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EffectInput"}
+      responses:
+        "200": {$ref: "#/components/responses/Effects"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [effects]
+      operationId: removeAllEffects
+      summary: "Remove every effect"
+      responses:
+        "200": {$ref: "#/components/responses/Effects"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/effects/{index}:
+    parameters:
+      - {$ref: "#/components/parameters/VideoId"}
+      - {name: index, in: path, required: true, schema: {type: integer, minimum: 0}}
+    delete:
+      tags: [effects]
+      operationId: removeEffect
+      summary: "Remove one effect (its index in the list)"
+      responses:
+        "200": {$ref: "#/components/responses/Effects"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/captions:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [captions]
+      operationId: getCaptions
+      summary: "The short's caption look (final style + its own adjust)"
+      responses:
+        "200": {$ref: "#/components/responses/Captions"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [captions]
+      operationId: saveCaptions
+      summary: "Save the per-video adjust; an absent key keeps its previous value"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CaptionAdjust"}
+      responses:
+        "200": {$ref: "#/components/responses/Captions"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/captions/preview:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    post:
+      tags: [captions]
+      operationId: previewCaptions
+      summary: "PNG of the caption over a frame of this short, with the adjust applied"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CaptionAdjust"}
+      responses:
+        "200": {$ref: "#/components/responses/Png"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/result:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [videos]
+      operationId: getResult
+      summary: "What the Resultado screen shows — metadata and the finished files"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Result"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/thumbnail:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    put:
+      tags: [videos]
+      operationId: chooseThumbnail
+      summary: "Which thumbnail (A/B/C) goes with the upload"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variant]
+              properties:
+                variant: {type: string, enum: [A, B, C]}
+      responses:
+        "200":
+          description: "The variations, with the chosen one marked"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thumbnails]
+                properties:
+                  thumbnails:
+                    type: array
+                    items: {$ref: "#/components/schemas/ThumbnailOption"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/file/{kind}:
+    parameters:
+      - {$ref: "#/components/parameters/VideoId"}
+      - {$ref: "#/components/parameters/ArtifactKind"}
+    get:
+      tags: [videos]
+      operationId: getFile
+      summary: "One finished file (supports Range, for seeking in the player)"
+      responses:
+        "200":
+          description: "The file"
+          content:
+            video/mp4: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+            text/plain: {schema: {type: string}}
+        "206": {description: Partial content (Range)}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/open/{kind}:
+    parameters:
+      - {$ref: "#/components/parameters/VideoId"}
+      - name: kind
+        in: path
+        required: true
+        schema: {type: string, enum: [video, thumbnail, thumbnail_b, thumbnail_c, captions, notes, source]}
+    post:
+      tags: [videos]
+      operationId: openFile
+      summary: "Open a file on the engine's machine (default app, or `reveal` in the folder)"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reveal: {type: boolean}
+      responses:
+        "200": {$ref: "#/components/responses/Opened"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/shorts:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [shorts]
+      operationId: getShorts
+      summary: "Shorts candidates of a finished long"
+      parameters:
+        - {name: max_dur, in: query, schema: {type: number}}
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ShortsState"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    post:
+      tags: [shorts]
+      operationId: findShorts
+      summary: "Run the clipper (job)"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_dur: {type: number}
+      responses:
+        "202": {$ref: "#/components/responses/JobStarted"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/shorts/cut:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    post:
+      tags: [shorts]
+      operationId: cutShorts
+      summary: "Cut the picked candidates; each becomes a <name>_shortN edit, run in a queue"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pick]
+              properties:
+                pick: {type: array, items: {type: integer, minimum: 1}}
+                max_dur: {type: number}
+      responses:
+        "202":
+          description: "Queued"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shorts]
+                properties:
+                  shorts: {type: array, items: {type: string}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/publish/youtube:
+    get:
+      tags: [publish]
+      operationId: youtubeAccount
+      summary: "Is a YouTube channel connected?"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/YouTubeAccount"}
+
+  /api/publish/youtube/connect:
+    post:
+      tags: [publish]
+      operationId: youtubeConnect
+      summary: "Open the OAuth consent in the browser (poll GET /api/publish/youtube; gives up after 5 min)"
+      responses:
+        "202":
+          description: "Waiting for the browser"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/YouTubeAccount"}
+
+  /api/publish/youtube/connect/cancel:
+    post:
+      tags: [publish]
+      operationId: youtubeConnectCancel
+      summary: "Stop waiting for the browser's authorization"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/YouTubeAccount"}
+
+  /api/publish/youtube/disconnect:
+    post:
+      tags: [publish]
+      operationId: youtubeDisconnect
+      summary: "Forget the saved YouTube token"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/YouTubeAccount"}
+
+  /api/publish/youtube/client:
+    put:
+      tags: [publish]
+      operationId: youtubeClient
+      summary: "The OAuth client JSON (Desktop app) from Google Cloud — a path or its content"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: {type: string}
+                content: {type: string}
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/YouTubeAccount"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/publish/youtube/refresh:
+    post:
+      tags: [publish]
+      operationId: youtubeRefresh
+      summary: "Mark the sent videos that were deleted on YouTube (at most once a minute)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checked, changed]
+                properties:
+                  checked: {type: boolean}
+                  changed: {type: boolean}
+                  error: {type: string}
+
+  /api/videos/{video_id}/publish:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [publish]
+      operationId: getPublish
+      summary: "The Publicar card — defaults from the metadata and past publishes"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublishState"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/publish/live:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [publish]
+      operationId: getPublishLive
+      summary: "How the sent videos are on YouTube now (scheduled became public? deleted?)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checked]
+                properties:
+                  checked: {type: boolean}
+                  videos: {type: array, items: {type: object}}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/videos/{video_id}/publish/youtube:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    post:
+      tags: [publish]
+      operationId: publishYoutube
+      summary: "Upload to YouTube with the chosen thumbnail (job)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublishRequest"}
+      responses:
+        "202": {$ref: "#/components/responses/JobStarted"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+
+  /api/videos/{video_id}/retention:
+    parameters: [{$ref: "#/components/parameters/VideoId"}]
+    get:
+      tags: [retention]
+      operationId: getRetention
+      summary: "The saved retention analysis (no call to YouTube)"
+      responses:
+        "200": {$ref: "#/components/responses/Retention"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    post:
+      tags: [retention]
+      operationId: refreshRetention
+      summary: "Fetch the retention curve from YouTube now and save the analysis"
+      responses:
+        "200": {$ref: "#/components/responses/Retention"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/insights/trend:
+    get:
+      tags: [retention]
+      operationId: retentionTrend
+      summary: "The channel's retention over time, with vs without the planner's lessons"
+      parameters:
+        - name: type
+          in: query
+          schema: {type: string, enum: [long, short]}
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Trend"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles:
+    get:
+      tags: [styles]
+      operationId: listStyles
+      summary: "Styles (presets + the person's), the active one, fonts, brand"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Styles"}
+    post:
+      tags: [styles]
+      operationId: saveStyle
+      summary: "Save a style of the person's"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, tokens]
+              properties:
+                name: {type: string}
+                tokens: {type: object}
+                id: {type: string}
+                description: {type: string}
+                activate: {type: boolean}
+      responses:
+        "200":
+          description: "The saved style"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Style"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/active:
+    put:
+      tags: [styles]
+      operationId: setActiveStyle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/ActiveStyle"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/{style_id}:
+    parameters:
+      - {name: style_id, in: path, required: true, schema: {type: string}}
+    delete:
+      tags: [styles]
+      operationId: deleteStyle
+      responses:
+        "200": {$ref: "#/components/responses/ActiveStyle"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/{style_id}/export:
+    parameters:
+      - {name: style_id, in: path, required: true, schema: {type: string}}
+    post:
+      tags: [styles]
+      operationId: exportStyle
+      summary: "Write the .autoedit-style.json to Downloads and show it in the file manager"
+      responses:
+        "200":
+          description: "Exported"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path]
+                properties:
+                  path: {type: string}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/styles/import:
+    post:
+      tags: [styles]
+      operationId: importStyle
+      summary: "Import a .autoedit-style.json (never overwrites)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, description: Path of the file on the engine's machine}
+      responses:
+        "200":
+          description: "The saved style"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Style"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/preview/{kind}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        schema: {type: string, enum: [thumbnail, lower_third, cta, caption]}
+    post:
+      tags: [styles]
+      operationId: previewStyle
+      summary: "PNG of a style on a frame of the most recent video"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tokens: {type: object}
+      responses:
+        "200": {$ref: "#/components/responses/Png"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/generate:
+    post:
+      tags: [styles]
+      operationId: generateStyle
+      summary: "Create a style with AI from a description and a reference image (job; done carries the draft in `result`)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: {type: string}
+                image: {$ref: "#/components/schemas/ImageDataUrl"}
+      responses:
+        "202": {$ref: "#/components/responses/TaskStarted"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/adjust:
+    post:
+      tags: [styles]
+      operationId: adjustStyle
+      summary: "Adjust a style with AI (job; done carries the draft in `result`)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tokens, request]
+              properties:
+                tokens: {type: object}
+                request: {type: string, minLength: 1}
+                image: {$ref: "#/components/schemas/ImageDataUrl"}
+      responses:
+        "202": {$ref: "#/components/responses/TaskStarted"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/styles/palette:
+    post:
+      tags: [styles]
+      operationId: stylePalette
+      summary: "Colors of an image (default the saved logo) and a suggested set"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                image: {$ref: "#/components/schemas/ImageDataUrl"}
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [colors, suggested]
+                properties:
+                  colors: {type: array, items: {type: string}}
+                  suggested: {type: object}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/brand/logo:
+    get:
+      tags: [styles]
+      operationId: getLogo
+      responses:
+        "200":
+          description: "The logo image"
+          content:
+            image/png: {schema: {type: string, format: binary}}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [styles]
+      operationId: uploadLogo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: {$ref: "#/components/schemas/ImageDataUrl"}
+      responses:
+        "200": {$ref: "#/components/responses/Brand"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+    delete:
+      tags: [styles]
+      operationId: deleteLogo
+      responses:
+        "200": {$ref: "#/components/responses/Brand"}
+
+  /api/settings:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      summary: "~/.auto-edit/settings.json, with the defaults filled in"
+      responses:
+        "200": {$ref: "#/components/responses/Settings"}
+    put:
+      tags: [settings]
+      operationId: saveSettings
+      summary: "Merge the given keys into the settings"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Settings"}
+      responses:
+        "200": {$ref: "#/components/responses/Settings"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/setup:
+    get:
+      tags: [settings]
+      operationId: getSetup
+      summary: "First run — is an agent ready, is Whisper downloaded?"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Setup"}
+
+  /api/setup/whisper:
+    post:
+      tags: [settings]
+      operationId: downloadWhisper
+      summary: "Download a Whisper model (progress in GET /api/setup)"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: {type: string}
+      responses:
+        "202":
+          description: "Downloading"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/agents:
+    get:
+      tags: [agents]
+      operationId: listAgents
+      summary: "Each AI agent — installed? version? (Ollama: models)"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agents]
+                properties:
+                  agents:
+                    type: array
+                    items: {$ref: "#/components/schemas/AgentStatus"}
+
+  /api/agents/{name}/test:
+    parameters: [{$ref: "#/components/parameters/AgentName"}]
+    post:
+      tags: [agents]
+      operationId: testAgent
+      summary: "Send a real minimal prompt; the first that works becomes the primary"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: {type: string}
+      responses:
+        "200":
+          description: "The test result"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/agents/{name}/login:
+    parameters: [{$ref: "#/components/parameters/AgentName"}]
+    post:
+      tags: [agents]
+      operationId: loginAgent
+      summary: "Open a terminal on the engine's machine with the CLI's login"
+      responses:
+        "200":
+          description: "The command that was opened"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [command]
+                properties:
+                  command: {type: string}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/agents/{name}/install:
+    parameters: [{$ref: "#/components/parameters/AgentName"}]
+    post:
+      tags: [agents]
+      operationId: installAgent
+      summary: "Run the official installer in a terminal (or open the download page)"
+      responses:
+        "200":
+          description: "What was opened"
+          content:
+            application/json:
+              schema: {type: object}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/agents/ollama/pull:
+    post:
+      tags: [agents]
+      operationId: pullOllama
+      summary: "Download an Ollama model (progress in GET /api/agents)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: {type: string}
+      responses:
+        "202":
+          description: "Downloading"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [model, status]
+                properties:
+                  model: {type: string}
+                  status: {type: string, enum: [downloading]}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/agents/openrouter/key:
+    put:
+      tags: [agents]
+      operationId: saveOpenrouterKey
+      summary: "Save the OpenRouter API key (never sent back whole)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/AgentStatus"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+    delete:
+      tags: [agents]
+      operationId: deleteOpenrouterKey
+      responses:
+        "200": {$ref: "#/components/responses/AgentStatus"}
+
+  /api/open-url:
+    post:
+      tags: [engine]
+      operationId: openUrl
+      summary: "Open a link in the default browser — only YouTube, Google Cloud and the agent CLIs' pages"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Opened"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+components:
+  parameters:
+    VideoId:
+      name: video_id
+      in: path
+      required: true
+      description: "The edit's workspace id"
+      schema: {type: string}
+    AgentName:
+      name: name
+      in: path
+      required: true
+      schema: {type: string, enum: [claude, cursor, agy, opencode, codex, openrouter, ollama]}
+    ArtifactKind:
+      name: kind
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/ArtifactKind"}
+
+  responses:
+    NotFound:
+      description: "Not found"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    BadRequest:
+      description: "Invalid request (the message says what)"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Conflict:
+      description: "Conflict (already published / a file still open)"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    JobStarted:
+      description: "Started; follow it at /api/jobs/{job_id}/events"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [job_id, video_id]
+            properties:
+              job_id: {type: string}
+              video_id: {type: string}
+    TaskStarted:
+      description: "Started; follow it at /api/jobs/{job_id}/events"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [job_id]
+            properties:
+              job_id: {type: string}
+    EventStream:
+      description: |
+        Server-Sent Events. Each message is `data: <JSON>` with a JobEvent.
+        The stream ends after `done` or `error`.
+      content:
+        text/event-stream:
+          schema: {$ref: "#/components/schemas/JobEvent"}
+    Opened:
+      description: "Opened on the engine's machine"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [opened]
+            properties:
+              opened: {type: string}
+    Png:
+      description: "PNG image"
+      content:
+        image/png: {schema: {type: string, format: binary}}
+    Effects:
+      description: "The effects after the change"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Effects"}
+    Captions:
+      description: "The caption look"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Captions"}
+    Retention:
+      description: "Retention analysis"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Retention"}
+    ActiveStyle:
+      description: "The active style"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [active]
+            properties:
+              active: {type: string}
+    Brand:
+      description: "The brand (name, @, logo)"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Brand"}
+    Settings:
+      description: "The settings"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Settings"}
+    AgentStatus:
+      description: "The agent's status"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/AgentStatus"}
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+
+    Health:
+      type: object
+      required: [ok, api_version, version]
+      properties:
+        ok: {type: boolean}
+        api_version: {type: string, description: "info.version of this contract"}
+        version: {type: string, description: "auto-edit version"}
+        repo_root: {type: string}
+
+    VideoStatus:
+      type: string
+      enum: [running, done, failed, queued, idle, interrupted]
+
+    VideoType:
+      type: string
+      enum: [short, long]
+
+    ArtifactKind:
+      type: string
+      enum: [video, thumbnail, thumbnail_b, thumbnail_c, captions, notes]
+
+    Timeline:
+      type: string
+      enum: [edited, original]
+      default: edited
+      description: "edited: the time of the video the person watched; original: the raw recording"
+
+    Window:
+      type: object
+      required: [start, end]
+      properties:
+        start: {type: number}
+        end: {type: number}
+
+    VideoFile:
+      type: object
+      required: [name, path, size, modified]
+      properties:
+        name: {type: string}
+        path: {type: string}
+        size: {type: integer}
+        modified: {type: string, format: date-time}
+
+    Browse:
+      type: object
+      required: [dir, parent, exists, dirs, videos]
+      properties:
+        dir: {type: string}
+        parent: {type: [string, "null"]}
+        exists: {type: boolean}
+        dirs:
+          type: array
+          items:
+            type: object
+            required: [name, path]
+            properties:
+              name: {type: string}
+              path: {type: string}
+        videos:
+          type: array
+          items: {$ref: "#/components/schemas/VideoFile"}
+
+    Recordings:
+      type: object
+      required: [folder, exists, recordings, truncated]
+      properties:
+        folder: {type: string}
+        exists: {type: boolean}
+        truncated: {type: boolean}
+        recordings:
+          type: array
+          items:
+            type: object
+            required: [name, path, folder, ext, size, modified, edits]
+            properties:
+              name: {type: string}
+              path: {type: string}
+              folder: {type: string}
+              ext: {type: string}
+              size: {type: integer}
+              modified: {type: string, format: date-time}
+              duration: {type: [number, "null"]}
+              width: {type: [integer, "null"]}
+              height: {type: [integer, "null"]}
+              edits:
+                type: array
+                items:
+                  type: object
+                  required: [id, status]
+                  properties:
+                    id: {type: string}
+                    name: {type: [string, "null"]}
+                    status: {$ref: "#/components/schemas/VideoStatus"}
+
+    Folder:
+      type: object
+      required: [path, custom, exists]
+      properties:
+        path: {type: string}
+        custom: {type: boolean}
+        exists: {type: boolean}
+
+    Folders:
+      type: object
+      required: [inbox, output]
+      properties:
+        inbox: {$ref: "#/components/schemas/Folder"}
+        output: {$ref: "#/components/schemas/Folder"}
+
+    EditRequest:
+      type: object
+      required: [video_path, type]
+      description: "What is left out comes from the settings"
+      properties:
+        video_path: {type: string, description: Path on the engine's machine}
+        type: {$ref: "#/components/schemas/VideoType"}
+        context: {type: string}
+        language: {type: string}
+        whisper_model: {type: string}
+        max_iterations: {type: integer, default: 3}
+        dry_run: {type: boolean}
+        cold_open: {type: boolean}
+        reorder: {type: boolean}
+        overlays_dir: {type: [string, "null"]}
+        name: {type: [string, "null"], description: "The edit's display name (empty: the file name)"}
+
+    VideoSummary:
+      type: object
+      required: [id, video_name, type, status, current_stage, stages, has_thumbnail]
+      properties:
+        id: {type: string}
+        name: {type: [string, "null"]}
+        video_name: {type: string}
+        video_path: {type: [string, "null"]}
+        type: {$ref: "#/components/schemas/VideoType"}
+        language: {type: [string, "null"]}
+        current_stage: {type: [string, "null"]}
+        status: {$ref: "#/components/schemas/VideoStatus"}
+        derived_from: {type: [string, "null"], description: "a short cut from a long: the long's workspace"}
+        title: {type: [string, "null"]}
+        context: {type: [string, "null"]}
+        has_thumbnail: {type: boolean}
+        iteration: {type: [integer, "null"]}
+        max_iterations: {type: [integer, "null"]}
+        plan_id: {type: [string, "null"]}
+        created_at: {type: [string, "null"]}
+        stages:
+          type: object
+          description: "stage name → pending | running | done | failed | skip"
+          additionalProperties: {type: [string, "null"]}
+        estimated_tokens: {type: [integer, "null"]}
+        output: {type: [string, "null"], description: "absolute path of the delivered video"}
+        published:
+          type: [object, "null"]
+          properties:
+            privacy: {type: [string, "null"]}
+            publish_at: {type: [string, "null"]}
+            published_at: {type: [string, "null"]}
+            count: {type: integer}
+
+    VideoDetail:
+      allOf:
+        - {$ref: "#/components/schemas/VideoSummary"}
+        - type: object
+          required: [stage_detail]
+          properties:
+            stage_detail: {type: object, additionalProperties: {type: object}}
+            token_stats: {type: [object, "null"]}
+            plan:
+              type: object
+              properties:
+                kept_segments: {type: integer}
+                dropped_blocks: {}
+            metadata: {type: object}
+            job_id: {type: string, description: "the job running on it now"}
+
+    SegmentInput:
+      type: object
+      required: [start, end]
+      properties:
+        start: {type: number, minimum: 0}
+        end: {type: number}
+        summary: {type: string}
+
+    Plan:
+      type: object
+      required: [id, source, editable, kept_total, kept_segments, cuts]
+      properties:
+        id: {type: string}
+        name: {type: [string, "null"]}
+        source: {type: string, enum: [reviewed_plan.json, cut_plan.json]}
+        editable: {type: boolean}
+        duration: {type: [number, "null"]}
+        kept_total: {type: number}
+        kept_segments:
+          type: array
+          items:
+            type: object
+            required: [index, start, end, duration, text]
+            properties:
+              index: {type: integer}
+              start: {type: number}
+              end: {type: number}
+              duration: {type: number}
+              summary: {type: [string, "null"]}
+              text: {type: string, description: what is said in it}
+        cuts:
+          type: array
+          items:
+            type: object
+            required: [start, end, duration]
+            properties:
+              start: {type: number}
+              end: {type: number}
+              duration: {type: number}
+              reason: {type: [string, "null"]}
+              type: {type: [string, "null"]}
+        dropped_blocks: {}
+
+    EffectInput:
+      type: object
+      required: [type, start, end]
+      properties:
+        type: {type: string, enum: [zoom, broll]}
+        start: {type: number}
+        end: {type: number}
+        scale: {type: number, minimum: 1.05, maximum: 1.6, description: "zoom (default 1.2)"}
+        file: {type: string, description: "broll: image or video on the engine's machine"}
+        timeline: {$ref: "#/components/schemas/Timeline"}
+
+    Effects:
+      type: object
+      required: [id, effects, stored, notes, rerender_from]
+      properties:
+        id: {type: string}
+        effects:
+          type: array
+          items:
+            type: object
+            required: [index, type, start, end]
+            properties:
+              index: {type: integer}
+              type: {type: string, enum: [zoom, broll]}
+              start: {type: number, description: original time}
+              end: {type: number}
+              scale: {type: number}
+              file: {type: string}
+        stored: {type: integer}
+        notes: {type: array, items: {type: string}}
+        edited_duration: {type: [number, "null"]}
+        rerender_from: {type: string, enum: [execute]}
+
+    CaptionAdjust:
+      type: object
+      properties:
+        position: {type: string, enum: [top, middle, bottom]}
+        offset: {type: number, minimum: 0, maximum: 40}
+        size: {type: number, minimum: 50, maximum: 200}
+        hidden: {type: boolean}
+
+    Captions:
+      type: object
+      required: [captions, adjust, fast, source_ok, video_path]
+      properties:
+        captions: {type: object, description: "the resolved caption tokens of the style"}
+        adjust: {$ref: "#/components/schemas/CaptionAdjust"}
+        fast: {type: boolean, description: "the cut is kept: rewriting the captions skips execute"}
+        source_ok: {type: boolean}
+        video_path: {type: string}
+
+    ThumbnailOption:
+      type: object
+      required: [id, kind, layout, qa_reasons, chosen]
+      properties:
+        id: {type: string, enum: [A, B, C]}
+        kind: {$ref: "#/components/schemas/ArtifactKind"}
+        layout: {type: string}
+        qa: {type: [string, "null"]}
+        qa_reasons: {type: array, items: {type: string}}
+        chosen: {type: boolean}
+
+    Result:
+      type: object
+      required: [id, video_name, type, status, files, thumbnails]
+      properties:
+        id: {type: string}
+        name: {type: [string, "null"]}
+        video_name: {type: string}
+        type: {$ref: "#/components/schemas/VideoType"}
+        status: {$ref: "#/components/schemas/VideoStatus"}
+        metadata: {type: [object, "null"]}
+        files:
+          type: object
+          description: "artifact kind → the file (only the ones that exist)"
+          additionalProperties:
+            type: object
+            required: [path, size]
+            properties:
+              path: {type: string}
+              size: {type: integer}
+        thumbnails:
+          type: array
+          items: {$ref: "#/components/schemas/ThumbnailOption"}
+        token_stats: {type: [object, "null"]}
+
+    ShortsState:
+      type: object
+      required: [id, eligible, reason, has_plan, max_duration, clips, rejected, notes]
+      properties:
+        id: {type: string}
+        name: {type: [string, "null"]}
+        eligible: {type: boolean}
+        reason: {type: [string, "null"]}
+        has_plan: {type: boolean}
+        max_duration: {type: number}
+        clips:
+          type: array
+          items:
+            type: object
+            required: [number, start, end, duration, hook, text, overlaps]
+            properties:
+              number: {type: integer, description: "what /shorts/cut takes; the N of _shortN"}
+              start: {type: number}
+              end: {type: number}
+              duration: {type: number}
+              score: {type: [number, "null"]}
+              hook: {type: string}
+              reason: {type: [string, "null"]}
+              text: {type: string}
+              overlaps: {type: boolean}
+              short:
+                type: [object, "null"]
+                properties:
+                  id: {type: string}
+                  status: {$ref: "#/components/schemas/VideoStatus"}
+                  overwrite_warning: {type: [string, "null"]}
+        rejected: {type: array}
+        notes: {type: string}
+        job:
+          type: object
+          properties:
+            id: {type: string}
+            status: {type: string}
+
+    YouTubeAccount:
+      type: object
+      required: [connected, connecting, has_client_secret]
+      properties:
+        connected: {type: boolean}
+        needs_reconnect: {type: boolean}
+        channel: {type: [string, "null"]}
+        connecting: {type: boolean}
+        error: {type: [string, "null"]}
+        has_client_secret: {type: boolean}
+        client_id: {type: [string, "null"]}
+
+    PublishRequest:
+      type: object
+      properties:
+        title: {type: string}
+        description: {type: string}
+        tags:
+          oneOf:
+            - {type: array, items: {type: string}}
+            - {type: string, description: comma-separated}
+        privacy: {type: string, enum: [private, unlisted, public], default: private}
+        publish_at: {type: [string, "null"], format: date-time, description: "schedule (needs privacy private)"}
+        captions: {type: boolean, default: true, description: "long: send the .srt along"}
+        comment: {type: [string, "null"], description: "comment to pin (not on a private video)"}
+        force: {type: boolean, description: "send again even if already on YouTube"}
+
+    PublishState:
+      type: object
+      required: [id, type, eligible, reason, defaults, thumbnail, captions, limits, published, account]
+      properties:
+        id: {type: string}
+        type: {$ref: "#/components/schemas/VideoType"}
+        eligible: {type: boolean}
+        reason: {type: [string, "null"]}
+        defaults:
+          type: object
+          properties:
+            title: {type: string}
+            description: {type: string}
+            tags: {type: array, items: {type: string}}
+            privacy: {type: string}
+        thumbnail: {type: boolean}
+        thumbnail_variant: {type: [string, "null"], enum: [A, B, C, null]}
+        captions: {type: boolean}
+        pinned_comment: {type: [string, "null"]}
+        title_options: {type: array, items: {type: string}}
+        next_video: {}
+        limits:
+          type: object
+          required: [title, description]
+          properties:
+            title: {type: integer}
+            description: {type: integer}
+        published:
+          type: array
+          items:
+            type: object
+            properties:
+              video_id: {type: string}
+              url: {type: string}
+              title: {type: string}
+              privacy: {type: string}
+              publish_at: {type: [string, "null"]}
+        account: {$ref: "#/components/schemas/YouTubeAccount"}
+        job:
+          type: object
+          properties:
+            id: {type: string}
+            status: {type: string}
+
+    Retention:
+      type: object
+      required: [id, youtube_id, data, versus_previous, account]
+      properties:
+        id: {type: string}
+        youtube_id: {type: [string, "null"]}
+        data: {type: [object, "null"], description: "the saved analysis (retention.json)"}
+        versus_previous: {type: [object, "null"]}
+        account: {$ref: "#/components/schemas/YouTubeAccount"}
+
+    Trend:
+      type: object
+      required: [videos]
+      properties:
+        type: {type: [string, "null"]}
+        videos:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              title: {type: [string, "null"]}
+              published_at: {type: [string, "null"]}
+              youtube_id: {type: [string, "null"]}
+              lessons: {type: [integer, "null"]}
+
+    ImageDataUrl:
+      type: string
+      description: "data:image/png;base64,… (PNG, JPG or WebP, up to 5 MB)"
+      pattern: "^data:image/"
+
+    Style:
+      type: object
+      required: [id, name, tokens]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        tokens: {type: object}
+
+    Brand:
+      type: object
+      properties:
+        name: {type: [string, "null"]}
+        handle: {type: [string, "null"]}
+        logo: {type: [string, "null"], description: "path of the saved logo on the engine's machine"}
+        logo_bg: {type: [string, "null"]}
+
+    Styles:
+      type: object
+      required: [active, styles, fonts, icons, positions, brand, ai_vision]
+      properties:
+        active: {type: string}
+        styles:
+          type: array
+          items: {$ref: "#/components/schemas/Style"}
+        fonts:
+          type: array
+          items:
+            type: object
+            required: [id, label]
+            properties:
+              id: {type: string}
+              label: {type: string}
+        icons: {type: array, items: {type: string}}
+        positions:
+          type: object
+          required: [lower_third, cta]
+          properties:
+            lower_third: {type: array, items: {type: string}}
+            cta: {type: array, items: {type: string}}
+        brand: {$ref: "#/components/schemas/Brand"}
+        ai_vision: {type: boolean}
+
+    Settings:
+      type: object
+      description: "~/.auto-edit/settings.json (validated by auto_edit/settings.py)"
+      properties:
+        language: {type: string}
+        whisper_model: {type: string}
+        cold_open: {type: boolean}
+        reorder: {type: boolean}
+        overlays_dir: {type: [string, "null"]}
+        agent: {type: object}
+        verified_agent: {type: [string, "null"]}
+        brand: {type: object}
+        inbox: {type: [string, "null"]}
+        output_dir: {type: [string, "null"]}
+        style: {type: [string, "null"]}
+
+    AgentStatus:
+      type: object
+      required: [name, label, installed]
+      properties:
+        name: {type: string}
+        label: {type: string}
+        installed: {type: boolean}
+        path: {type: [string, "null"]}
+        version: {type: [string, "null"]}
+        login_command: {type: [string, "null"]}
+        docs: {type: [string, "null"]}
+
+    Setup:
+      type: object
+      required: [agents, agent_ready, whisper, ready, platform]
+      properties:
+        agents: {type: array}
+        primary: {type: [string, "null"]}
+        installed: {type: array, items: {type: string}}
+        agent_ready: {type: boolean}
+        verified_agent: {type: [string, "null"]}
+        whisper:
+          type: object
+          required: [ready]
+          properties:
+            ready: {type: boolean}
+        ready: {type: boolean}
+        install_commands: {type: object}
+        platform: {type: string}
+
+    JobEvent:
+      type: object
+      required: [type]
+      description: |
+        log: a line of the pipeline's log. stage: the stage now running.
+        progress: `pct` (upload) or `message` (AI style). done: finished
+        (`output` for an edit, `url`/`video_id` for a publish, `result` for an
+        AI style). error: failed or `status: cancelled`.
+      properties:
+        type: {type: string, enum: [log, stage, progress, done, error]}
+        line: {type: string}
+        stage: {type: [string, "null"]}
+        pct: {type: integer, minimum: 0, maximum: 100}
+        message: {type: string}
+        status: {type: string, enum: [done, failed, cancelled]}
+        output: {type: [string, "null"]}
+        url: {type: string}
+        video_id: {type: string}
+        result: {type: object}

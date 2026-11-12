@@ -194,8 +194,15 @@ ou web) usa pra dirigir o pipeline canônico — sem reimplementar nada. A lógi
 fica em `auto_edit/engine.py` (fachada pura sobre `ralph.sh` + `pipeline.py` +
 `workspace.py`); `auto_edit/api.py` é só a casca HTTP.
 
+O contrato é `auto_edit/openapi.yaml` (OpenAPI 3.1, servido em
+`/api/openapi.json`; `info.version` volta como `api_version` no `/api/health`).
+`tests/test_openapi.py` falha se uma rota do Flask não estiver no spec (ou o
+contrário) e confere as respostas reais contra os schemas — rota nova ou campo
+novo entra no spec no mesmo PR (minor do `info.version`; quebra = major).
+
 ```
-GET  /api/health
+GET  /api/health                  # {ok, api_version, version}
+GET  /api/openapi.json            # o contrato
 GET  /api/library                 # lista workspaces + status derivado
 GET  /api/browse?dir=             # pastas + vídeos de um diretório
 GET  /api/recordings              # Biblioteca: vídeos da pasta de entrada (subpastas até 3 níveis), com duração/resolução (ffprobe em cache) e as edições de cada
@@ -210,7 +217,11 @@ GET  /api/videos/<id>/captions    # legenda do short: estilo final, ajuste próp
 PUT  /api/videos/<id>/captions    # {position, offset, size, hidden}: só essas 4 chaves; ausente mantém o anterior
 POST /api/videos/<id>/captions/preview  # {ajuste} → PNG da legenda num frame do short (regravar: /resume from_stage=caption, caption_only)
 GET  /api/videos/<id>/result      # metadata + arquivos finais
-GET  /api/videos/<id>/file/<kind> # video | thumbnail | captions | notes
+GET  /api/videos/<id>/file/<kind> # video | thumbnail | thumbnail_b | thumbnail_c | captions | notes
+PUT  /api/videos/<id>/thumbnail   # {variant: A|B|C}: a que vai na publicação
+POST /api/videos/<id>/plan/cut    # {start, end, timeline: edited|original}: tira um trecho (vale no próximo execute)
+GET|POST|DELETE /api/videos/<id>/effects[/<index>]  # zoom / B-roll num trecho
+POST /api/videos/<id>/stop        # para o que roda nele
 POST /api/edit                    # {video_path, type, context, language, overlays_dir, name?, ...} (name: nome da edição, só exibição)
 POST /api/videos/<id>/resume      # {from_stage, caption_only?} (caption_only: short regrava só a legenda)
 DELETE /api/videos/<id>           # para o que roda e apaga workspace + arquivos em output/ (nunca o vídeo original)
@@ -225,6 +236,7 @@ GET  /api/videos/<id>/publish/live  # estado atual no YouTube dos enviados (prog
 POST /api/videos/<id>/publish/youtube  # {title, description, tags, privacy, publish_at, force}
 POST /api/videos/<id>/open/<kind> # abre no app padrão / {reveal} no Finder (kind `source` = o vídeo original)
 GET  /api/videos/<id>/retention   # análise salva (POST busca a curva no YouTube)
+GET  /api/insights/trend?type=    # retenção do canal ao longo do tempo (com/sem as lições)
 GET  /api/styles                  # estilos (presets + seus), o ativo, fontes, marca
 PUT  /api/styles/active           # {id}
 POST /api/styles                  # {name, tokens, id?, activate?} salva um estilo seu
