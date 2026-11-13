@@ -81,7 +81,7 @@ void main() {
     expect(find.textContaining('Nenhum vídeo nesta pasta'), findsOneWidget);
     await tester.tap(find.text('Estilos'));
     await tester.pump();
-    expect(find.textContaining('#142'), findsOneWidget);
+    expect(find.text('Importar estilo'), findsOneWidget);
     await tester.tap(find.text('Configurações'));
     await tester.pump();
     await tester.pump();

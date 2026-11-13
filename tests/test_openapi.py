@@ -263,6 +263,18 @@ def fake_agents(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_status, "_run_claude", lambda prompt, model, timeout: '{"ok": true}')
 
 
+def test_style_import_takes_the_exported_file(client):
+    """The app reads the .autoedit-style.json and sends its content (the
+    engine may be on another machine): what export writes is what import takes."""
+    from auto_edit import styles
+
+    data = styles.export("padrao")
+    body = SPEC["paths"]["/api/styles/import"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    assert validate({"file": data}, body) == []
+    _check(client, "post", "/api/styles/import", "/api/styles/import", body={"file": data})
+    _check(client, "get", "/api/styles", "/api/styles")
+
+
 def test_agents_and_setup_match_the_schema(client, fake_agents):
     _check(client, "get", "/api/agents", "/api/agents")
     _check(client, "get", "/api/setup", "/api/setup")

@@ -65,8 +65,18 @@ Telas:
   dica do campo), títulos alternativos, visibilidade, agendar, legenda,
   comentário pra fixar, envio com progresso, e o histórico com o estado atual
   no YouTube (programado virou público? apagado?).
-- O motor conectado (versão e contrato) fica no fim das Configurações. Estilos
-  chega na #142.
+- **Shorts** (`lib/ui/shorts_screen.dart`, "Gerar shorts" num long pronto):
+  roda o clipper (com o log), cada candidato com nota, gancho, fala,
+  "sobrepõe outro" e "já cortado"; "Assistir" toca só aquele trecho; marcar e
+  cortar em fila (vão pra Edições).
+- **Estilos** (`lib/ui/styles/`): a marca (nome, @, logo, fundo da logo), a
+  galeria com a thumbnail real de cada estilo, as quatro prévias do motor
+  (clique pra ampliar), usar, exportar, excluir os seus, importar
+  `.autoedit-style.json` (o app lê o arquivo e manda o conteúdo) e o editor
+  de tokens (cores, fontes, cantos, velocidade, nome na tela, passos da
+  chamada, legenda, HTML da thumbnail, cores do logo). Criar/Ajustar com IA
+  segue desligado, como no Tauri (beta, só na CLI).
+- O motor conectado (versão e contrato) fica no fim das Configurações.
 
 Diálogos do sistema (pasta, JSON) passam por `Pickers` (`lib/platform.dart`,
 `file_selector`): o JSON da credencial vai pro motor como conteúdo, não
