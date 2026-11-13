@@ -1326,7 +1326,7 @@ class Settings {
   final bool? coldOpen;
   final bool? reorder;
   final String? overlaysDir;
-  final Map<String, Object?>? agent;
+  final SettingsAgent? agent;
   final String? verifiedAgent;
   final Map<String, Object?>? brand;
   final String? inbox;
@@ -1345,7 +1345,9 @@ class Settings {
         : json['overlays_dir'] as String,
     agent: json['agent'] == null
         ? null
-        : (json['agent'] as Map).cast<String, Object?>(),
+        : SettingsAgent.fromJson(
+            (json['agent'] as Map).cast<String, Object?>(),
+          ),
     verifiedAgent: json['verified_agent'] == null
         ? null
         : json['verified_agent'] as String,
@@ -1363,7 +1365,7 @@ class Settings {
     if (coldOpen != null) 'cold_open': coldOpen!,
     if (reorder != null) 'reorder': reorder!,
     if (overlaysDir != null) 'overlays_dir': overlaysDir!,
-    if (agent != null) 'agent': agent!,
+    if (agent != null) 'agent': agent!.toJson(),
     if (verifiedAgent != null) 'verified_agent': verifiedAgent!,
     if (brand != null) 'brand': brand!,
     if (inbox != null) 'inbox': inbox!,
@@ -1381,6 +1383,12 @@ class AgentStatus {
     this.version,
     this.loginCommand,
     this.docs,
+    this.apiKey,
+    this.keyHint,
+    this.keySource,
+    this.server,
+    this.models,
+    this.pulling,
   });
 
   final String name;
@@ -1390,6 +1398,24 @@ class AgentStatus {
   final String? version;
   final String? loginCommand;
   final String? docs;
+
+  /// OpenRouter: no CLI, installed = there is a key
+  final bool? apiKey;
+
+  /// The key masked (sk-or-…abcd); the key never comes back
+  final String? keyHint;
+
+  /// env (OPENROUTER_API_KEY) | settings (saved by the app)
+  final String? keySource;
+
+  /// Ollama: the server answers
+  final bool? server;
+
+  /// Ollama: the models downloaded
+  final List<String>? models;
+
+  /// Ollama: model → downloading | done | the error
+  final Map<String, String>? pulling;
 
   factory AgentStatus.fromJson(Map<String, Object?> json) => AgentStatus(
     name: json['name'] as String,
@@ -1401,6 +1427,18 @@ class AgentStatus {
         ? null
         : json['login_command'] as String,
     docs: json['docs'] == null ? null : json['docs'] as String,
+    apiKey: json['api_key'] == null ? null : json['api_key'] as bool,
+    keyHint: json['key_hint'] == null ? null : json['key_hint'] as String,
+    keySource: json['key_source'] == null ? null : json['key_source'] as String,
+    server: json['server'] == null ? null : json['server'] as bool,
+    models: json['models'] == null
+        ? null
+        : (json['models'] as List).map((e) => e as String).toList(),
+    pulling: json['pulling'] == null
+        ? null
+        : (json['pulling'] as Map).map(
+            (k, e) => MapEntry(k as String, e as String),
+          ),
   );
 
   Map<String, Object?> toJson() => {
@@ -1411,6 +1449,74 @@ class AgentStatus {
     if (version != null) 'version': version!,
     if (loginCommand != null) 'login_command': loginCommand!,
     if (docs != null) 'docs': docs!,
+    if (apiKey != null) 'api_key': apiKey!,
+    if (keyHint != null) 'key_hint': keyHint!,
+    if (keySource != null) 'key_source': keySource!,
+    if (server != null) 'server': server!,
+    if (models != null) 'models': models!,
+    if (pulling != null) 'pulling': pulling!,
+  };
+}
+
+class SettingsAgent {
+  const SettingsAgent({this.primary, this.fallback, this.models});
+
+  final String? primary;
+  final String? fallback;
+
+  /// agent → model (null: the CLI's default)
+  final Map<String, String?>? models;
+
+  factory SettingsAgent.fromJson(Map<String, Object?> json) => SettingsAgent(
+    primary: json['primary'] == null ? null : json['primary'] as String,
+    fallback: json['fallback'] == null ? null : json['fallback'] as String,
+    models: json['models'] == null
+        ? null
+        : (json['models'] as Map).map(
+            (k, e) => MapEntry(k as String, e == null ? null : e as String),
+          ),
+  );
+
+  Map<String, Object?> toJson() => {
+    if (primary != null) 'primary': primary!,
+    if (fallback != null) 'fallback': fallback!,
+    if (models != null) 'models': models!,
+  };
+}
+
+class WhisperState {
+  const WhisperState({
+    required this.model,
+    required this.ready,
+    required this.downloading,
+    required this.progress,
+    this.sizeMb,
+    this.error,
+  });
+
+  final String model;
+  final bool ready;
+  final bool downloading;
+  final double progress;
+  final int? sizeMb;
+  final String? error;
+
+  factory WhisperState.fromJson(Map<String, Object?> json) => WhisperState(
+    model: json['model'] as String,
+    ready: json['ready'] as bool,
+    downloading: json['downloading'] as bool,
+    progress: (json['progress'] as num).toDouble(),
+    sizeMb: json['size_mb'] == null ? null : (json['size_mb'] as num).toInt(),
+    error: json['error'] == null ? null : json['error'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    'model': model,
+    'ready': ready,
+    'downloading': downloading,
+    'progress': progress,
+    if (sizeMb != null) 'size_mb': sizeMb!,
+    if (error != null) 'error': error!,
   };
 }
 
@@ -1427,18 +1533,20 @@ class Setup {
     required this.platform,
   });
 
-  final List<Object?> agents;
+  final List<AgentStatus> agents;
   final String? primary;
   final List<String>? installed;
   final bool agentReady;
   final String? verifiedAgent;
-  final SetupWhisper whisper;
+  final WhisperState whisper;
   final bool ready;
   final Map<String, Object?>? installCommands;
   final String platform;
 
   factory Setup.fromJson(Map<String, Object?> json) => Setup(
-    agents: (json['agents'] as List).map((e) => e).toList(),
+    agents: (json['agents'] as List)
+        .map((e) => AgentStatus.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
     primary: json['primary'] == null ? null : json['primary'] as String,
     installed: json['installed'] == null
         ? null
@@ -1447,7 +1555,7 @@ class Setup {
     verifiedAgent: json['verified_agent'] == null
         ? null
         : json['verified_agent'] as String,
-    whisper: SetupWhisper.fromJson(
+    whisper: WhisperState.fromJson(
       (json['whisper'] as Map).cast<String, Object?>(),
     ),
     ready: json['ready'] as bool,
@@ -1458,7 +1566,7 @@ class Setup {
   );
 
   Map<String, Object?> toJson() => {
-    'agents': agents,
+    'agents': agents.map((e) => e.toJson()).toList(),
     if (primary != null) 'primary': primary!,
     if (installed != null) 'installed': installed!,
     'agent_ready': agentReady,
@@ -2150,14 +2258,40 @@ class TestAgentRequest {
 }
 
 class TestAgentResponse {
-  const TestAgentResponse({required this.ok});
+  const TestAgentResponse({
+    this.name,
+    required this.ok,
+    this.seconds,
+    this.answer,
+    this.error,
+  });
 
+  final String? name;
   final bool ok;
+  final double? seconds;
+
+  /// The start of what it answered
+  final String? answer;
+  final String? error;
 
   factory TestAgentResponse.fromJson(Map<String, Object?> json) =>
-      TestAgentResponse(ok: json['ok'] as bool);
+      TestAgentResponse(
+        name: json['name'] == null ? null : json['name'] as String,
+        ok: json['ok'] as bool,
+        seconds: json['seconds'] == null
+            ? null
+            : (json['seconds'] as num).toDouble(),
+        answer: json['answer'] == null ? null : json['answer'] as String,
+        error: json['error'] == null ? null : json['error'] as String,
+      );
 
-  Map<String, Object?> toJson() => {'ok': ok};
+  Map<String, Object?> toJson() => {
+    if (name != null) 'name': name!,
+    'ok': ok,
+    if (seconds != null) 'seconds': seconds!,
+    if (answer != null) 'answer': answer!,
+    if (error != null) 'error': error!,
+  };
 }
 
 class LoginAgentResponse {
@@ -2169,6 +2303,27 @@ class LoginAgentResponse {
       LoginAgentResponse(command: json['command'] as String);
 
   Map<String, Object?> toJson() => {'command': command};
+}
+
+class InstallAgentResponse {
+  const InstallAgentResponse({this.command, this.opened});
+
+  /// The installer run in a terminal
+  final String? command;
+
+  /// The download page opened in the browser
+  final String? opened;
+
+  factory InstallAgentResponse.fromJson(Map<String, Object?> json) =>
+      InstallAgentResponse(
+        command: json['command'] == null ? null : json['command'] as String,
+        opened: json['opened'] == null ? null : json['opened'] as String,
+      );
+
+  Map<String, Object?> toJson() => {
+    if (command != null) 'command': command!,
+    if (opened != null) 'opened': opened!,
+  };
 }
 
 class PullOllamaRequest {
@@ -2711,17 +2866,6 @@ class StylesPositions {
       );
 
   Map<String, Object?> toJson() => {'lower_third': lowerThird, 'cta': cta};
-}
-
-class SetupWhisper {
-  const SetupWhisper({required this.ready});
-
-  final bool ready;
-
-  factory SetupWhisper.fromJson(Map<String, Object?> json) =>
-      SetupWhisper(ready: json['ready'] as bool);
-
-  Map<String, Object?> toJson() => {'ready': ready};
 }
 
 class RecordingsRecordingsItemEditsItem {

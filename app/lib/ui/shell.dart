@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:flutter/material.dart';
 
 import '../engine/status.dart';
+import '../platform.dart';
 import 'home.dart';
+import 'settings/settings_screen.dart';
 import 'theme.dart';
+import 'welcome.dart';
+import 'widgets.dart';
 
 /// The sections of the sidebar (same as the Tauri app).
 enum Section {
@@ -19,10 +25,18 @@ enum Section {
 
 /// Sidebar + the current screen, with the offline banner on top of it.
 class Shell extends StatefulWidget {
-  const Shell({super.key, required this.status, required this.client});
+  const Shell({
+    super.key,
+    required this.status,
+    required this.client,
+    required this.prefs,
+    this.pickers = const NativePickers(),
+  });
 
   final EngineStatus status;
   final AutoEditClient client;
+  final AppPrefs prefs;
+  final Pickers pickers;
 
   @override
   State<Shell> createState() => _ShellState();
@@ -31,13 +45,56 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   var _section = Section.edits;
 
+  /// The first-run screen, over whatever section is selected.
+  var _welcome = false;
+
+  /// What the engine says is missing to edit (the banner in Edições).
+  String? _missing;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_checkSetup(onLaunch: true));
+  }
+
+  /// On launch, a machine that can't edit yet goes straight to the welcome
+  /// screen (unless the person chose "configurar depois"); otherwise the
+  /// banner in Edições says what is missing.
+  Future<void> _checkSetup({bool onLaunch = false}) async {
+    final Setup s;
+    try {
+      s = await widget.client.api.getSetup();
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _missing = missingForSetup(s);
+      if (onLaunch && !s.ready && !widget.prefs.setupLater) _welcome = true;
+    });
+  }
+
+  void _select(Section s) {
+    setState(() {
+      _welcome = false;
+      _section = s;
+    });
+    // Back from Configurações, an agent may be working now.
+    unawaited(_checkSetup());
+  }
+
+  void _leaveWelcome({bool later = false}) {
+    if (later) widget.prefs.setupLater = true;
+    _select(Section.edits);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Sidebar(status: widget.status, current: _section, onSelect: (s) => setState(() => _section = s)),
+          Sidebar(status: widget.status, current: _welcome ? null : _section, onSelect: _select),
           Expanded(
             child: ListenableBuilder(
               listenable: widget.status,
@@ -45,6 +102,15 @@ class _ShellState extends State<Shell> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (widget.status.ok == false) OfflineBanner(onRetry: widget.status.check),
+                  if (!_welcome && _section == Section.edits && _missing != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 16, 28, 0),
+                      child: Notice(
+                        _missing!,
+                        tone: Tone.warn,
+                        action: SmallButton('Configurar', onPressed: () => setState(() => _welcome = true)),
+                      ),
+                    ),
                   Expanded(child: _screen()),
                 ],
               ),
@@ -55,19 +121,23 @@ class _ShellState extends State<Shell> {
     );
   }
 
-  Widget _screen() => switch (_section) {
-    Section.edits => HomeScreen(status: widget.status, client: widget.client),
-    Section.library => const ComingSoon(title: 'Biblioteca', issue: 139),
-    Section.styles => const ComingSoon(title: 'Estilos', issue: 142),
-    Section.settings => const ComingSoon(title: 'Configurações', issue: 138),
-  };
+  Widget _screen() => _welcome
+      ? WelcomeScreen(client: widget.client, onDone: _leaveWelcome, onLater: () => _leaveWelcome(later: true))
+      : switch (_section) {
+          Section.edits => HomeScreen(status: widget.status, client: widget.client),
+          Section.library => const ComingSoon(title: 'Biblioteca', issue: 139),
+          Section.styles => const ComingSoon(title: 'Estilos', issue: 142),
+          Section.settings => SettingsScreen(client: widget.client, pickers: widget.pickers),
+        };
 }
 
 class Sidebar extends StatelessWidget {
   const Sidebar({super.key, required this.status, required this.current, required this.onSelect});
 
   final EngineStatus status;
-  final Section current;
+
+  /// Null while the welcome screen is up.
+  final Section? current;
   final ValueChanged<Section> onSelect;
 
   @override

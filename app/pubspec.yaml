@@ -12,6 +12,7 @@ dependencies:
   auto_edit_client:
     path: ../packages/auto_edit_client
   path_provider: ^2.1.5
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:
