@@ -1185,10 +1185,15 @@ class Retention {
 }
 
 class Trend {
-  const Trend({this.type, required this.videos});
+  const Trend({this.type, required this.videos, this.summary});
 
   final String? type;
+
+  /// every analyzed video, in publish order
   final List<TrendVideosItem> videos;
+
+  /// per type (long, short)
+  final Map<String, TrendSummary>? summary;
 
   factory Trend.fromJson(Map<String, Object?> json) => Trend(
     type: json['type'] == null ? null : json['type'] as String,
@@ -1197,11 +1202,129 @@ class Trend {
           (e) => TrendVideosItem.fromJson((e as Map).cast<String, Object?>()),
         )
         .toList(),
+    summary: json['summary'] == null
+        ? null
+        : (json['summary'] as Map).map(
+            (k, e) => MapEntry(
+              k as String,
+              TrendSummary.fromJson((e as Map).cast<String, Object?>()),
+            ),
+          ),
   );
 
   Map<String, Object?> toJson() => {
     if (type != null) 'type': type!,
     'videos': videos.map((e) => e.toJson()).toList(),
+    if (summary != null)
+      'summary': summary!.map((k, e) => MapEntry(k, e.toJson())),
+  };
+}
+
+class TrendSummary {
+  const TrendSummary({
+    required this.count,
+    this.olderVsNewer,
+    this.withVsWithoutLessons,
+  });
+
+  final int count;
+  final TrendCompare? olderVsNewer;
+  final TrendCompare? withVsWithoutLessons;
+
+  factory TrendSummary.fromJson(Map<String, Object?> json) => TrendSummary(
+    count: (json['count'] as num).toInt(),
+    olderVsNewer: json['older_vs_newer'] == null
+        ? null
+        : TrendCompare.fromJson(
+            (json['older_vs_newer'] as Map).cast<String, Object?>(),
+          ),
+    withVsWithoutLessons: json['with_vs_without_lessons'] == null
+        ? null
+        : TrendCompare.fromJson(
+            (json['with_vs_without_lessons'] as Map).cast<String, Object?>(),
+          ),
+  );
+
+  Map<String, Object?> toJson() => {
+    'count': count,
+    if (olderVsNewer != null) 'older_vs_newer': olderVsNewer!.toJson(),
+    if (withVsWithoutLessons != null)
+      'with_vs_without_lessons': withVsWithoutLessons!.toJson(),
+  };
+}
+
+/// how many in each group, and each metric's average before → after
+class TrendCompare {
+  const TrendCompare({
+    this.older,
+    this.newer,
+    this.without,
+    this.with_,
+    this.at30s,
+    this.at60s,
+    this.atHalf,
+    this.relativeMedian,
+  });
+
+  final int? older;
+  final int? newer;
+  final int? without;
+  final int? with_;
+  final TrendDelta? at30s;
+  final TrendDelta? at60s;
+  final TrendDelta? atHalf;
+  final TrendDelta? relativeMedian;
+
+  factory TrendCompare.fromJson(Map<String, Object?> json) => TrendCompare(
+    older: json['older'] == null ? null : (json['older'] as num).toInt(),
+    newer: json['newer'] == null ? null : (json['newer'] as num).toInt(),
+    without: json['without'] == null ? null : (json['without'] as num).toInt(),
+    with_: json['with'] == null ? null : (json['with'] as num).toInt(),
+    at30s: json['at_30s'] == null
+        ? null
+        : TrendDelta.fromJson((json['at_30s'] as Map).cast<String, Object?>()),
+    at60s: json['at_60s'] == null
+        ? null
+        : TrendDelta.fromJson((json['at_60s'] as Map).cast<String, Object?>()),
+    atHalf: json['at_half'] == null
+        ? null
+        : TrendDelta.fromJson((json['at_half'] as Map).cast<String, Object?>()),
+    relativeMedian: json['relative_median'] == null
+        ? null
+        : TrendDelta.fromJson(
+            (json['relative_median'] as Map).cast<String, Object?>(),
+          ),
+  );
+
+  Map<String, Object?> toJson() => {
+    if (older != null) 'older': older!,
+    if (newer != null) 'newer': newer!,
+    if (without != null) 'without': without!,
+    if (with_ != null) 'with': with_!,
+    if (at30s != null) 'at_30s': at30s!.toJson(),
+    if (at60s != null) 'at_60s': at60s!.toJson(),
+    if (atHalf != null) 'at_half': atHalf!.toJson(),
+    if (relativeMedian != null) 'relative_median': relativeMedian!.toJson(),
+  };
+}
+
+class TrendDelta {
+  const TrendDelta({this.before, this.after, this.delta});
+
+  final double? before;
+  final double? after;
+  final double? delta;
+
+  factory TrendDelta.fromJson(Map<String, Object?> json) => TrendDelta(
+    before: json['before'] == null ? null : (json['before'] as num).toDouble(),
+    after: json['after'] == null ? null : (json['after'] as num).toDouble(),
+    delta: json['delta'] == null ? null : (json['delta'] as num).toDouble(),
+  );
+
+  Map<String, Object?> toJson() => {
+    if (before != null) 'before': before!,
+    if (after != null) 'after': after!,
+    if (delta != null) 'delta': delta!,
   };
 }
 
@@ -2865,36 +2988,76 @@ class PublishStateJob {
 class TrendVideosItem {
   const TrendVideosItem({
     this.id,
+    this.type,
     this.title,
     this.publishedAt,
     this.youtubeId,
+    this.duration,
+    this.at30s,
+    this.at60s,
+    this.atHalf,
+    this.relativeMedian,
     this.lessons,
+    this.drops,
   });
 
   final String? id;
+  final String? type;
   final String? title;
   final String? publishedAt;
   final String? youtubeId;
+  final double? duration;
+
+  /// share still watching (0–1)
+  final double? at30s;
+  final double? at60s;
+  final double? atHalf;
+
+  /// vs. YouTube's videos of the same length (1 = typical)
+  final double? relativeMedian;
+
+  /// retention lessons the planner had (none: planned without)
   final int? lessons;
+  final int? drops;
 
   factory TrendVideosItem.fromJson(
     Map<String, Object?> json,
   ) => TrendVideosItem(
     id: json['id'] == null ? null : json['id'] as String,
+    type: json['type'] == null ? null : json['type'] as String,
     title: json['title'] == null ? null : json['title'] as String,
     publishedAt: json['published_at'] == null
         ? null
         : json['published_at'] as String,
     youtubeId: json['youtube_id'] == null ? null : json['youtube_id'] as String,
+    duration: json['duration'] == null
+        ? null
+        : (json['duration'] as num).toDouble(),
+    at30s: json['at_30s'] == null ? null : (json['at_30s'] as num).toDouble(),
+    at60s: json['at_60s'] == null ? null : (json['at_60s'] as num).toDouble(),
+    atHalf: json['at_half'] == null
+        ? null
+        : (json['at_half'] as num).toDouble(),
+    relativeMedian: json['relative_median'] == null
+        ? null
+        : (json['relative_median'] as num).toDouble(),
     lessons: json['lessons'] == null ? null : (json['lessons'] as num).toInt(),
+    drops: json['drops'] == null ? null : (json['drops'] as num).toInt(),
   );
 
   Map<String, Object?> toJson() => {
     if (id != null) 'id': id!,
+    if (type != null) 'type': type!,
     if (title != null) 'title': title!,
     if (publishedAt != null) 'published_at': publishedAt!,
     if (youtubeId != null) 'youtube_id': youtubeId!,
+    if (duration != null) 'duration': duration!,
+    if (at30s != null) 'at_30s': at30s!,
+    if (at60s != null) 'at_60s': at60s!,
+    if (atHalf != null) 'at_half': atHalf!,
+    if (relativeMedian != null) 'relative_median': relativeMedian!,
     if (lessons != null) 'lessons': lessons!,
+    if (drops != null) 'drops': drops!,
   };
 }
 

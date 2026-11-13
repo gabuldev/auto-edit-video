@@ -65,6 +65,15 @@ Telas:
   dica do campo), títulos alternativos, visibilidade, agendar, legenda,
   comentário pra fixar, envio com progresso, e o histórico com o estado atual
   no YouTube (programado virou público? apagado?).
+- No Resultado também: **Retenção no YouTube** (num vídeo publicado: a curva
+  com as quedas, 30s/60s/metade contra os vídeos anteriores, e cada queda com
+  o que era dito; clicar leva o player 3s antes) e **Efeitos e cortes** (zoom
+  e B-roll num trecho marcado com o tempo do player, tirar um trecho, e
+  "Refazer o render" a partir do `execute`).
+- **Retenção** (`lib/ui/trend_screen.dart`, na barra lateral): a tendência do
+  canal (`/api/insights/trend`) por tipo, mais antigos → mais novos e sem →
+  com as lições de retenção, o gráfico dos 30s vídeo a vídeo e a lista
+  (clicar abre o Resultado).
 - **Shorts** (`lib/ui/shorts_screen.dart`, "Gerar shorts" num long pronto):
   roda o clipper (com o log), cada candidato com nota, gancho, fala,
   "sobrepõe outro" e "já cortado"; "Assistir" toca só aquele trecho; marcar e

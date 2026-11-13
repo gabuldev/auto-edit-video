@@ -181,6 +181,13 @@ def _long(root: Path) -> None:
         "youtube_title": "Título", "youtube_description": "Desc", "tags": ["a"],
         "thumbnail_variants": [{"id": "A", "layout": "atual", "file": "thumbnail.png", "qa": "aprovada"}],
     })
+    # analyzed on YouTube: the trend and the retention card have something to show
+    _write(ws / "retention.json", {
+        "video_id": "yt1", "duration": 30.0, "at_30s": 0.61, "at_60s": None, "at_half": 0.7,
+        "relative_median": 1.1, "curve": [[0.0, 1.0], [15.0, 0.7], [30.0, 0.6]],
+        "drops": [{"start": 4.0, "end": 8.0, "loss": 0.12, "excess": 0.05, "text": "oi", "preamble": None}],
+        "fetched_at": "2026-01-05T00:00:00+00:00",
+    })
     out = root / "output"
     out.mkdir(exist_ok=True)
     (out / "vid_final.mp4").write_bytes(b"\0" * 64)

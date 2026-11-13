@@ -10,7 +10,10 @@ import '../player.dart';
 import '../shell.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../../platform.dart';
 import 'caption_adjust.dart';
+import 'effects_panel.dart';
+import 'retention_panel.dart';
 import 'publish_card.dart';
 
 /// What metadata wrote, in the order the Tauri screen shows it.
@@ -50,10 +53,14 @@ class ResultScreen extends StatefulWidget {
     required this.onBack,
     required this.onPipeline,
     required this.onSettings,
+    this.pickers = const NativePickers(),
     this.onShorts,
   });
 
   final AutoEditClient client;
+
+  /// The B-roll picker (Efeitos e cortes).
+  final Pickers pickers;
   final String id;
   final VoidCallback onBack;
 
@@ -80,6 +87,15 @@ class _ResultScreenState extends State<ResultScreen> {
   /// Cache-buster: a re-rendered file has the same URL.
   final _stamp = DateTime.now().millisecondsSinceEpoch;
   final _publishKey = GlobalKey<PublishCardState>();
+
+  /// The player's position (marking effects) and seeking (the retention drops).
+  final _control = PlayerControl();
+
+  @override
+  void dispose() {
+    _control.dispose();
+    super.dispose();
+  }
 
   AutoEditApi get _api => widget.client.api;
 
@@ -184,6 +200,15 @@ class _ResultScreenState extends State<ResultScreen> {
                 ),
               if (r != null) ...[
                 if (r.files.containsKey('video')) _watch(r),
+                RetentionPanel(client: widget.client, id: widget.id, control: _control),
+                if (r.files.containsKey('video') && r.status == VideoStatus.done)
+                  EffectsPanel(
+                    client: widget.client,
+                    id: widget.id,
+                    pickers: widget.pickers,
+                    control: _control,
+                    onRerender: widget.onPipeline,
+                  ),
                 _filesAndMeta(r),
                 PublishCard(key: _publishKey, client: widget.client, id: widget.id, onSettings: widget.onSettings),
               ],
@@ -202,7 +227,9 @@ class _ResultScreenState extends State<ResultScreen> {
       aspectRatio: ratio,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: VideoPlayer(PlayerSource(_file(ArtifactKind.video), headers: widget.client.transport.headers)),
+        child: VideoPlayer(
+          PlayerSource(_file(ArtifactKind.video), headers: widget.client.transport.headers, control: _control),
+        ),
       ),
     );
     final thumbs = r.thumbnails.isEmpty ? null : _thumbs(r);

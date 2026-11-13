@@ -22,6 +22,9 @@ abstract class Pickers {
 
   /// The text of a `.autoedit-style.json`, or null.
   Future<String?> styleFile();
+
+  /// A B-roll (image or video) path, or null.
+  Future<String?> broll();
 }
 
 class NativePickers implements Pickers {
@@ -90,6 +93,21 @@ class NativePickers implements Pickers {
       confirmButtonText: 'Importar',
     );
     return file?.readAsString();
+  }
+
+  @override
+  Future<String?> broll() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Imagem ou vídeo',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'mp4', 'mov', 'mkv', 'webm', 'm4v'],
+          uniformTypeIdentifiers: ['public.image', 'public.movie'],
+        ),
+      ],
+      confirmButtonText: 'Escolher',
+    );
+    return file?.path;
   }
 }
 
