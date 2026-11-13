@@ -246,6 +246,33 @@ def test_writes_match_the_schema(client):
     _check(client, "post", "/api/videos/vid/stop", "/api/videos/{video_id}/stop", body={})
 
 
+@pytest.fixture
+def fake_agents(monkeypatch, tmp_path):
+    """Claude and Ollama installed (Ollama with a model, downloading another),
+    an OpenRouter key saved: every shape /api/agents and /api/setup give."""
+    from auto_edit import agent_status, agents
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(agents, "find_binary", lambda a: f"/bin/{a.name}" if a.name in ("claude", "ollama") else None)
+    monkeypatch.setattr(agent_status, "_version", lambda binary: "1.0")
+    monkeypatch.setattr(agents, "ollama_models", lambda: ["qwen2.5:7b"])
+    monkeypatch.setattr(agents, "openrouter_key", lambda: "sk-or-v1-0123456789abcdef")
+    monkeypatch.setattr(agent_status, "_pulls", {"qwen2.5:14b": "downloading"})
+    monkeypatch.setattr(agent_status, "_run_claude", lambda prompt, model, timeout: '{"ok": true}')
+
+
+def test_agents_and_setup_match_the_schema(client, fake_agents):
+    _check(client, "get", "/api/agents", "/api/agents")
+    _check(client, "get", "/api/setup", "/api/setup")
+    _check(client, "post", "/api/agents/claude/test", "/api/agents/{name}/test", body={})
+    # a test that fails: error and seconds, no answer
+    _check(client, "post", "/api/agents/codex/test", "/api/agents/{name}/test", body={"model": "x"})
+    _check(client, "put", "/api/agents/openrouter/key", "/api/agents/openrouter/key", body={"key": "sk-or-v1-abc"})
+    _check(client, "put", "/api/settings", "/api/settings",
+           body={"agent": {"primary": "claude", "fallback": None, "models": {"claude": "opus"}}})
+
+
 def test_errors_match_the_schema(client):
     _check(client, "get", "/api/videos/nope", "/api/videos/{video_id}", 404)
     _check(client, "get", "/api/videos/nope/plan", "/api/videos/{video_id}/plan", 404)
@@ -277,9 +304,9 @@ class TestValidator:
 
     def test_catches_a_missing_field_and_a_wrong_type(self):
         schema = {"$ref": "#/components/schemas/Health"}
-        assert validate({"ok": True, "api_version": "1.0.0", "version": "1"}, schema) == []
+        assert validate({"ok": True, "api_version": "1.1.0", "version": "1"}, schema) == []
         assert validate({"ok": True, "version": "1"}, schema)
-        assert validate({"ok": "yes", "api_version": "1.0.0", "version": "1"}, schema)
+        assert validate({"ok": "yes", "api_version": "1.1.0", "version": "1"}, schema)
 
     def test_enum_null_and_nested(self):
         schema = {"$ref": "#/components/schemas/VideoSummary"}

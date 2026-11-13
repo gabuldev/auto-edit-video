@@ -21,5 +21,20 @@ flutter test             # AUTO_EDIT_BIN=../.venv/bin/auto-edit inclui o teste c
 
 Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev`.
 
-Telas: Edições mostra o motor conectado (versão e contrato); as outras chegam
-nas issues #138–#143.
+Telas:
+
+- **Boas-vindas** (`lib/ui/welcome.dart`): abre sozinha numa máquina que ainda
+  não edita (agente testado + Whisper baixado), como no Tauri. "configurar
+  depois" fica lembrado em `<pasta de suporte>/prefs.json` e o Edições mostra o
+  que falta com um atalho pra cá.
+- **Configurações** (`lib/ui/settings/`): pastas (escolher, abrir, voltar pra
+  padrão), YouTube (passo a passo do OAuth client, conectar/cancelar), agente
+  principal + fallback + modelo, chave do OpenRouter, Ollama (baixar modelo) e
+  os padrões do Novo edit. Salva sozinho 600 ms depois da última mudança, só
+  com as chaves que essa tela edita (o motor junta com o resto).
+- Edições mostra o motor conectado (versão e contrato); as outras chegam nas
+  issues #139–#143.
+
+Diálogos do sistema (pasta, JSON) passam por `Pickers` (`lib/platform.dart`,
+`file_selector`): o JSON da credencial vai pro motor como conteúdo, não
+caminho, pra funcionar com o motor em outra máquina.

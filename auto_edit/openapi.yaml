@@ -3,7 +3,7 @@ info:
   title: auto-edit engine API
   # Bump the minor for an addition (new route, new optional field), the major
   # for a change a client already in the hands of people would break on.
-  version: "1.0.0"
+  version: "1.1.0"
   description: |
     The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
     Every frontend (the desktop app, the phone as a remote, the cloud) talks to
@@ -1007,7 +1007,7 @@ paths:
           description: "Downloading"
           content:
             application/json:
-              schema: {type: object}
+              schema: {$ref: "#/components/schemas/WhisperState"}
         "400": {$ref: "#/components/responses/BadRequest"}
 
   /api/agents:
@@ -1050,7 +1050,11 @@ paths:
                 type: object
                 required: [ok]
                 properties:
+                  name: {type: string}
                   ok: {type: boolean}
+                  seconds: {type: number}
+                  answer: {type: string, description: "The start of what it answered"}
+                  error: {type: string}
         "404": {$ref: "#/components/responses/NotFound"}
 
   /api/agents/{name}/login:
@@ -1083,7 +1087,11 @@ paths:
           description: "What was opened"
           content:
             application/json:
-              schema: {type: object}
+              schema:
+                type: object
+                properties:
+                  command: {type: string, description: "The installer run in a terminal"}
+                  opened: {type: string, description: "The download page opened in the browser"}
         "404": {$ref: "#/components/responses/NotFound"}
 
   /api/agents/ollama/pull:
@@ -1773,7 +1781,7 @@ components:
         cold_open: {type: boolean}
         reorder: {type: boolean}
         overlays_dir: {type: [string, "null"]}
-        agent: {type: object}
+        agent: {$ref: "#/components/schemas/SettingsAgent"}
         verified_agent: {type: [string, "null"]}
         brand: {type: object}
         inbox: {type: [string, "null"]}
@@ -1791,21 +1799,47 @@ components:
         version: {type: [string, "null"]}
         login_command: {type: [string, "null"]}
         docs: {type: [string, "null"]}
+        api_key: {type: boolean, description: "OpenRouter: no CLI, installed = there is a key"}
+        key_hint: {type: [string, "null"], description: "The key masked (sk-or-…abcd); the key never comes back"}
+        key_source: {type: [string, "null"], description: "env (OPENROUTER_API_KEY) | settings (saved by the app)"}
+        server: {type: boolean, description: "Ollama: the server answers"}
+        models: {type: array, items: {type: string}, description: "Ollama: the models downloaded"}
+        pulling:
+          type: object
+          description: "Ollama: model → downloading | done | the error"
+          additionalProperties: {type: string}
+
+    SettingsAgent:
+      type: object
+      properties:
+        primary: {type: string}
+        fallback: {type: [string, "null"]}
+        models:
+          type: object
+          description: "agent → model (null: the CLI's default)"
+          additionalProperties: {type: [string, "null"]}
+
+    WhisperState:
+      type: object
+      required: [model, ready, downloading, progress]
+      properties:
+        model: {type: string}
+        ready: {type: boolean}
+        downloading: {type: boolean}
+        progress: {type: number, minimum: 0, maximum: 1}
+        size_mb: {type: [integer, "null"]}
+        error: {type: [string, "null"]}
 
     Setup:
       type: object
       required: [agents, agent_ready, whisper, ready, platform]
       properties:
-        agents: {type: array}
+        agents: {type: array, items: {$ref: "#/components/schemas/AgentStatus"}}
         primary: {type: [string, "null"]}
         installed: {type: array, items: {type: string}}
         agent_ready: {type: boolean}
         verified_agent: {type: [string, "null"]}
-        whisper:
-          type: object
-          required: [ready]
-          properties:
-            ready: {type: boolean}
+        whisper: {$ref: "#/components/schemas/WhisperState"}
         ready: {type: boolean}
         install_commands: {type: object}
         platform: {type: string}

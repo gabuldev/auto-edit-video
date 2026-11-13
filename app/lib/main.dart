@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'engine/locator.dart';
 import 'engine/status.dart';
 import 'engine/supervisor.dart';
+import 'platform.dart';
 import 'ui/boot.dart';
 import 'ui/shell.dart';
 import 'ui/theme.dart';
@@ -19,7 +20,8 @@ const enginePort = 8760;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final host = Host(repoRoot: findRepoRoot([Directory.current.path, File(Platform.resolvedExecutable).parent.path]));
-  final logs = Directory('${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}logs');
+  final support = (await getApplicationSupportDirectory()).path;
+  final logs = Directory('$support${Platform.pathSeparator}logs');
   final supervisor = EngineSupervisor(
     logDir: logs.path,
     port: enginePort,
@@ -30,14 +32,19 @@ Future<void> main() async {
     AutoEditApp(
       client: AutoEditClient(EngineConfig.local(port: enginePort)),
       supervisor: supervisor,
+      prefs: AppPrefs(File('$support${Platform.pathSeparator}prefs.json')),
     ),
   );
 }
 
 class AutoEditApp extends StatefulWidget {
-  const AutoEditApp({super.key, required this.client, this.supervisor});
+  const AutoEditApp({super.key, required this.client, this.supervisor, required this.prefs, this.pickers});
 
   final AutoEditClient client;
+  final AppPrefs prefs;
+
+  /// The OS dialogs; tests answer them.
+  final Pickers? pickers;
 
   /// Starts and stops the local engine. Null: only talk to [client] (tests,
   /// or a remote engine later).
@@ -96,8 +103,14 @@ class _AutoEditAppState extends State<AutoEditApp> {
       theme: buildTheme(),
       home: ListenableBuilder(
         listenable: _status,
-        builder: (context, _) =>
-            _status.everConnected ? Shell(status: _status, client: widget.client) : BootScreen(startError: _startError),
+        builder: (context, _) => _status.everConnected
+            ? Shell(
+                status: _status,
+                client: widget.client,
+                prefs: widget.prefs,
+                pickers: widget.pickers ?? const NativePickers(),
+              )
+            : BootScreen(startError: _startError),
       ),
     );
   }

@@ -7,14 +7,14 @@ import 'dart:typed_data';
 import '../transport.dart';
 import 'models.dart';
 
-/// Every operation of the engine API (contract 1.0.0).
+/// Every operation of the engine API (contract 1.1.0).
 class AutoEditApi {
   AutoEditApi(this.transport);
 
   final Transport transport;
 
   /// The `info.version` this client was generated from.
-  static const contractVersion = '1.0.0';
+  static const contractVersion = '1.1.0';
 
   /// The engine is up, and which contract it speaks
   ///
@@ -697,12 +697,16 @@ class AutoEditApi {
   /// Download a Whisper model (progress in GET /api/setup)
   ///
   /// `POST /api/setup/whisper`
-  Future<Map<String, Object?>> downloadWhisper({
-    DownloadWhisperRequest? body,
-  }) async =>
-      (await transport.json('POST', '/api/setup/whisper', body: body?.toJson())
-              as Map)
-          .cast<String, Object?>();
+  Future<WhisperState> downloadWhisper({DownloadWhisperRequest? body}) async =>
+      WhisperState.fromJson(
+        (await transport.json(
+                  'POST',
+                  '/api/setup/whisper',
+                  body: body?.toJson(),
+                )
+                as Map)
+            .cast<String, Object?>(),
+      );
 
   /// Each AI agent — installed? version? (Ollama: models)
   ///
@@ -743,13 +747,15 @@ class AutoEditApi {
   /// Run the official installer in a terminal (or open the download page)
   ///
   /// `POST /api/agents/{name}/install`
-  Future<Map<String, Object?>> installAgent(String name) async =>
-      (await transport.json(
-                'POST',
-                '/api/agents/${Uri.encodeComponent(name)}/install',
-              )
-              as Map)
-          .cast<String, Object?>();
+  Future<InstallAgentResponse> installAgent(String name) async =>
+      InstallAgentResponse.fromJson(
+        (await transport.json(
+                  'POST',
+                  '/api/agents/${Uri.encodeComponent(name)}/install',
+                )
+                as Map)
+            .cast<String, Object?>(),
+      );
 
   /// Download an Ollama model (progress in GET /api/agents)
   ///
