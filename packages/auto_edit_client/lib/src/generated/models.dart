@@ -1210,12 +1210,16 @@ class Style {
     required this.id,
     required this.name,
     this.description,
+    this.builtin,
     required this.tokens,
   });
 
   final String id;
   final String name;
   final String? description;
+
+  /// a ready-made style (can't be deleted; saving makes a copy)
+  final bool? builtin;
   final Map<String, Object?> tokens;
 
   factory Style.fromJson(Map<String, Object?> json) => Style(
@@ -1224,6 +1228,7 @@ class Style {
     description: json['description'] == null
         ? null
         : json['description'] as String,
+    builtin: json['builtin'] == null ? null : json['builtin'] as bool,
     tokens: (json['tokens'] as Map).cast<String, Object?>(),
   );
 
@@ -1231,6 +1236,7 @@ class Style {
     'id': id,
     'name': name,
     if (description != null) 'description': description!,
+    if (builtin != null) 'builtin': builtin!,
     'tokens': tokens,
   };
 }
@@ -2109,13 +2115,17 @@ class ExportStyleResponse {
 class ImportStyleRequest {
   const ImportStyleRequest({required this.file});
 
-  /// Path of the file on the engine's machine
-  final String file;
+  /// The content of the .autoedit-style.json ({format, name, description, tokens}), read by the app: the engine may be on another machine
+  final ImportStyleRequestFile file;
 
   factory ImportStyleRequest.fromJson(Map<String, Object?> json) =>
-      ImportStyleRequest(file: json['file'] as String);
+      ImportStyleRequest(
+        file: ImportStyleRequestFile.fromJson(
+          (json['file'] as Map).cast<String, Object?>(),
+        ),
+      );
 
-  Map<String, Object?> toJson() => {'file': file};
+  Map<String, Object?> toJson() => {'file': file.toJson()};
 }
 
 class PreviewStyleRequest {
@@ -2942,6 +2952,39 @@ class GetPublishLiveResponseVideosValue {
     if (privacy != null) 'privacy': privacy!,
     if (publishAt != null) 'publish_at': publishAt!,
     if (uploadStatus != null) 'upload_status': uploadStatus!,
+  };
+}
+
+/// The content of the .autoedit-style.json ({format, name, description, tokens}), read by the app: the engine may be on another machine
+class ImportStyleRequestFile {
+  const ImportStyleRequestFile({
+    required this.format,
+    this.name,
+    this.description,
+    required this.tokens,
+  });
+
+  /// 1
+  final int format;
+  final String? name;
+  final String? description;
+  final Map<String, Object?> tokens;
+
+  factory ImportStyleRequestFile.fromJson(Map<String, Object?> json) =>
+      ImportStyleRequestFile(
+        format: (json['format'] as num).toInt(),
+        name: json['name'] == null ? null : json['name'] as String,
+        description: json['description'] == null
+            ? null
+            : json['description'] as String,
+        tokens: (json['tokens'] as Map).cast<String, Object?>(),
+      );
+
+  Map<String, Object?> toJson() => {
+    'format': format,
+    if (name != null) 'name': name!,
+    if (description != null) 'description': description!,
+    'tokens': tokens,
   };
 }
 

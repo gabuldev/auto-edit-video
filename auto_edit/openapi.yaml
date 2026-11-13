@@ -3,7 +3,7 @@ info:
   title: auto-edit engine API
   # Bump the minor for an addition (new route, new optional field), the major
   # for a change a client already in the hands of people would break on.
-  version: "1.2.0"
+  version: "1.3.0"
   description: |
     The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
     Every frontend (the desktop app, the phone as a remote, the cloud) talks to
@@ -842,7 +842,15 @@ paths:
               type: object
               required: [file]
               properties:
-                file: {type: string, description: Path of the file on the engine's machine}
+                file:
+                  type: object
+                  description: "The content of the .autoedit-style.json ({format, name, description, tokens}), read by the app: the engine may be on another machine"
+                  required: [format, tokens]
+                  properties:
+                    format: {type: integer, description: "1"}
+                    name: {type: string}
+                    description: {type: string}
+                    tokens: {type: object}
       responses:
         "200":
           description: "The saved style"
@@ -1751,6 +1759,7 @@ components:
         id: {type: string}
         name: {type: string}
         description: {type: string}
+        builtin: {type: boolean, description: "a ready-made style (can't be deleted; saving makes a copy)"}
         tokens: {type: object}
 
     Brand:

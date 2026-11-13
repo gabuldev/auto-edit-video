@@ -12,6 +12,8 @@ import 'pipeline/pipeline_screen.dart';
 import 'recordings_screen.dart';
 import 'result/result_screen.dart';
 import 'settings/settings_screen.dart';
+import 'shorts_screen.dart';
+import 'styles/styles_screen.dart';
 import 'theme.dart';
 import 'welcome.dart';
 import 'widgets.dart';
@@ -29,7 +31,7 @@ enum Section {
 }
 
 /// The screens of one edit, over Edições.
-enum VideoPage { pipeline, cuts, result }
+enum VideoPage { pipeline, cuts, result, shorts }
 
 /// Sidebar + the current screen, with the offline banner on top of it.
 class Shell extends StatefulWidget {
@@ -198,6 +200,15 @@ class _ShellState extends State<Shell> {
           onBack: () => _resultFromPipeline ? _openVideo(id, VideoPage.pipeline) : _select(Section.edits),
           onPipeline: () => _openVideo(id, VideoPage.pipeline),
           onSettings: () => _select(Section.settings),
+          onShorts: () => _openVideo(id, VideoPage.shorts),
+        ),
+        VideoPage.shorts => ShortsScreen(
+          key: ValueKey(video),
+          client: widget.client,
+          id: id,
+          onBack: () => _openVideo(id, VideoPage.result),
+          onCut: () => _select(Section.edits),
+          onOpen: (short) => _openVideo(short, VideoPage.pipeline),
         ),
       };
     }
@@ -213,7 +224,7 @@ class _ShellState extends State<Shell> {
         onEdit: (path, type) => _openNewEdit(path: path, type: type),
         onSettings: () => _select(Section.settings),
       ),
-      Section.styles => const ComingSoon(title: 'Estilos', issue: 142),
+      Section.styles => StylesScreen(client: widget.client, pickers: widget.pickers),
       Section.settings => SettingsScreen(client: widget.client, pickers: widget.pickers, status: widget.status),
     };
   }
@@ -516,27 +527,4 @@ class TopBar extends StatelessWidget {
       ),
     );
   }
-}
-
-class ComingSoon extends StatelessWidget {
-  const ComingSoon({super.key, required this.title, required this.issue, this.onBack});
-  final String title;
-  final int issue;
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      TopBar(title: title, onBack: onBack),
-      Expanded(
-        child: Center(
-          child: Text(
-            'Esta tela chega na #$issue. Por enquanto, use o app atual.',
-            style: const TextStyle(color: Tokens.dim),
-          ),
-        ),
-      ),
-    ],
-  );
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:auto_edit/platform.dart';
 import 'package:auto_edit_client/auto_edit_client.dart';
@@ -40,6 +41,12 @@ class FakePickers implements Pickers {
   Future<String?> jsonFile({String? title}) async => nextJson;
   @override
   Future<String?> video({String? initial}) async => nextVideo;
+  (Uint8List, String)? nextImage;
+  String? nextStyleFile;
+  @override
+  Future<(Uint8List, String)?> image() async => nextImage;
+  @override
+  Future<String?> styleFile() async => nextStyleFile;
 }
 
 Map<String, Object?> summary(
@@ -144,6 +151,12 @@ class FakeEngine {
   Map<String, Map<String, Object?>> publishes = {};
   Map<String, Map<String, Object?>> lives = {};
   Map<String, Map<String, Object?>> captions = {};
+
+  /// `GET /api/videos/<id>/shorts`.
+  Map<String, Map<String, Object?>> shorts = {};
+
+  /// `GET /api/styles` (null: 404).
+  Map<String, Object?>? styles;
 
   /// The SSE history of `/api/videos/<id>/events` (lines of `data:`).
   Map<String, List<Map<String, Object?>>> events = {};
@@ -255,6 +268,23 @@ class FakeEngine {
         agents[i] = {...agents[i], 'installed': true, 'key_hint': 'sk-or-…abcd', 'key_source': 'settings'};
         return agents[i];
     }
+    final sh = RegExp(r'^/api/videos/([\w-]+)/shorts(/cut)?$').firstMatch(path);
+    if (sh != null) {
+      final id = sh[1]!;
+      if (req.method == 'GET') return shorts[id];
+      if (sh[2] == null) {
+        shorts[id] = {
+          ...shorts[id]!,
+          'job': {'id': 'clip-$id', 'status': 'running'},
+        };
+        return {'job_id': 'clip-$id', 'video_id': id};
+      }
+      final pick = ((body as Map)['pick'] as List).cast<int>();
+      return {
+        'shorts': [for (final n in pick) '${id}_short$n'],
+      };
+    }
+    if (path.startsWith('/api/styles') || path.startsWith('/api/brand')) return _styles(req, path, body);
     final r = RegExp(
       r'^/api/videos/([\w-]+)/(result|thumbnail|publish|publish/live|publish/youtube|captions|captions/preview)$',
     ).firstMatch(path);
@@ -346,6 +376,62 @@ class FakeEngine {
         'login' => {'command': name},
         _ => {'command': 'curl -fsSL https://example.com/install.sh | bash'},
       };
+    }
+    return null;
+  }
+
+  Object? _styles(http.Request req, String path, Object? body) {
+    final st = styles;
+    if (st == null) return null;
+    final list = (st['styles'] as List).cast<Map<String, Object?>>();
+    switch ((req.method, path)) {
+      case ('GET', '/api/styles'):
+        return st;
+      case ('PUT', '/api/styles/active'):
+        st['active'] = (body as Map)['id'];
+        return {'active': st['active']};
+      case ('POST', '/api/styles'):
+        final b = (body as Map).cast<String, Object?>();
+        final id = (b['id'] as String?) ?? (b['name'] as String).toLowerCase().replaceAll(' ', '-');
+        final saved = {'id': id, 'name': b['name'], 'description': '', 'builtin': false, 'tokens': b['tokens']};
+        st['styles'] = [...list.where((s) => s['id'] != id), saved];
+        if (b['activate'] == true) st['active'] = id;
+        return saved;
+      case ('POST', '/api/styles/import'):
+        final f = ((body as Map)['file'] as Map).cast<String, Object?>();
+        final saved = {
+          'id': 'importado',
+          'name': f['name'],
+          'description': '',
+          'builtin': false,
+          'tokens': f['tokens'],
+        };
+        st['styles'] = [...list, saved];
+        return saved;
+      case ('POST', '/api/styles/palette'):
+        return {
+          'colors': ['#ff0000'],
+          'suggested': {'accent': '#ff0000'},
+        };
+      case ('PUT', '/api/brand/logo'):
+        st['brand'] = {...(st['brand'] as Map).cast<String, Object?>(), 'logo': '/home/me/.auto-edit/logo.png'};
+        settings = {
+          ...settings,
+          'brand': {...(settings['brand'] as Map).cast<String, Object?>(), 'logo': '/home/me/.auto-edit/logo.png'},
+        };
+        return st['brand'];
+      case ('DELETE', '/api/brand/logo'):
+        st['brand'] = {...(st['brand'] as Map).cast<String, Object?>(), 'logo': null};
+        return st['brand'];
+    }
+    if (path.startsWith('/api/styles/preview/')) return {'__png': true};
+    final m = RegExp(r'^/api/styles/([\w-]+)(/export)?$').firstMatch(path);
+    if (m != null && req.method == 'POST' && m[2] != null) {
+      return {'path': '/home/me/Downloads/${m[1]}.autoedit-style.json'};
+    }
+    if (m != null && req.method == 'DELETE') {
+      st['styles'] = [...list.where((s) => s['id'] != m[1])];
+      return {'active': st['active']};
     }
     return null;
   }

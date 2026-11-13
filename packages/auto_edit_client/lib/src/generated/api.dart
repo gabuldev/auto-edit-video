@@ -7,14 +7,14 @@ import 'dart:typed_data';
 import '../transport.dart';
 import 'models.dart';
 
-/// Every operation of the engine API (contract 1.2.0).
+/// Every operation of the engine API (contract 1.3.0).
 class AutoEditApi {
   AutoEditApi(this.transport);
 
   final Transport transport;
 
   /// The `info.version` this client was generated from.
-  static const contractVersion = '1.2.0';
+  static const contractVersion = '1.3.0';
 
   /// The engine is up, and which contract it speaks
   ///

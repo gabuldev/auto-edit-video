@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 
@@ -15,6 +16,12 @@ abstract class Pickers {
 
   /// A video file's path (the dialog opens in [initial], the inbox), or null.
   Future<String?> video({String? initial});
+
+  /// An image (the logo): its bytes and file name, or null.
+  Future<(Uint8List, String)?> image();
+
+  /// The text of a `.autoedit-style.json`, or null.
+  Future<String?> styleFile();
 }
 
 class NativePickers implements Pickers {
@@ -56,6 +63,33 @@ class NativePickers implements Pickers {
       confirmButtonText: 'Escolher',
     );
     return file?.path;
+  }
+
+  @override
+  Future<(Uint8List, String)?> image() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Imagens',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'],
+          uniformTypeIdentifiers: ['public.image'],
+        ),
+      ],
+      confirmButtonText: 'Escolher',
+    );
+    if (file == null) return null;
+    return (await file.readAsBytes(), file.name);
+  }
+
+  @override
+  Future<String?> styleFile() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Estilo do Auto-Edit', extensions: ['json'], uniformTypeIdentifiers: ['public.json']),
+      ],
+      confirmButtonText: 'Importar',
+    );
+    return file?.readAsString();
   }
 }
 
