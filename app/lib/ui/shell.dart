@@ -14,6 +14,7 @@ import 'result/result_screen.dart';
 import 'settings/settings_screen.dart';
 import 'shorts_screen.dart';
 import 'styles/styles_screen.dart';
+import 'trend_screen.dart';
 import 'theme.dart';
 import 'welcome.dart';
 import 'widgets.dart';
@@ -22,6 +23,7 @@ import 'widgets.dart';
 enum Section {
   edits('Edições', Icons.video_library_outlined),
   library('Biblioteca', Icons.movie_outlined),
+  retention('Retenção', Icons.insights_outlined),
   styles('Estilos', Icons.palette_outlined),
   settings('Configurações', Icons.settings_outlined);
 
@@ -152,7 +154,8 @@ class _ShellState extends State<Shell> {
   void _openVideo(String id, VideoPage page) => setState(() {
     if (page == VideoPage.result) _resultFromPipeline = _video?.$2 == VideoPage.pipeline;
     _welcome = false;
-    _section = Section.edits;
+    // from Retenção, the video screens stay under it (and go back there)
+    if (_section != Section.retention) _section = Section.edits;
     _newEdit = null;
     _video = (id, page);
   });
@@ -197,10 +200,11 @@ class _ShellState extends State<Shell> {
           key: ValueKey(video),
           client: widget.client,
           id: id,
-          onBack: () => _resultFromPipeline ? _openVideo(id, VideoPage.pipeline) : _select(Section.edits),
+          onBack: () => _resultFromPipeline ? _openVideo(id, VideoPage.pipeline) : _select(_section),
           onPipeline: () => _openVideo(id, VideoPage.pipeline),
           onSettings: () => _select(Section.settings),
           onShorts: () => _openVideo(id, VideoPage.shorts),
+          pickers: widget.pickers,
         ),
         VideoPage.shorts => ShortsScreen(
           key: ValueKey(video),
@@ -224,6 +228,7 @@ class _ShellState extends State<Shell> {
         onEdit: (path, type) => _openNewEdit(path: path, type: type),
         onSettings: () => _select(Section.settings),
       ),
+      Section.retention => TrendScreen(client: widget.client, onOpen: (id) => _openVideo(id, VideoPage.result)),
       Section.styles => StylesScreen(client: widget.client, pickers: widget.pickers),
       Section.settings => SettingsScreen(client: widget.client, pickers: widget.pickers, status: widget.status),
     };

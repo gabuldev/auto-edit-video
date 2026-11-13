@@ -47,6 +47,9 @@ class FakePickers implements Pickers {
   Future<(Uint8List, String)?> image() async => nextImage;
   @override
   Future<String?> styleFile() async => nextStyleFile;
+  String? nextBroll;
+  @override
+  Future<String?> broll() async => nextBroll;
 }
 
 Map<String, Object?> summary(
@@ -151,6 +154,14 @@ class FakeEngine {
   Map<String, Map<String, Object?>> publishes = {};
   Map<String, Map<String, Object?>> lives = {};
   Map<String, Map<String, Object?>> captions = {};
+
+  /// `GET /api/videos/<id>/effects`, `/retention`; `GET /api/insights/trend`.
+  Map<String, Map<String, Object?>> effects = {};
+  Map<String, Map<String, Object?>> retention = {};
+  Map<String, Object?> trend = {'videos': <Object?>[], 'summary': <String, Object?>{}};
+
+  /// What `POST /retention` answers (null: what is saved).
+  Map<String, Object?>? retentionRefreshed;
 
   /// `GET /api/videos/<id>/shorts`.
   Map<String, Map<String, Object?>> shorts = {};
@@ -267,6 +278,55 @@ class FakeEngine {
         final i = agents.indexWhere((a) => a['name'] == 'openrouter');
         agents[i] = {...agents[i], 'installed': true, 'key_hint': 'sk-or-…abcd', 'key_source': 'settings'};
         return agents[i];
+    }
+    if (req.method == 'GET' && path == '/api/insights/trend') return trend;
+    final fx = RegExp(r'^/api/videos/([\w-]+)/(effects|effects/\d+|plan/cut|retention)$').firstMatch(path);
+    if (fx != null) {
+      final id = fx[1]!;
+      final what = fx[2]!;
+      if (what == 'retention') {
+        if (req.method == 'POST') retention[id] = retentionRefreshed ?? retention[id]!;
+        return retention[id];
+      }
+      if (what == 'plan/cut') {
+        return {
+          'id': id,
+          'source': 'reviewed_plan.json',
+          'editable': true,
+          'kept_total': 20.0,
+          'kept_segments': <Object?>[],
+          'cuts': <Object?>[],
+          'removed_windows': <Object?>[],
+        };
+      }
+      final e = effects[id] ??= {
+        'id': id,
+        'effects': <Object?>[],
+        'stored': 0,
+        'notes': <String>[],
+        'edited_duration': 60.0,
+        'rerender_from': 'execute',
+      };
+      final list = [...(e['effects'] as List).cast<Map<String, Object?>>()];
+      if (req.method == 'POST') {
+        final b = (body as Map).cast<String, Object?>();
+        list.add({
+          'index': list.length,
+          'type': b['type'],
+          'start': b['start'],
+          'end': b['end'],
+          'scale': b['scale'],
+          'file': b['file'],
+        });
+      } else if (req.method == 'DELETE') {
+        final i = int.parse(what.split('/').last);
+        list.removeAt(i);
+        for (final (n, x) in list.indexed) {
+          x['index'] = n;
+        }
+      }
+      effects[id] = {...e, 'effects': list, 'stored': list.length};
+      return effects[id];
     }
     final sh = RegExp(r'^/api/videos/([\w-]+)/shorts(/cut)?$').firstMatch(path);
     if (sh != null) {

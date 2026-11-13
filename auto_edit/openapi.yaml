@@ -3,7 +3,7 @@ info:
   title: auto-edit engine API
   # Bump the minor for an addition (new route, new optional field), the major
   # for a change a client already in the hands of people would break on.
-  version: "1.3.0"
+  version: "1.4.0"
   description: |
     The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
     Every frontend (the desktop app, the phone as a remote, the cloud) talks to
@@ -1738,14 +1738,54 @@ components:
         type: {type: [string, "null"]}
         videos:
           type: array
+          description: "every analyzed video, in publish order"
           items:
             type: object
             properties:
               id: {type: string}
+              type: {type: string, enum: [long, short]}
               title: {type: [string, "null"]}
               published_at: {type: [string, "null"]}
               youtube_id: {type: [string, "null"]}
-              lessons: {type: [integer, "null"]}
+              duration: {type: [number, "null"]}
+              at_30s: {type: [number, "null"], description: "share still watching (0–1)"}
+              at_60s: {type: [number, "null"]}
+              at_half: {type: [number, "null"]}
+              relative_median: {type: [number, "null"], description: "vs. YouTube's videos of the same length (1 = typical)"}
+              lessons: {type: [integer, "null"], description: "retention lessons the planner had (none: planned without)"}
+              drops: {type: [integer, "null"]}
+        summary:
+          type: object
+          description: "per type (long, short)"
+          additionalProperties: {$ref: "#/components/schemas/TrendSummary"}
+
+    TrendSummary:
+      type: object
+      required: [count]
+      properties:
+        count: {type: integer}
+        older_vs_newer: {$ref: "#/components/schemas/TrendCompare"}
+        with_vs_without_lessons: {$ref: "#/components/schemas/TrendCompare"}
+
+    TrendCompare:
+      type: object
+      description: "how many in each group, and each metric's average before → after"
+      properties:
+        older: {type: integer}
+        newer: {type: integer}
+        without: {type: integer}
+        with: {type: integer}
+        at_30s: {$ref: "#/components/schemas/TrendDelta"}
+        at_60s: {$ref: "#/components/schemas/TrendDelta"}
+        at_half: {$ref: "#/components/schemas/TrendDelta"}
+        relative_median: {$ref: "#/components/schemas/TrendDelta"}
+
+    TrendDelta:
+      type: object
+      properties:
+        before: {type: [number, "null"]}
+        after: {type: [number, "null"]}
+        delta: {type: [number, "null"]}
 
     ImageDataUrl:
       type: string
