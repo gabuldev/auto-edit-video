@@ -1431,7 +1431,7 @@ components:
         created_at: {type: [string, "null"]}
         stages:
           type: object
-          description: "stage name → pending | running | done | failed | skip"
+          description: "stage name → pending | running | complete | failed | skip"
           additionalProperties: {type: [string, "null"]}
         estimated_tokens: {type: [integer, "null"]}
         output: {type: [string, "null"], description: "absolute path of the delivered video"}

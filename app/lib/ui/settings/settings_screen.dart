@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:flutter/material.dart';
 
+import '../../engine/status.dart';
 import '../../platform.dart';
+import '../engine_card.dart';
 import '../shell.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -28,9 +30,12 @@ const ollamaSlow =
 /// the folders and the defaults of a new edit. Saved by the engine in
 /// ~/.auto-edit/settings.json; environment variables still win over it.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.client, required this.pickers, this.debounce});
+  const SettingsScreen({super.key, required this.client, required this.pickers, this.status, this.debounce});
 
   final AutoEditClient client;
+
+  /// For the Motor card at the end (none in the tests that don't care).
+  final EngineStatus? status;
   final Pickers pickers;
   final Duration? debounce;
 
@@ -71,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _AgentsCard(c: c),
           if (c.agentNamed('ollama') != null) _OllamaCard(c: c),
           if (c.loaded) _DefaultsCard(c: c),
+          if (widget.status != null) EngineCard(status: widget.status!, client: widget.client),
         ],
       ),
     );

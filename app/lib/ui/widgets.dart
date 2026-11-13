@@ -244,3 +244,78 @@ InputDecoration fieldDecoration({String? hint}) => InputDecoration(
 
 /// A message from an API failure, as the Tauri app shows `err.message`.
 String errorText(Object e) => e is ApiException ? e.message : '$e';
+
+/// The status `.chip`: a dot and a word, in the status color.
+class Chip2 extends StatelessWidget {
+  const Chip2(this.text, {super.key, required this.color, this.onTap});
+  final String text;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(color: color.withValues(alpha: .1), borderRadius: BorderRadius.circular(99)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+    return onTap == null ? chip : InkWell(borderRadius: BorderRadius.circular(99), onTap: onTap, child: chip);
+  }
+}
+
+/// `short` / `long`.
+class TypeBadge extends StatelessWidget {
+  const TypeBadge(this.type, {super.key});
+  final VideoType type;
+
+  @override
+  Widget build(BuildContext context) =>
+      Badge2(type.value, color: type == VideoType.short ? const Color(0xFFC084FC) : Tokens.accent);
+}
+
+/// A video's picture (16:9, rounded) from the engine; a blank tile without one.
+class VideoThumb extends StatelessWidget {
+  const VideoThumb({super.key, this.url, this.headers = const {}, this.width = 96});
+  final Uri? url;
+  final Map<String, String> headers;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final blank = Container(color: Tokens.panel2);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(7),
+      child: SizedBox(
+        width: width,
+        height: width * 9 / 16,
+        child: url == null
+            ? blank
+            : Image.network(
+                url.toString(),
+                headers: headers,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => blank,
+                frameBuilder: (_, child, frame, sync) => frame == null && !sync ? blank : child,
+              ),
+      ),
+    );
+  }
+}
