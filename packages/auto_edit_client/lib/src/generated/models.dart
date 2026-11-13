@@ -20,6 +20,7 @@ extension type const VideoType(String value) {
   static const values = [short, long];
 }
 
+/// source: the original recording of the workspace (to play a segment of it)
 /// Values the engine sends today; an unknown one still parses (a newer engine).
 extension type const ArtifactKind(String value) {
   static const video = ArtifactKind('video');
@@ -28,6 +29,7 @@ extension type const ArtifactKind(String value) {
   static const thumbnailC = ArtifactKind('thumbnail_c');
   static const captions = ArtifactKind('captions');
   static const notes = ArtifactKind('notes');
+  static const source = ArtifactKind('source');
   static const values = [
     video,
     thumbnail,
@@ -35,6 +37,7 @@ extension type const ArtifactKind(String value) {
     thumbnailC,
     captions,
     notes,
+    source,
   ];
 }
 
@@ -2001,24 +2004,37 @@ class YoutubeRefreshResponse {
 }
 
 class GetPublishLiveResponse {
-  const GetPublishLiveResponse({required this.checked, this.videos});
+  const GetPublishLiveResponse({
+    required this.checked,
+    required this.videos,
+    this.error,
+  });
 
+  /// false: couldn't ask (not connected, offline)
   final bool checked;
-  final List<Map<String, Object?>>? videos;
+
+  /// YouTube id → its state now; checked and an id missing = deleted there
+  final Map<String, GetPublishLiveResponseVideosValue> videos;
+  final String? error;
 
   factory GetPublishLiveResponse.fromJson(Map<String, Object?> json) =>
       GetPublishLiveResponse(
         checked: json['checked'] as bool,
-        videos: json['videos'] == null
-            ? null
-            : (json['videos'] as List)
-                  .map((e) => (e as Map).cast<String, Object?>())
-                  .toList(),
+        videos: (json['videos'] as Map).map(
+          (k, e) => MapEntry(
+            k as String,
+            GetPublishLiveResponseVideosValue.fromJson(
+              (e as Map).cast<String, Object?>(),
+            ),
+          ),
+        ),
+        error: json['error'] == null ? null : json['error'] as String,
       );
 
   Map<String, Object?> toJson() => {
     'checked': checked,
-    if (videos != null) 'videos': videos!,
+    'videos': videos.map((k, e) => MapEntry(k, e.toJson())),
+    if (error != null) 'error': error!,
   };
 }
 
@@ -2757,6 +2773,11 @@ class PublishStatePublishedItem {
     this.title,
     this.privacy,
     this.publishAt,
+    this.publishedAt,
+    this.captions,
+    this.commentId,
+    this.warnings,
+    this.removed,
   });
 
   final String? videoId;
@@ -2765,16 +2786,39 @@ class PublishStatePublishedItem {
   final String? privacy;
   final String? publishAt;
 
-  factory PublishStatePublishedItem.fromJson(Map<String, Object?> json) =>
-      PublishStatePublishedItem(
-        videoId: json['video_id'] == null ? null : json['video_id'] as String,
-        url: json['url'] == null ? null : json['url'] as String,
-        title: json['title'] == null ? null : json['title'] as String,
-        privacy: json['privacy'] == null ? null : json['privacy'] as String,
-        publishAt: json['publish_at'] == null
-            ? null
-            : json['publish_at'] as String,
-      );
+  /// when it was sent
+  final String? publishedAt;
+
+  /// the .srt went along
+  final bool? captions;
+
+  /// the comment to pin was posted
+  final String? commentId;
+
+  /// what didn't go ("comentário não postado: <why>")
+  final List<String>? warnings;
+
+  /// deleted on YouTube, the last time the engine asked
+  final bool? removed;
+
+  factory PublishStatePublishedItem.fromJson(
+    Map<String, Object?> json,
+  ) => PublishStatePublishedItem(
+    videoId: json['video_id'] == null ? null : json['video_id'] as String,
+    url: json['url'] == null ? null : json['url'] as String,
+    title: json['title'] == null ? null : json['title'] as String,
+    privacy: json['privacy'] == null ? null : json['privacy'] as String,
+    publishAt: json['publish_at'] == null ? null : json['publish_at'] as String,
+    publishedAt: json['published_at'] == null
+        ? null
+        : json['published_at'] as String,
+    captions: json['captions'] == null ? null : json['captions'] as bool,
+    commentId: json['comment_id'] == null ? null : json['comment_id'] as String,
+    warnings: json['warnings'] == null
+        ? null
+        : (json['warnings'] as List).map((e) => e as String).toList(),
+    removed: json['removed'] == null ? null : json['removed'] as bool,
+  );
 
   Map<String, Object?> toJson() => {
     if (videoId != null) 'video_id': videoId!,
@@ -2782,6 +2826,11 @@ class PublishStatePublishedItem {
     if (title != null) 'title': title!,
     if (privacy != null) 'privacy': privacy!,
     if (publishAt != null) 'publish_at': publishAt!,
+    if (publishedAt != null) 'published_at': publishedAt!,
+    if (captions != null) 'captions': captions!,
+    if (commentId != null) 'comment_id': commentId!,
+    if (warnings != null) 'warnings': warnings!,
+    if (removed != null) 'removed': removed!,
   };
 }
 
@@ -2866,6 +2915,34 @@ class StylesPositions {
       );
 
   Map<String, Object?> toJson() => {'lower_third': lowerThird, 'cta': cta};
+}
+
+class GetPublishLiveResponseVideosValue {
+  const GetPublishLiveResponseVideosValue({
+    this.privacy,
+    this.publishAt,
+    this.uploadStatus,
+  });
+
+  final String? privacy;
+  final String? publishAt;
+  final String? uploadStatus;
+
+  factory GetPublishLiveResponseVideosValue.fromJson(
+    Map<String, Object?> json,
+  ) => GetPublishLiveResponseVideosValue(
+    privacy: json['privacy'] == null ? null : json['privacy'] as String,
+    publishAt: json['publish_at'] == null ? null : json['publish_at'] as String,
+    uploadStatus: json['upload_status'] == null
+        ? null
+        : json['upload_status'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    if (privacy != null) 'privacy': privacy!,
+    if (publishAt != null) 'publish_at': publishAt!,
+    if (uploadStatus != null) 'upload_status': uploadStatus!,
+  };
 }
 
 class RecordingsRecordingsItemEditsItem {

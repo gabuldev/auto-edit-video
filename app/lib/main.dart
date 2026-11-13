@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'engine/locator.dart';
@@ -19,6 +20,7 @@ const enginePort = 8760;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   final host = Host(repoRoot: findRepoRoot([Directory.current.path, File(Platform.resolvedExecutable).parent.path]));
   final support = (await getApplicationSupportDirectory()).path;
   final logs = Directory('$support${Platform.pathSeparator}logs');

@@ -79,7 +79,7 @@ class WelcomeController extends ChangeNotifier {
     return _act(name, () async {
       final r = await _api.testAgent(name);
       notes[name] = r.ok
-          ? '✓ respondeu em ${r.seconds?.toStringAsFixed(1).replaceAll('.', ',') ?? '—'}s — este agente vai editar seus vídeos.'
+          ? 'Respondeu em ${r.seconds?.toStringAsFixed(1).replaceAll('.', ',') ?? '—'}s — este agente vai editar seus vídeos.'
           : '✗ ${r.error ?? 'não respondeu'} — se ainda não fez login, clique em Fazer login.';
     });
   }
@@ -299,7 +299,7 @@ class _AgentLineState extends State<_AgentLine> {
     final testing = c.testing.contains(a.name);
     final String meta;
     if (verified) {
-      meta = '✓ funcionando';
+      meta = 'funcionando';
     } else if (!a.installed && apiKey) {
       meta = 'precisa de uma chave da API';
     } else if (!a.installed) {

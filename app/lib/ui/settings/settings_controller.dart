@@ -193,7 +193,7 @@ class SettingsController extends ChangeNotifier {
     try {
       final r = await _api.testAgent(name, body: TestAgentRequest(model: models[name]));
       notes[name] = r.ok
-          ? AgentNote('✓ respondeu em ${_seconds(r.seconds)}', ok: true)
+          ? AgentNote('respondeu em ${_seconds(r.seconds)}', ok: true)
           : AgentNote('✗ ${r.error ?? 'falhou'}', answer: r.answer);
       // The first agent that works becomes the primary: show it.
       if (r.ok && !dirty) _adopt(await _api.getSettings());
@@ -217,7 +217,7 @@ class SettingsController extends ChangeNotifier {
   Future<void> saveOpenrouterKey(String key) async {
     try {
       await _api.saveOpenrouterKey(SaveOpenrouterKeyRequest(key: key));
-      notes['openrouter'] = const AgentNote('✓ chave salva — clique em Testar', ok: true);
+      notes['openrouter'] = const AgentNote('chave salva — clique em Testar', ok: true);
     } catch (e) {
       notes['openrouter'] = AgentNote('✗ ${errorText(e)}');
     }

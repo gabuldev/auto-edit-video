@@ -3,7 +3,7 @@ info:
   title: auto-edit engine API
   # Bump the minor for an addition (new route, new optional field), the major
   # for a change a client already in the hands of people would break on.
-  version: "1.1.0"
+  version: "1.2.0"
   description: |
     The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
     Every frontend (the desktop app, the phone as a remote, the cloud) talks to
@@ -680,10 +680,19 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [checked]
+                required: [checked, videos]
                 properties:
-                  checked: {type: boolean}
-                  videos: {type: array, items: {type: object}}
+                  checked: {type: boolean, description: "false: couldn't ask (not connected, offline)"}
+                  videos:
+                    type: object
+                    description: "YouTube id → its state now; checked and an id missing = deleted there"
+                    additionalProperties:
+                      type: object
+                      properties:
+                        privacy: {type: [string, "null"]}
+                        publish_at: {type: [string, "null"]}
+                        upload_status: {type: [string, "null"]}
+                  error: {type: string}
         "404": {$ref: "#/components/responses/NotFound"}
 
   /api/videos/{video_id}/publish/youtube:
@@ -1302,7 +1311,8 @@ components:
 
     ArtifactKind:
       type: string
-      enum: [video, thumbnail, thumbnail_b, thumbnail_c, captions, notes]
+      enum: [video, thumbnail, thumbnail_b, thumbnail_c, captions, notes, source]
+      description: "source: the original recording of the workspace (to play a segment of it)"
 
     Timeline:
       type: string
@@ -1691,6 +1701,11 @@ components:
               title: {type: string}
               privacy: {type: string}
               publish_at: {type: [string, "null"]}
+              published_at: {type: string, description: "when it was sent"}
+              captions: {type: [boolean, "null"], description: "the .srt went along"}
+              comment_id: {type: [string, "null"], description: "the comment to pin was posted"}
+              warnings: {type: array, items: {type: string}, description: "what didn't go (\"comentário não postado: <why>\")"}
+              removed: {type: boolean, description: "deleted on YouTube, the last time the engine asked"}
         account: {$ref: "#/components/schemas/YouTubeAccount"}
         job:
           type: object

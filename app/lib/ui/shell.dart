@@ -10,6 +10,7 @@ import 'new_edit_screen.dart';
 import 'pipeline/cuts_screen.dart';
 import 'pipeline/pipeline_screen.dart';
 import 'recordings_screen.dart';
+import 'result/result_screen.dart';
 import 'settings/settings_screen.dart';
 import 'theme.dart';
 import 'welcome.dart';
@@ -143,7 +144,11 @@ class _ShellState extends State<Shell> {
     _newEdit = (path, type);
   });
 
+  /// Resultado goes back where it came from: the pipeline, or Edições.
+  bool _resultFromPipeline = false;
+
   void _openVideo(String id, VideoPage page) => setState(() {
+    if (page == VideoPage.result) _resultFromPipeline = _video?.$2 == VideoPage.pipeline;
     _welcome = false;
     _section = Section.edits;
     _newEdit = null;
@@ -186,10 +191,13 @@ class _ShellState extends State<Shell> {
           onBack: () => _openVideo(id, VideoPage.pipeline),
           onRecut: () => _openVideo(id, VideoPage.pipeline),
         ),
-        VideoPage.result => ComingSoon(
-          title: 'Resultado',
-          issue: 141,
-          onBack: () => _openVideo(id, VideoPage.pipeline),
+        VideoPage.result => ResultScreen(
+          key: ValueKey(video),
+          client: widget.client,
+          id: id,
+          onBack: () => _resultFromPipeline ? _openVideo(id, VideoPage.pipeline) : _select(Section.edits),
+          onPipeline: () => _openVideo(id, VideoPage.pipeline),
+          onSettings: () => _select(Section.settings),
         ),
       };
     }
