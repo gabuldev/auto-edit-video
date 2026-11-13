@@ -210,6 +210,32 @@ class SmallButton extends StatelessWidget {
   }
 }
 
+/// A red outlined button; [confirm] fills it (the second click of "are you sure?").
+class DangerButton extends StatelessWidget {
+  const DangerButton(this.label, {super.key, required this.onPressed, this.confirm = false, this.icon});
+  final String label;
+  final VoidCallback? onPressed;
+  final bool confirm;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+      foregroundColor: WidgetStatePropertyAll(confirm ? Colors.white : Tokens.err),
+      backgroundColor: WidgetStatePropertyAll(confirm ? Tokens.err.withValues(alpha: .85) : null),
+      side: WidgetStatePropertyAll(BorderSide(color: Tokens.err.withValues(alpha: .5))),
+      textStyle: const WidgetStatePropertyAll(
+        TextStyle(fontSize: 12.5, fontFamily: Tokens.font, fontWeight: FontWeight.w600),
+      ),
+    );
+    return icon == null
+        ? OutlinedButton(style: style, onPressed: onPressed, child: Text(label))
+        : OutlinedButton.icon(style: style, onPressed: onPressed, icon: Icon(icon, size: 16), label: Text(label));
+  }
+}
+
 /// The dim line under an agent's name.
 class Meta extends StatelessWidget {
   const Meta(this.text, {super.key, this.bad = false});
