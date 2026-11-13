@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:flutter/material.dart';
 
+import '../player.dart';
 import '../shell.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -120,6 +121,57 @@ class _CutsScreenState extends State<CutsScreen> {
     }
   }
 
+  /// The segment, from the original recording, in a dialog.
+  Future<void> _play(PlanKeptSegmentsItem s) => showDialog<void>(
+    context: context,
+    builder: (context) => Dialog(
+      backgroundColor: Tokens.panel,
+      insetPadding: const EdgeInsets.all(40),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${timecode(s.start)} → ${timecode(s.end)}${s.summary != null ? '  ·  ${s.summary}' : ''}',
+                      style: const TextStyle(fontFamily: Tokens.mono, fontSize: 13),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Fechar',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Flexible(
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: VideoPlayer(
+                    PlayerSource(
+                      _api.getFileUri(widget.id, ArtifactKind.source),
+                      headers: widget.client.transport.headers,
+                      start: Duration(milliseconds: (s.start * 1000).round()),
+                      end: Duration(milliseconds: (s.end * 1000).round()),
+                      autoplay: true,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final p = _plan;
@@ -232,6 +284,7 @@ class _CutsScreenState extends State<CutsScreen> {
                     s: s,
                     on: _keep.contains(s.index),
                     onChanged: _busy ? null : (on) => setState(() => on ? _keep.add(s.index) : _keep.remove(s.index)),
+                    onPlay: () => _play(s),
                   ),
                 if (p.cuts.isNotEmpty)
                   Padding(
@@ -263,10 +316,11 @@ class _CutsScreenState extends State<CutsScreen> {
 }
 
 class _Segment extends StatelessWidget {
-  const _Segment({required this.s, required this.on, required this.onChanged});
+  const _Segment({required this.s, required this.on, required this.onChanged, required this.onPlay});
   final PlanKeptSegmentsItem s;
   final bool on;
   final ValueChanged<bool>? onChanged;
+  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +380,11 @@ class _Segment extends StatelessWidget {
                         ],
                       ),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Tocar o trecho',
+                    onPressed: onPlay,
+                    icon: const Icon(Icons.play_circle_outline, color: Tokens.dim),
                   ),
                 ],
               ),

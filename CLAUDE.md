@@ -227,7 +227,7 @@ GET  /api/videos/<id>/captions    # legenda do short: estilo final, ajuste próp
 PUT  /api/videos/<id>/captions    # {position, offset, size, hidden}: só essas 4 chaves; ausente mantém o anterior
 POST /api/videos/<id>/captions/preview  # {ajuste} → PNG da legenda num frame do short (regravar: /resume from_stage=caption, caption_only)
 GET  /api/videos/<id>/result      # metadata + arquivos finais
-GET  /api/videos/<id>/file/<kind> # video | thumbnail | thumbnail_b | thumbnail_c | captions | notes
+GET  /api/videos/<id>/file/<kind> # video | thumbnail | thumbnail_b | thumbnail_c | captions | notes | source (o vídeo original)
 PUT  /api/videos/<id>/thumbnail   # {variant: A|B|C}: a que vai na publicação
 POST /api/videos/<id>/plan/cut    # {start, end, timeline: edited|original}: tira um trecho (vale no próximo execute)
 GET|POST|DELETE /api/videos/<id>/effects[/<index>]  # zoom / B-roll num trecho

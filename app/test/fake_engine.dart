@@ -25,6 +25,11 @@ Map<String, Object?> agent(
   ...extra,
 };
 
+/// A 1×1 transparent PNG.
+final pngPixel = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+);
+
 class FakePickers implements Pickers {
   String? nextFolder;
   String? nextJson;
@@ -133,6 +138,12 @@ class FakeEngine {
 
   /// `GET /api/videos/<id>/plan` (absent: 404 no_plan).
   Map<String, Map<String, Object?>> plans = {};
+
+  /// `GET /api/videos/<id>/result`, `/publish`, `/publish/live`, `/captions`.
+  Map<String, Map<String, Object?>> results = {};
+  Map<String, Map<String, Object?>> publishes = {};
+  Map<String, Map<String, Object?>> lives = {};
+  Map<String, Map<String, Object?>> captions = {};
 
   /// The SSE history of `/api/videos/<id>/events` (lines of `data:`).
   Map<String, List<Map<String, Object?>>> events = {};
@@ -244,6 +255,41 @@ class FakeEngine {
         agents[i] = {...agents[i], 'installed': true, 'key_hint': 'sk-or-…abcd', 'key_source': 'settings'};
         return agents[i];
     }
+    final r = RegExp(
+      r'^/api/videos/([\w-]+)/(result|thumbnail|publish|publish/live|publish/youtube|captions|captions/preview)$',
+    ).firstMatch(path);
+    if (r != null) {
+      final id = r[1]!;
+      switch ((req.method, r[2])) {
+        case ('GET', 'result'):
+          return results[id];
+        case ('PUT', 'thumbnail'):
+          final v = (body as Map)['variant'];
+          final thumbs = [
+            for (final t in (results[id]!['thumbnails'] as List).cast<Map>()) {...t, 'chosen': t['id'] == v},
+          ];
+          results[id] = {...results[id]!, 'thumbnails': thumbs};
+          return {'thumbnails': thumbs};
+        case ('GET', 'publish'):
+          return publishes[id];
+        case ('GET', 'publish/live'):
+          return lives[id] ?? {'checked': false, 'videos': <String, Object?>{}};
+        case ('POST', 'publish/youtube'):
+          publishes[id] = {
+            ...publishes[id]!,
+            'job': {'id': 'pub-$id', 'status': 'running'},
+          };
+          return {'job_id': 'pub-$id', 'video_id': id};
+        case ('GET', 'captions'):
+          return captions[id];
+        case ('PUT', 'captions'):
+          captions[id] = {...captions[id]!, 'adjust': body};
+          return captions[id];
+        case ('POST', 'captions/preview'):
+          return {'__png': true};
+      }
+      return null;
+    }
     final d = RegExp(r'^/api/videos/([\w-]+)(/plan|/resume|/open/\w+)?$').firstMatch(path);
     if (d != null) {
       final id = d[1]!;
@@ -321,6 +367,9 @@ class FakeEngine {
       }
       final out = _handle(req);
       if (out == null) return http.Response(jsonEncode({'error': 'not_found'}), 404);
+      if (out is Map && out['__png'] == true) {
+        return http.Response.bytes(pngPixel, 200, headers: {'content-type': 'image/png'});
+      }
       if (out is Map && out['__error'] != null) return http.Response(jsonEncode({'error': out['__error']}), 404);
       return http.Response(jsonEncode(out), 200, headers: {'content-type': 'application/json; charset=utf-8'});
     });

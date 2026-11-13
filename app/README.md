@@ -19,7 +19,10 @@ flutter run -d linux     # ou macos / windows; em debug o motor roda na raiz do 
 flutter test             # AUTO_EDIT_BIN=../.venv/bin/auto-edit inclui o teste com o motor real
 ```
 
-Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev`.
+Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev`
+(o player é o `media_kit`, que usa a libmpv do sistema no Linux; no macOS e
+no Windows ela vem no pacote). Nos testes o player é trocado por um
+substituto (`PlayerScope`, `lib/ui/player.dart`).
 
 Telas:
 
@@ -50,9 +53,20 @@ Telas:
 - **Revisar cortes** (`lib/ui/pipeline/cuts_screen.dart`): os trechos mantidos
   com o que é dito em cada um, os blocos descartados e o que o planner cortou;
   desmarcar e "Salvar plano" (`PUT /plan`) ou "Salvar e recortar" (retoma do
-  `execute`). Tocar o trecho vem com o player, na #141.
-- O motor conectado (versão e contrato) fica no fim das Configurações. Resultado
-  chega na #141 e Estilos na #142.
+  `execute`). O ▶ de cada trecho toca aquele pedaço do vídeo original
+  (`GET /file/source`).
+- **Resultado** (`lib/ui/result/`): o vídeo pronto no player, thumbnails A/B/C
+  com o QA de cada uma e "Usar esta na publicação", os arquivos (mostrar na
+  pasta), o texto de publicação com copiar e, num short pronto, **Ajustar
+  legenda** (a prévia do motor no lugar do vídeo, uma faixa que se arrasta,
+  tamanho, esconder; "Regravar legenda" retoma do `caption` só com a legenda).
+  **Publicar no YouTube**: conectar (ou o atalho pras Configurações sem
+  credencial), formulário preenchido pelo metadata (`[REVISAR]` vira só a
+  dica do campo), títulos alternativos, visibilidade, agendar, legenda,
+  comentário pra fixar, envio com progresso, e o histórico com o estado atual
+  no YouTube (programado virou público? apagado?).
+- O motor conectado (versão e contrato) fica no fim das Configurações. Estilos
+  chega na #142.
 
 Diálogos do sistema (pasta, JSON) passam por `Pickers` (`lib/platform.dart`,
 `file_selector`): o JSON da credencial vai pro motor como conteúdo, não

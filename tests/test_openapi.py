@@ -216,6 +216,7 @@ GETS = [
     ("/api/videos/clip/captions", "/api/videos/{video_id}/captions"),
     ("/api/videos/vid/shorts", "/api/videos/{video_id}/shorts"),
     ("/api/videos/vid/publish", "/api/videos/{video_id}/publish"),
+    ("/api/videos/vid/publish/live", "/api/videos/{video_id}/publish/live"),
     ("/api/videos/vid/retention", "/api/videos/{video_id}/retention"),
     ("/api/insights/trend", "/api/insights/trend"),
     ("/api/publish/youtube", "/api/publish/youtube"),

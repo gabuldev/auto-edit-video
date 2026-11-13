@@ -432,6 +432,15 @@ class TestResult:
         assert engine.artifact_path("vid", "../../etc/passwd") is None
         assert engine.artifact_path("nope", "video") is None
 
+    def test_artifact_path_source_is_the_recording(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(engine, "library_root", lambda: tmp_path)
+        rec = tmp_path / "rec.mov"
+        rec.write_bytes(b"raw")
+        _mkws(tmp_path, "vid", video_path=str(rec))
+        assert engine.artifact_path("vid", "source") == rec.resolve()
+        _mkws(tmp_path, "gone", video_path=str(tmp_path / "nope.mp4"))
+        assert engine.artifact_path("gone", "source") is None
+
 
 # ── cut plan (read + edit) ────────────────────────────────────────────────────
 

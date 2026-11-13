@@ -356,12 +356,19 @@ def artifact_path(video_id: str, kind: str) -> Path | None:
     """Absolute path of one finished artifact, or None when it isn't there.
 
     Only the known kinds (ARTIFACT_SUFFIXES) resolve, and only from the folder this
-    workspace delivered to — this is what the API serves to the player.
+    workspace delivered to — this is what the API serves to the player. `source`
+    is the workspace's own recording (its `video_path`), nothing else.
     """
+    ws = library_root() / video_id
+    if kind == "source":  # the recording itself: Revisar cortes plays a segment of it
+        if not (ws / "pipeline.json").exists():
+            return None
+        src = pl.load(ws).get("video_path")
+        path = Path(str(src)).expanduser().resolve() if src else None
+        return path if path is not None and path.is_file() else None
     suffix = ARTIFACT_SUFFIXES.get(kind)
     if suffix is None:
         return None
-    ws = library_root() / video_id
     if not (ws / "pipeline.json").exists():
         return None
     p = pl.load(ws)

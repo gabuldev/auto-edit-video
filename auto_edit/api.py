@@ -27,7 +27,7 @@ Endpoints
     PUT  /api/videos/<id>/captions   {position, offset, size, hidden}
     POST /api/videos/<id>/captions/preview  {ajuste} → PNG
     GET  /api/videos/<id>/result     (metadata + arquivos finais)
-    GET  /api/videos/<id>/file/<kind>  (video | thumbnail | thumbnail_b | thumbnail_c | captions | notes)
+    GET  /api/videos/<id>/file/<kind>  (video | thumbnail | thumbnail_b | thumbnail_c | captions | notes | source)
     PUT  /api/videos/<id>/thumbnail  {variant: A|B|C}  qual thumbnail vai na publicação
     POST /api/videos/<id>/plan/cut   {start, end, timeline: edited|original}  tira um trecho (vale no próximo execute)
     GET  /api/videos/<id>/effects    zoom / b-roll pedidos (com onde tocam no vídeo editado)
@@ -83,6 +83,7 @@ Endpoints
 from __future__ import annotations
 
 import json
+import mimetypes
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
@@ -319,7 +320,7 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify({"error": "not_found", "id": video_id, "kind": kind}), 404
         return send_file(
             path,
-            mimetype=engine.ARTIFACT_MIME.get(kind),
+            mimetype=engine.ARTIFACT_MIME.get(kind) or mimetypes.guess_type(path.name)[0],
             conditional=True,  # range requests: seeking in the player
             download_name=path.name,
         )

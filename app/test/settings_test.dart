@@ -95,7 +95,7 @@ void main() {
       await open(tester);
       await tester.tap(find.text('Testar').first);
       await settle(tester);
-      expect(find.text('✓ respondeu em 2,4s'), findsOneWidget);
+      expect(find.text('respondeu em 2,4s'), findsOneWidget);
       expect(engine.calls, contains('POST /api/agents/claude/test'));
     });
 
@@ -114,7 +114,7 @@ void main() {
       await settle(tester);
       expect(engine.calls, contains('PUT /api/agents/openrouter/key'));
       expect(find.textContaining('sk-or-…abcd'), findsOneWidget);
-      expect(find.text('✓ chave salva — clique em Testar'), findsOneWidget);
+      expect(find.text('chave salva — clique em Testar'), findsOneWidget);
     });
 
     testWidgets('folders: Trocar saves the one picked, "usar a padrão" clears it', (tester) async {
@@ -205,7 +205,7 @@ void main() {
       await tester.tap(find.text('Testar'));
       await settle(tester);
       expect(find.textContaining('este agente vai editar seus vídeos'), findsOneWidget);
-      expect(find.text('✓ funcionando'), findsOneWidget);
+      expect(find.text('funcionando'), findsOneWidget);
       expect(find.text('pronto'), findsOneWidget);
 
       await tester.tap(find.text('Baixar'));
