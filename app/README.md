@@ -19,6 +19,13 @@ flutter run -d linux     # ou macos / windows; em debug o motor roda na raiz do 
 flutter test             # AUTO_EDIT_BIN=../.venv/bin/auto-edit inclui o teste com o motor real
 ```
 
+Pacotes com o motor embutido: `.github/workflows/app-package.yml` (Actions →
+App (Flutter) packages → Run workflow) compila o app, põe o motor do
+`scripts/stage_engine.py` em `engine/` dentro do pacote (no macOS em
+`Contents/Resources`), roda o `smoke_engine.py` nele e guarda `.dmg`, `.zip`
+(Windows) e `.tar.gz` (Linux; precisa da `libmpv2` do sistema) como artefatos.
+Ainda não vão pro release nem atualizam o app Tauri (#144).
+
 Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev`
 (o player é o `media_kit`, que usa a libmpv do sistema no Linux; no macOS e
 no Windows ela vem no pacote). Nos testes o player é trocado por um
