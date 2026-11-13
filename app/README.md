@@ -41,10 +41,18 @@ Telas:
   "Editar" abre o Novo edit com o vídeo e o tipo pelo formato.
 - **Novo edit** (`lib/ui/new_edit_screen.dart`): arrastar (`desktop_drop`) ou
   escolher o vídeo, nome, tipo, contexto e as opções (vêm das Configurações).
-  Por enquanto, ao iniciar volta pra Edições; a tela do pipeline ao vivo chega
-  na #140.
-- O motor conectado (versão e contrato) fica no fim das Configurações. Estilos
-  chega na #142.
+  Ao iniciar, abre o pipeline dela.
+- **Pipeline ao vivo** (`lib/ui/pipeline/pipeline_screen.dart`): clicar numa
+  edição abre. Stages (só os que esse tipo roda), o log do `ralph.sh` por SSE
+  (o motor reenvia o histórico do job, então entra do começo; segue o fim até
+  você rolar pra cima), retomar a partir de um stage, parar (dois cliques) e
+  o vídeo original/entregue na pasta.
+- **Revisar cortes** (`lib/ui/pipeline/cuts_screen.dart`): os trechos mantidos
+  com o que é dito em cada um, os blocos descartados e o que o planner cortou;
+  desmarcar e "Salvar plano" (`PUT /plan`) ou "Salvar e recortar" (retoma do
+  `execute`). Tocar o trecho vem com o player, na #141.
+- O motor conectado (versão e contrato) fica no fim das Configurações. Resultado
+  chega na #141 e Estilos na #142.
 
 Diálogos do sistema (pasta, JSON) passam por `Pickers` (`lib/platform.dart`,
 `file_selector`): o JSON da credencial vai pro motor como conteúdo, não

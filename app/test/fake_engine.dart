@@ -128,6 +128,12 @@ class FakeEngine {
     'recordings': <Object?>[],
   };
 
+  /// `GET /api/videos/<id>`: the summary in [library] plus this (stage_detail…).
+  Map<String, Map<String, Object?>> details = {};
+
+  /// `GET /api/videos/<id>/plan` (absent: 404 no_plan).
+  Map<String, Map<String, Object?>> plans = {};
+
   /// The SSE history of `/api/videos/<id>/events` (lines of `data:`).
   Map<String, List<Map<String, Object?>>> events = {};
 
@@ -238,6 +244,34 @@ class FakeEngine {
         agents[i] = {...agents[i], 'installed': true, 'key_hint': 'sk-or-…abcd', 'key_source': 'settings'};
         return agents[i];
     }
+    final d = RegExp(r'^/api/videos/([\w-]+)(/plan|/resume|/open/\w+)?$').firstMatch(path);
+    if (d != null) {
+      final id = d[1]!;
+      final sub = d[2];
+      if (req.method == 'GET' && sub == null) {
+        final base = library.where((x) => x['id'] == id).firstOrNull;
+        if (base == null) return null;
+        return {'stage_detail': <String, Object?>{}, ...base, ...?details[id]};
+      }
+      if (sub == '/plan' && req.method == 'GET') return plans[id] ?? {'__error': 'no_plan'};
+      if (sub == '/plan' && req.method == 'PUT') {
+        final kept = ((body as Map)['kept_segments'] as List).cast<Map>();
+        final old = (plans[id]!['kept_segments'] as List).cast<Map>();
+        final next = [
+          for (final (i, k) in kept.indexed)
+            {...old.firstWhere((o) => o['start'] == k['start']).cast<String, Object?>(), 'index': i},
+        ];
+        plans[id] = {...plans[id]!, 'kept_segments': next, 'editable': true, 'source': 'reviewed_plan.json'};
+        return plans[id];
+      }
+      if (sub == '/resume' && req.method == 'POST') {
+        library = [
+          for (final x in library) x['id'] == id ? {...x, 'status': 'running'} : x,
+        ];
+        return {'job_id': 'job-$id', 'video_id': id};
+      }
+      if (sub != null && sub.startsWith('/open/') && req.method == 'POST') return {'opened': sub};
+    }
     final v = RegExp(r'^/api/videos/([\w-]+)(/stop)?$').firstMatch(path);
     if (v != null && (req.method == 'DELETE' || (req.method == 'POST' && v[2] != null))) {
       final id = v[1]!;
@@ -287,6 +321,7 @@ class FakeEngine {
       }
       final out = _handle(req);
       if (out == null) return http.Response(jsonEncode({'error': 'not_found'}), 404);
+      if (out is Map && out['__error'] != null) return http.Response(jsonEncode({'error': out['__error']}), 404);
       return http.Response(jsonEncode(out), 200, headers: {'content-type': 'application/json; charset=utf-8'});
     });
     return AutoEditClient(config, transport: Transport(config, client: mock));

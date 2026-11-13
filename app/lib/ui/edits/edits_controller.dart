@@ -11,7 +11,11 @@ const stages = ['extract', 'plan', 'review', 'evaluate', 'execute', 'overlay', '
 
 /// The video's real name: the one given on Novo edit, else its title once
 /// metadata ran, the context typed before that, and only then the file name.
-String editName(VideoSummary v) => v.name ?? v.title ?? v.context ?? v.videoName;
+String editName(VideoSummary v) => editNameOf(v.name, v.title, v.context, v.videoName);
+
+/// [editName] from the fields (a [VideoDetail] has them too).
+String editNameOf(String? name, String? title, String? context, String videoName) =>
+    name ?? title ?? context ?? videoName;
 
 bool isStoppable(VideoSummary v) => v.status == VideoStatus.running || v.status == VideoStatus.queued;
 

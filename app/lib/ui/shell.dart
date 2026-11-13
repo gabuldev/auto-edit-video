@@ -7,6 +7,8 @@ import '../engine/status.dart';
 import '../platform.dart';
 import 'edits/edits_screen.dart';
 import 'new_edit_screen.dart';
+import 'pipeline/cuts_screen.dart';
+import 'pipeline/pipeline_screen.dart';
 import 'recordings_screen.dart';
 import 'settings/settings_screen.dart';
 import 'theme.dart';
@@ -24,6 +26,9 @@ enum Section {
   final String label;
   final IconData icon;
 }
+
+/// The screens of one edit, over Edições.
+enum VideoPage { pipeline, cuts, result }
 
 /// Sidebar + the current screen, with the offline banner on top of it.
 class Shell extends StatefulWidget {
@@ -56,6 +61,9 @@ class _ShellState extends State<Shell> {
   /// Novo edit, over Edições: (video already chosen, its type).
   (String?, VideoType?)? _newEdit;
 
+  /// One edit's screen, over Edições.
+  (String, VideoPage)? _video;
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +91,7 @@ class _ShellState extends State<Shell> {
     setState(() {
       _welcome = false;
       _newEdit = null;
+      _video = null;
       _section = s;
     });
     // Back from Configurações, an agent may be working now.
@@ -130,7 +139,15 @@ class _ShellState extends State<Shell> {
   void _openNewEdit({String? path, VideoType? type}) => setState(() {
     _welcome = false;
     _section = Section.edits;
+    _video = null;
     _newEdit = (path, type);
+  });
+
+  void _openVideo(String id, VideoPage page) => setState(() {
+    _welcome = false;
+    _section = Section.edits;
+    _newEdit = null;
+    _video = (id, page);
   });
 
   Widget _screen() {
@@ -146,16 +163,42 @@ class _ShellState extends State<Shell> {
         pickers: widget.pickers,
         path: newEdit.$1,
         type: newEdit.$2,
-        // The live pipeline screen comes in #140: until then, the list shows it running.
-        onStarted: (_) => _select(Section.edits),
+        onStarted: (id) => _openVideo(id, VideoPage.pipeline),
         onCancel: () => _select(Section.edits),
       );
+    }
+    final video = _video;
+    if (video != null) {
+      final (id, page) = video;
+      return switch (page) {
+        VideoPage.pipeline => PipelineScreen(
+          key: ValueKey(video),
+          client: widget.client,
+          id: id,
+          onBack: () => _select(Section.edits),
+          onCuts: () => _openVideo(id, VideoPage.cuts),
+          onResult: () => _openVideo(id, VideoPage.result),
+        ),
+        VideoPage.cuts => CutsScreen(
+          key: ValueKey(video),
+          client: widget.client,
+          id: id,
+          onBack: () => _openVideo(id, VideoPage.pipeline),
+          onRecut: () => _openVideo(id, VideoPage.pipeline),
+        ),
+        VideoPage.result => ComingSoon(
+          title: 'Resultado',
+          issue: 141,
+          onBack: () => _openVideo(id, VideoPage.pipeline),
+        ),
+      };
     }
     return switch (_section) {
       Section.edits => EditsScreen(
         client: widget.client,
         pickers: widget.pickers,
         onNewEdit: ({String? path}) => _openNewEdit(path: path),
+        onOpen: (id, {bool result = false}) => _openVideo(id, result ? VideoPage.result : VideoPage.pipeline),
       ),
       Section.library => RecordingsScreen(
         client: widget.client,
@@ -409,9 +452,19 @@ class OfflineBanner extends StatelessWidget {
 
 /// Topbar like the Tauri app's: title, subtitle, actions on the right.
 class TopBar extends StatelessWidget {
-  const TopBar({super.key, required this.title, this.subtitle, this.subtitleWidget, this.actions = const []});
+  const TopBar({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.subtitleWidget,
+    this.actions = const [],
+    this.onBack,
+  });
 
   final String title;
+
+  /// A back arrow before the title.
+  final VoidCallback? onBack;
   final String? subtitle;
 
   /// Instead of [subtitle], for one with links.
@@ -428,12 +481,21 @@ class TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (onBack != null) ...[
+            IconButton.outlined(tooltip: 'Voltar', onPressed: onBack, icon: const Icon(Icons.arrow_back, size: 18)),
+            const SizedBox(width: 14),
+          ],
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
                 if (subtitleWidget != null)
                   subtitleWidget!
                 else if (subtitle != null)
@@ -449,15 +511,16 @@ class TopBar extends StatelessWidget {
 }
 
 class ComingSoon extends StatelessWidget {
-  const ComingSoon({super.key, required this.title, required this.issue});
+  const ComingSoon({super.key, required this.title, required this.issue, this.onBack});
   final String title;
   final int issue;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      TopBar(title: title),
+      TopBar(title: title, onBack: onBack),
       Expanded(
         child: Center(
           child: Text(

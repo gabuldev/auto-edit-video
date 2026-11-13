@@ -17,13 +17,23 @@ const _privacy = {'private': 'privado', 'unlisted': 'não listado', 'public': 'p
 /// Edições — the edits, with live progress for the running ones. Empty, it is
 /// a drop zone: a video picked or dropped goes to Novo edit.
 class EditsScreen extends StatefulWidget {
-  const EditsScreen({super.key, required this.client, required this.pickers, required this.onNewEdit, this.every});
+  const EditsScreen({
+    super.key,
+    required this.client,
+    required this.pickers,
+    required this.onNewEdit,
+    required this.onOpen,
+    this.every,
+  });
 
   final AutoEditClient client;
   final Pickers pickers;
 
   /// Novo edit, with this video already chosen (or none).
   final void Function({String? path}) onNewEdit;
+
+  /// A row clicked: its pipeline; "Ver resultado": the result ([result] true).
+  final void Function(String id, {bool result}) onOpen;
   final Duration? every;
 
   @override
@@ -114,7 +124,7 @@ class _EditsScreenState extends State<EditsScreen> {
                       )
                     else if (videos != null) ...[
                       _Head(c: c),
-                      for (final v in shown) _Row(c: c, v: v, client: widget.client),
+                      for (final v in shown) _Row(c: c, v: v, client: widget.client, onOpen: widget.onOpen),
                     ],
                   ],
                 ),
@@ -262,13 +272,13 @@ class _Head extends StatelessWidget {
       acts = [
         SmallButton('Cancelar', onPressed: () => c.armBulk(false)),
         const SizedBox(width: 6),
-        _DangerButton(n == 1 ? 'Excluir 1 edição' : 'Excluir $n edições', confirm: true, onPressed: c.deleteSelected),
+        DangerButton(n == 1 ? 'Excluir 1 edição' : 'Excluir $n edições', confirm: true, onPressed: c.deleteSelected),
       ];
     } else {
       acts = [
         SmallButton('Limpar seleção', onPressed: c.clearSelection),
         const SizedBox(width: 6),
-        _DangerButton('Excluir', icon: Icons.delete_outline, onPressed: () => c.armBulk(true)),
+        DangerButton('Excluir', icon: Icons.delete_outline, onPressed: () => c.armBulk(true)),
       ];
     }
     return Container(
@@ -295,10 +305,11 @@ class _Head extends StatelessWidget {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({required this.c, required this.v, required this.client});
+  const _Row({required this.c, required this.v, required this.client, required this.onOpen});
   final EditsController c;
   final VideoSummary v;
   final AutoEditClient client;
+  final void Function(String id, {bool result}) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -315,94 +326,102 @@ class _Row extends StatelessWidget {
       if (v.language != null) v.language!,
       if (v.derivedFrom != null) 'short de ${v.derivedFrom}',
     ].join(' · ');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
         color: on ? Tokens.navActive : Tokens.panel,
-        border: Border.all(color: on ? Tokens.accent.withValues(alpha: .35) : Tokens.borderSoft),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: _cols[0],
-            child: Checkbox(value: on, onChanged: (x) => c.select(v.id, x ?? false)),
-          ),
-          Expanded(
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: on ? Tokens.accent.withValues(alpha: .35) : Tokens.borderSoft),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => onOpen(v.id),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(
               children: [
-                VideoThumb(
-                  url: v.hasThumbnail ? client.api.getFileUri(v.id, ArtifactKind.thumbnail) : null,
-                  headers: client.transport.headers,
+                SizedBox(
+                  width: _cols[0],
+                  child: Checkbox(value: on, onChanged: (x) => c.select(v.id, x ?? false)),
                 ),
-                const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Tooltip(
-                        message: editName(v),
-                        child: Text(
-                          editName(v),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      VideoThumb(
+                        url: v.hasThumbnail ? client.api.getFileUri(v.id, ArtifactKind.thumbnail) : null,
+                        headers: client.transport.headers,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Tooltip(
+                              message: editName(v),
+                              child: Text(
+                                editName(v),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                              ),
+                            ),
+                            Text(
+                              meta,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontFamily: Tokens.mono, fontSize: 11.5, color: Tokens.faint),
+                            ),
+                            if (liveLine != null && liveLine.isNotEmpty)
+                              Text(
+                                liveLine,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontFamily: Tokens.mono, fontSize: 11, color: Tokens.dim),
+                              ),
+                          ],
                         ),
                       ),
-                      Text(
-                        meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontFamily: Tokens.mono, fontSize: 11.5, color: Tokens.faint),
-                      ),
-                      if (liveLine != null && liveLine.isNotEmpty)
-                        Text(
-                          liveLine,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontFamily: Tokens.mono, fontSize: 11, color: Tokens.dim),
-                        ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          SizedBox(
-            width: _cols[2],
-            child: Align(alignment: Alignment.centerLeft, child: TypeBadge(v.type)),
-          ),
-          SizedBox(
-            width: _cols[3],
-            child: Row(
-              children: [
-                for (final (_, state) in c.dots(v)) _Dot(state),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    stage == 'done' ? '' : stage ?? '—',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: Tokens.mono, fontSize: 11.5, color: stageColor),
+                SizedBox(
+                  width: _cols[2],
+                  child: Align(alignment: Alignment.centerLeft, child: TypeBadge(v.type)),
+                ),
+                SizedBox(
+                  width: _cols[3],
+                  child: Row(
+                    children: [
+                      for (final (_, state) in c.dots(v)) _Dot(state),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          stage == 'done' ? '' : stage ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontFamily: Tokens.mono, fontSize: 11.5, color: stageColor),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: _cols[4],
+                  child: Align(alignment: Alignment.centerLeft, child: StatusChip(v)),
+                ),
+                SizedBox(
+                  width: _cols[5],
+                  // never wider than its column (a long confirm in a narrow window)
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [..._acts(), const SizedBox(width: 12)]),
                   ),
                 ),
               ],
             ),
           ),
-          SizedBox(
-            width: _cols[4],
-            child: Align(alignment: Alignment.centerLeft, child: StatusChip(v)),
-          ),
-          SizedBox(
-            width: _cols[5],
-            // never wider than its column (a long confirm in a narrow window)
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [..._acts(), const SizedBox(width: 12)]),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -414,14 +433,15 @@ class _Row extends StatelessWidget {
       return [
         SmallButton(stop ? 'Voltar' : 'Cancelar', onPressed: c.disarm),
         const SizedBox(width: 6),
-        _DangerButton(stop ? 'Cancelar edição' : 'Excluir', confirm: true, onPressed: () => c.act(v.id, armed.$2)),
+        DangerButton(stop ? 'Cancelar edição' : 'Excluir', confirm: true, onPressed: () => c.act(v.id, armed.$2)),
       ];
     }
     return [
-      if (isStoppable(v)) ...[
-        _DangerButton('Cancelar', onPressed: () => c.act(v.id, 'stop')),
+      if (v.status == VideoStatus.done) ...[
+        SmallButton('Ver resultado', onPressed: () => onOpen(v.id, result: true)),
         const SizedBox(width: 6),
       ],
+      if (isStoppable(v)) ...[DangerButton('Cancelar', onPressed: () => c.act(v.id, 'stop')), const SizedBox(width: 6)],
       IconButton(
         tooltip: 'Excluir vídeo',
         visualDensity: VisualDensity.compact,
@@ -450,31 +470,6 @@ class _Dot extends StatelessWidget {
       margin: const EdgeInsets.only(right: 4),
       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
     );
-  }
-}
-
-class _DangerButton extends StatelessWidget {
-  const _DangerButton(this.label, {required this.onPressed, this.confirm = false, this.icon});
-  final String label;
-  final VoidCallback? onPressed;
-  final bool confirm;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = ButtonStyle(
-      visualDensity: VisualDensity.compact,
-      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
-      foregroundColor: WidgetStatePropertyAll(confirm ? Colors.white : Tokens.err),
-      backgroundColor: WidgetStatePropertyAll(confirm ? Tokens.err.withValues(alpha: .85) : null),
-      side: WidgetStatePropertyAll(BorderSide(color: Tokens.err.withValues(alpha: .5))),
-      textStyle: const WidgetStatePropertyAll(
-        TextStyle(fontSize: 12.5, fontFamily: Tokens.font, fontWeight: FontWeight.w600),
-      ),
-    );
-    return icon == null
-        ? OutlinedButton(style: style, onPressed: onPressed, child: Text(label))
-        : OutlinedButton.icon(style: style, onPressed: onPressed, icon: Icon(icon, size: 16), label: Text(label));
   }
 }
 

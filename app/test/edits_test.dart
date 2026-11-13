@@ -74,10 +74,12 @@ void main() {
     late FakePickers pickers;
     String? newEditPath;
     var newEditOpened = false;
+    final opened = <String>[];
 
     Future<void> open(WidgetTester tester) async {
       newEditOpened = false;
       newEditPath = null;
+      opened.clear();
       await tester.pumpWidget(
         host(
           EditsScreen(
@@ -88,6 +90,7 @@ void main() {
               newEditOpened = true;
               newEditPath = path;
             },
+            onOpen: (id, {bool result = false}) => opened.add(result ? '$id/result' : id),
           ),
         ),
       );
@@ -97,6 +100,18 @@ void main() {
     setUp(() {
       engine = FakeEngine();
       pickers = FakePickers();
+    });
+
+    testWidgets('a row opens its pipeline; a finished one also its result', (tester) async {
+      engine.library = [summary('aula', status: 'running', stage: 'plan'), summary('vlog', name: 'Vlog de sábado')];
+      await open(tester);
+      await tester.tap(find.text('aula.mp4'));
+      await settle(tester);
+      expect(find.text('Ver resultado'), findsOneWidget); // only the finished one
+      await tester.tap(find.text('Ver resultado'));
+      await tester.tap(find.text('Vlog de sábado'));
+      await settle(tester);
+      expect(opened, ['aula', 'vlog/result', 'vlog']);
     });
 
     testWidgets('empty: a drop zone; picking a video opens Novo edit with it', (tester) async {
@@ -127,7 +142,7 @@ void main() {
       expect(find.text('Publicado'), findsOneWidget);
       expect(find.text('plan'), findsOneWidget);
       // A long skips caption: 8 of the 9 stages.
-      final row = find.ancestor(of: find.text('Aula de Dart'), matching: find.byType(Container)).first;
+      final row = find.ancestor(of: find.text('Aula de Dart'), matching: find.byType(Material)).first;
       expect(row, findsOneWidget);
 
       await tester.enterText(find.byType(TextField), 'publicado');
@@ -359,6 +374,11 @@ void main() {
     await tester.tap(find.text('Iniciar edição')); // long ticked by the shape
     await settle(tester);
     expect(engine.edits.single['type'], 'long');
+    // straight to its pipeline
+    expect(find.text('Revisar cortes'), findsOneWidget);
+    expect(find.text('Rodando'), findsOneWidget);
+    await tester.tap(find.byTooltip('Voltar'));
+    await settle(tester);
     expect(find.text('Rodando'), findsOneWidget);
     expect(find.text('1 edição · 1 em andamento'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
