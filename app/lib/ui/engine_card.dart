@@ -2,54 +2,34 @@ import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:flutter/material.dart';
 
 import '../engine/status.dart';
-import 'shell.dart';
 import 'theme.dart';
 
-/// Edições — for now, which engine the app is talking to (the list comes in #139).
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.status, required this.client});
+/// Which engine the app talks to: address, version, contract (end of Configurações).
+class EngineCard extends StatelessWidget {
+  const EngineCard({super.key, required this.status, required this.client});
 
   final EngineStatus status;
   final AutoEditClient client;
 
   @override
-  Widget build(BuildContext context) {
-    final health = status.info;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const TopBar(title: 'Edições', subtitle: 'O app em Flutter, ainda em construção'),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
-                child: _Card(
-                  title: 'Motor',
-                  rows: [
-                    ('Endereço', client.config.baseUrl.toString()),
-                    ('Versão', health?.version ?? '—'),
-                    (
-                      'Contrato da API',
-                      health == null ? '—' : '${health.apiVersion} (este app: ${AutoEditApi.contractVersion})',
-                    ),
-                    if (health?.repoRoot != null) ('Pasta do motor', health!.repoRoot!),
-                  ],
-                  footer:
-                      health != null &&
-                          health.apiVersion.split('.').first != AutoEditApi.contractVersion.split('.').first
-                      ? 'Este motor fala outra versão do contrato. Atualize o app ou o motor.'
-                      : null,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: status,
+    builder: (context, _) {
+      final health = status.info;
+      return _Card(
+        title: 'Motor',
+        rows: [
+          ('Endereço', client.config.baseUrl.toString()),
+          ('Versão', health?.version ?? '—'),
+          ('Contrato da API', health == null ? '—' : '${health.apiVersion} (este app: ${AutoEditApi.contractVersion})'),
+          if (health?.repoRoot != null) ('Pasta do motor', health!.repoRoot!),
+        ],
+        footer: health != null && health.apiVersion.split('.').first != AutoEditApi.contractVersion.split('.').first
+            ? 'Este motor fala outra versão do contrato. Atualize o app ou o motor.'
+            : null,
+      );
+    },
+  );
 }
 
 class _Card extends StatelessWidget {

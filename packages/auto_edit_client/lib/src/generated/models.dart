@@ -351,7 +351,7 @@ class VideoSummary {
   final String? planId;
   final String? createdAt;
 
-  /// stage name → pending | running | done | failed | skip
+  /// stage name → pending | running | complete | failed | skip
   final Map<String, String?> stages;
   final int? estimatedTokens;
 
@@ -470,7 +470,7 @@ class VideoDetail {
   final String? planId;
   final String? createdAt;
 
-  /// stage name → pending | running | done | failed | skip
+  /// stage name → pending | running | complete | failed | skip
   final Map<String, String?> stages;
   final int? estimatedTokens;
 

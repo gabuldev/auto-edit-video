@@ -12,6 +12,9 @@ abstract class Pickers {
   /// The text of a JSON file the person picks, or null when they cancel.
   /// The content (not the path) goes to the engine: it may be on another machine.
   Future<String?> jsonFile({String? title});
+
+  /// A video file's path (the dialog opens in [initial], the inbox), or null.
+  Future<String?> video({String? initial});
 }
 
 class NativePickers implements Pickers {
@@ -37,6 +40,22 @@ class NativePickers implements Pickers {
       confirmButtonText: 'Escolher',
     );
     return file?.readAsString();
+  }
+
+  @override
+  Future<String?> video({String? initial}) async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Vídeos',
+          extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v', 'mts', 'm2ts'],
+          uniformTypeIdentifiers: ['public.movie'],
+        ),
+      ],
+      initialDirectory: initial != null && Directory(initial).existsSync() ? initial : null,
+      confirmButtonText: 'Escolher',
+    );
+    return file?.path;
   }
 }
 

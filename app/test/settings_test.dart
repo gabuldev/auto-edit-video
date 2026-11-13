@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:auto_edit/platform.dart';
 import 'package:auto_edit/ui/settings/settings_screen.dart';
 import 'package:auto_edit/ui/theme.dart';
 import 'package:auto_edit/ui/welcome.dart';
@@ -9,15 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_engine.dart';
-
-class FakePickers implements Pickers {
-  String? nextFolder;
-  String? nextJson;
-  @override
-  Future<String?> folder({String? initial}) async => nextFolder;
-  @override
-  Future<String?> jsonFile({String? title}) async => nextJson;
-}
 
 const debounce = Duration(milliseconds: 10);
 

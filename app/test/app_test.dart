@@ -34,9 +34,17 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pump();
     expect(find.text('Motor conectado'), findsOneWidget);
-    expect(find.text('0.48.0'), findsOneWidget);
-    expect(find.text('1.1.0 (este app: ${AutoEditApi.contractVersion})'), findsOneWidget);
     expect(find.text('Edições'), findsWidgets);
+    // Which engine: at the end of Configurações.
+    await tester.tap(find.text('Configurações'));
+    await tester.pump();
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text('0.48.0'),
+      300,
+      scrollable: find.ancestor(of: find.text('Pastas'), matching: find.byType(Scrollable)).first,
+    );
+    expect(find.text('1.1.0 (este app: ${AutoEditApi.contractVersion})'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -69,7 +77,11 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Biblioteca'));
     await tester.pump();
-    expect(find.textContaining('#139'), findsOneWidget);
+    await tester.pump();
+    expect(find.textContaining('Nenhum vídeo nesta pasta'), findsOneWidget);
+    await tester.tap(find.text('Estilos'));
+    await tester.pump();
+    expect(find.textContaining('#142'), findsOneWidget);
     await tester.tap(find.text('Configurações'));
     await tester.pump();
     await tester.pump();

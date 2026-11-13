@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../engine/status.dart';
 import '../platform.dart';
-import 'home.dart';
+import 'edits/edits_screen.dart';
+import 'new_edit_screen.dart';
+import 'recordings_screen.dart';
 import 'settings/settings_screen.dart';
 import 'theme.dart';
 import 'welcome.dart';
@@ -51,6 +53,9 @@ class _ShellState extends State<Shell> {
   /// What the engine says is missing to edit (the banner in Edições).
   String? _missing;
 
+  /// Novo edit, over Edições: (video already chosen, its type).
+  (String?, VideoType?)? _newEdit;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +82,7 @@ class _ShellState extends State<Shell> {
   void _select(Section s) {
     setState(() {
       _welcome = false;
+      _newEdit = null;
       _section = s;
     });
     // Back from Configurações, an agent may be working now.
@@ -121,14 +127,45 @@ class _ShellState extends State<Shell> {
     );
   }
 
-  Widget _screen() => _welcome
-      ? WelcomeScreen(client: widget.client, onDone: _leaveWelcome, onLater: () => _leaveWelcome(later: true))
-      : switch (_section) {
-          Section.edits => HomeScreen(status: widget.status, client: widget.client),
-          Section.library => const ComingSoon(title: 'Biblioteca', issue: 139),
-          Section.styles => const ComingSoon(title: 'Estilos', issue: 142),
-          Section.settings => SettingsScreen(client: widget.client, pickers: widget.pickers),
-        };
+  void _openNewEdit({String? path, VideoType? type}) => setState(() {
+    _welcome = false;
+    _section = Section.edits;
+    _newEdit = (path, type);
+  });
+
+  Widget _screen() {
+    if (_welcome) {
+      return WelcomeScreen(client: widget.client, onDone: _leaveWelcome, onLater: () => _leaveWelcome(later: true));
+    }
+    final newEdit = _newEdit;
+    if (newEdit != null) {
+      return NewEditScreen(
+        // a new video chosen elsewhere starts a fresh form
+        key: ValueKey(newEdit),
+        client: widget.client,
+        pickers: widget.pickers,
+        path: newEdit.$1,
+        type: newEdit.$2,
+        // The live pipeline screen comes in #140: until then, the list shows it running.
+        onStarted: (_) => _select(Section.edits),
+        onCancel: () => _select(Section.edits),
+      );
+    }
+    return switch (_section) {
+      Section.edits => EditsScreen(
+        client: widget.client,
+        pickers: widget.pickers,
+        onNewEdit: ({String? path}) => _openNewEdit(path: path),
+      ),
+      Section.library => RecordingsScreen(
+        client: widget.client,
+        onEdit: (path, type) => _openNewEdit(path: path, type: type),
+        onSettings: () => _select(Section.settings),
+      ),
+      Section.styles => const ComingSoon(title: 'Estilos', issue: 142),
+      Section.settings => SettingsScreen(client: widget.client, pickers: widget.pickers, status: widget.status),
+    };
+  }
 }
 
 class Sidebar extends StatelessWidget {
@@ -372,10 +409,13 @@ class OfflineBanner extends StatelessWidget {
 
 /// Topbar like the Tauri app's: title, subtitle, actions on the right.
 class TopBar extends StatelessWidget {
-  const TopBar({super.key, required this.title, this.subtitle, this.actions = const []});
+  const TopBar({super.key, required this.title, this.subtitle, this.subtitleWidget, this.actions = const []});
 
   final String title;
   final String? subtitle;
+
+  /// Instead of [subtitle], for one with links.
+  final Widget? subtitleWidget;
   final List<Widget> actions;
 
   @override
@@ -394,7 +434,10 @@ class TopBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                if (subtitle != null) Text(subtitle!, style: const TextStyle(fontSize: 13, color: Tokens.dim)),
+                if (subtitleWidget != null)
+                  subtitleWidget!
+                else if (subtitle != null)
+                  Text(subtitle!, style: const TextStyle(fontSize: 13, color: Tokens.dim)),
               ],
             ),
           ),

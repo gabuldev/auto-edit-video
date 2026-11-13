@@ -32,8 +32,19 @@ Telas:
   principal + fallback + modelo, chave do OpenRouter, Ollama (baixar modelo) e
   os padrões do Novo edit. Salva sozinho 600 ms depois da última mudança, só
   com as chaves que essa tela edita (o motor junta com o resto).
-- Edições mostra o motor conectado (versão e contrato); as outras chegam nas
-  issues #139–#143.
+- **Edições** (`lib/ui/edits/`): as edições com status, etapas e a última linha
+  do log ao vivo (SSE de cada uma que roda; a lista recarrega a cada 5s), busca,
+  cancelar e excluir (perguntando na própria linha) e excluir várias. Vazia, é
+  uma área pra arrastar ou escolher o vídeo.
+- **Biblioteca** (`lib/ui/recordings_screen.dart`): os vídeos da pasta de
+  entrada com miniatura, duração, formato, tamanho e as edições de cada um;
+  "Editar" abre o Novo edit com o vídeo e o tipo pelo formato.
+- **Novo edit** (`lib/ui/new_edit_screen.dart`): arrastar (`desktop_drop`) ou
+  escolher o vídeo, nome, tipo, contexto e as opções (vêm das Configurações).
+  Por enquanto, ao iniciar volta pra Edições; a tela do pipeline ao vivo chega
+  na #140.
+- O motor conectado (versão e contrato) fica no fim das Configurações. Estilos
+  chega na #142.
 
 Diálogos do sistema (pasta, JSON) passam por `Pickers` (`lib/platform.dart`,
 `file_selector`): o JSON da credencial vai pro motor como conteúdo, não

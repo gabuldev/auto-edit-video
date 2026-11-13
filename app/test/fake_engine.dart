@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:auto_edit/platform.dart';
 import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -22,6 +23,48 @@ Map<String, Object?> agent(
   'login_command': login,
   'docs': 'https://example.com/$name',
   ...extra,
+};
+
+class FakePickers implements Pickers {
+  String? nextFolder;
+  String? nextJson;
+  String? nextVideo;
+  @override
+  Future<String?> folder({String? initial}) async => nextFolder;
+  @override
+  Future<String?> jsonFile({String? title}) async => nextJson;
+  @override
+  Future<String?> video({String? initial}) async => nextVideo;
+}
+
+Map<String, Object?> summary(
+  String id, {
+  String type = 'long',
+  String status = 'done',
+  String? stage = 'done',
+  String? name,
+  String? title,
+  Map<String, Object?>? published,
+}) => {
+  'id': id,
+  'name': name,
+  'video_name': '$id.mp4',
+  'video_path': '/inbox/$id.mp4',
+  'type': type,
+  'language': 'pt',
+  'current_stage': stage,
+  'status': status,
+  'title': title,
+  'has_thumbnail': false,
+  'stages': {
+    for (final s in ['extract', 'plan', 'review', 'evaluate', 'execute', 'overlay', 'caption', 'metadata', 'thumbnail'])
+      s: (type == 'long' && s == 'caption') || (type == 'short' && s == 'overlay')
+          ? 'skip'
+          : status == 'done'
+          ? 'complete'
+          : 'pending',
+  },
+  'published': published,
 };
 
 /// The engine's answers, as `auto-edit serve` gives them (trimmed), with
@@ -75,6 +118,24 @@ class FakeEngine {
     'has_client_secret': false,
     'client_id': null,
   };
+
+  List<Map<String, Object?>> library = [];
+
+  Map<String, Object?> recordings = {
+    'folder': '/home/me/Gravações',
+    'exists': true,
+    'truncated': false,
+    'recordings': <Object?>[],
+  };
+
+  /// The SSE history of `/api/videos/<id>/events` (lines of `data:`).
+  Map<String, List<Map<String, Object?>>> events = {};
+
+  /// The bodies sent to `POST /api/edit`.
+  List<Map<String, Object?>> get edits => [
+    for (final r in requests)
+      if (r.method == 'POST' && r.url.path == '/api/edit') (jsonDecode(r.body) as Map).cast<String, Object?>(),
+  ];
 
   /// What `POST /api/agents/<name>/test` answers.
   Map<String, Object?> Function(String name) testResult = (name) => {
@@ -157,12 +218,41 @@ class FakeEngine {
       case ('POST', '/api/publish/youtube/connect'):
         youtube = {...youtube, 'connecting': true};
         return youtube;
+      case ('GET', '/api/library'):
+        return {'videos': library};
+      case ('POST', '/api/publish/youtube/refresh'):
+        return {'checked': true, 'changed': false};
+      case ('GET', '/api/recordings'):
+        return recordings;
+      case ('GET', '/api/video-file'):
+        final p = req.url.queryParameters['path']!;
+        return {'name': p.split('/').last, 'path': p, 'size': 734003200, 'modified': '2026-11-10T10:00:00+00:00'};
+      case ('POST', '/api/edit'):
+        final id = ((body as Map)['video_path'] as String).split('/').last.split('.').first;
+        library = [...library, summary(id, type: body['type'] as String, status: 'running', stage: 'extract')];
+        return {'job_id': 'job-$id', 'video_id': id};
       case ('POST', '/api/open-url'):
         return {'opened': (body as Map)['url']};
       case ('PUT', '/api/agents/openrouter/key'):
         final i = agents.indexWhere((a) => a['name'] == 'openrouter');
         agents[i] = {...agents[i], 'installed': true, 'key_hint': 'sk-or-…abcd', 'key_source': 'settings'};
         return agents[i];
+    }
+    final v = RegExp(r'^/api/videos/([\w-]+)(/stop)?$').firstMatch(path);
+    if (v != null && (req.method == 'DELETE' || (req.method == 'POST' && v[2] != null))) {
+      final id = v[1]!;
+      if (req.method == 'DELETE') {
+        library = [...library.where((x) => x['id'] != id)];
+        return {'id': id, 'removed': <String>[]};
+      }
+      library = [
+        for (final x in library) x['id'] == id ? {...x, 'status': 'failed'} : x,
+      ];
+      return {
+        'id': id,
+        'stopped': <String>['job'],
+        'reset_stages': <String>[],
+      };
     }
     final m = RegExp(r'^/api/agents/(\w+)/(test|login|install)$').firstMatch(path);
     if (m != null && req.method == 'POST') {
@@ -185,6 +275,16 @@ class FakeEngine {
     final mock = MockClient((req) async {
       if (!up) throw http.ClientException('connection refused');
       requests.add(req);
+      final sse = RegExp(r'^/api/videos/([\w-]+)/events$').firstMatch(req.url.path);
+      if (sse != null) {
+        final history = events[sse[1]];
+        if (history == null) return http.Response(jsonEncode({'error': 'not_found'}), 404);
+        return http.Response(
+          history.map((e) => 'data: ${jsonEncode(e)}\n\n').join(),
+          200,
+          headers: {'content-type': 'text/event-stream; charset=utf-8'},
+        );
+      }
       final out = _handle(req);
       if (out == null) return http.Response(jsonEncode({'error': 'not_found'}), 404);
       return http.Response(jsonEncode(out), 200, headers: {'content-type': 'application/json; charset=utf-8'});
