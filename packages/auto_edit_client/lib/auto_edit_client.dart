@@ -15,6 +15,7 @@ export 'src/generated/api.dart';
 export 'src/generated/models.dart';
 export 'src/sse.dart' show parseSse;
 export 'src/transport.dart';
+export 'src/upload.dart';
 
 /// One engine: its [Transport] and the generated [AutoEditApi] over it.
 class AutoEditClient {

@@ -384,8 +384,12 @@ def render_method(gen: Gen, path: str, verb: str, op: dict, shared: list, comps:
     if body:
         if "$ref" in body:
             _, body = gen.deref(body["$ref"])
-        schema = (body.get("content", {}).get("application/json") or {}).get("schema")
-        body_type = gen.type_of(schema, pascal(op_id) + "Request")
+        content = body.get("content", {})
+        if "application/octet-stream" in content:
+            body_type = "raw"  # the bytes as they are (an upload's chunk)
+        else:
+            schema = (content.get("application/json") or {}).get("schema")
+            body_type = gen.type_of(schema, pascal(op_id) + "Request")
     body_required = bool(body and body.get("required"))
 
     status, ctype, schema, resp_name = success(gen, op)
@@ -406,7 +410,9 @@ def render_method(gen: Gen, path: str, verb: str, op: dict, shared: list, comps:
 
     positional = [f"{p.dtype.decl()} {p.ident}" for p in path_params]
     named = []
-    if body_type is not None:
+    if body_type == "raw":
+        positional.append("List<int> body")
+    elif body_type is not None:
         if body_required:
             positional.append(f"{body_type.decl()} body")
         else:
@@ -429,7 +435,9 @@ def render_method(gen: Gen, path: str, verb: str, op: dict, shared: list, comps:
         )
         q = f", query: {{{entries}}}"
     b = ""
-    if body_type is not None:
+    if body_type == "raw":
+        b = ", raw: body"
+    elif body_type is not None:
         if body_required:
             b = f", body: {body_type.to_json('body')}"
         else:

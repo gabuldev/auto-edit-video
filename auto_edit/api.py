@@ -83,6 +83,8 @@ Endpoints
     POST /api/lan/pairing                 código de uso único + link do QR (só no computador)
     DELETE /api/lan/devices/<id>          revoga um aparelho (só no computador)
     POST /api/pair                        {code, name} → {token} (o celular, pela rede)
+    POST /api/uploads                     {name, size} → upload com retomada pra pasta de entrada
+    GET|PUT|DELETE /api/uploads/<id>      onde parou / PUT ?offset=N com os bytes / desistir
 """
 from __future__ import annotations
 
@@ -92,7 +94,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
-from auto_edit import engine, lan
+from auto_edit import engine, lan, uploads
 from auto_edit import shorts as sh
 from auto_edit.publish import youtube as yt
 
@@ -870,6 +872,47 @@ def create_app(jobs: engine.JobManager | None = None):
         if job is None:
             return jsonify({"error": "no_active_job", "id": video_id}), 404
         return Response(_sse(job.subscribe()), mimetype="text/event-stream")
+
+    # ── Upload com retomada (auto_edit/uploads.py): o celular manda a gravação ──
+    def _upload_error(exc: uploads.UploadError):
+        body = {"error": str(exc)}
+        if exc.state is not None:
+            body["upload"] = exc.state
+        return jsonify(body), exc.status
+
+    @app.post("/api/uploads")
+    def upload_create():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(uploads.create(body.get("name") or "", body.get("size"))), 201
+        except uploads.UploadError as exc:
+            return _upload_error(exc)
+
+    @app.get("/api/uploads/<upload_id>")
+    def upload_get(upload_id: str):
+        try:
+            return jsonify(uploads.get(upload_id))
+        except uploads.UploadError as exc:
+            return _upload_error(exc)
+
+    @app.put("/api/uploads/<upload_id>")
+    def upload_chunk(upload_id: str):
+        try:
+            offset = int(request.args.get("offset", ""))
+        except ValueError:
+            offset = None
+        try:
+            return jsonify(uploads.append(upload_id, offset, request.stream, request.content_length))
+        except uploads.UploadError as exc:
+            return _upload_error(exc)
+
+    @app.delete("/api/uploads/<upload_id>")
+    def upload_cancel(upload_id: str):
+        try:
+            uploads.cancel(upload_id)
+        except uploads.UploadError as exc:
+            return _upload_error(exc)
+        return jsonify({"ok": True})
 
     # ── Rede local (auto_edit/lan.py): só no computador; o celular só pareia ──
     def _local_only():

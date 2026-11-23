@@ -262,6 +262,8 @@ GET|PUT /api/lan                  # rede local (celular): {enabled, port}, ender
 POST /api/lan/pairing             # código de uso único (5 min) + link autoedit://pair?… do QR — só no computador
 DELETE /api/lan/devices/<id>      # revoga um aparelho
 POST /api/pair                    # {code, name} → {token}: o celular, pela rede
+POST /api/uploads                 # {name, size}: upload com retomada (celular → <entrada>/Celular/)
+GET|PUT|DELETE /api/uploads/<id>  # onde parou / PUT ?offset=N com os bytes (409 se o offset não bate) / desistir
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/progress/done/error)
 GET  /api/videos/<id>/events      # SSE do job atual daquele vídeo
 ```
@@ -275,5 +277,11 @@ cliente Dart fixa (`EngineConfig(fingerprint:)`); o celular troca o código por
 um token em `POST /api/pair`. Só o hash do token fica em disco; revogar apaga.
 As rotas `/api/lan*` só respondem no próprio computador. Com o `zeroconf`, o
 motor se anuncia como `_autoedit._tcp.local.`. A 8760 (localhost) segue sem token.
+
+**Do celular** (`auto_edit/uploads.py`): a gravação sobe em pedaços pra uma
+pasta oculta da entrada e, no último byte, vai pra `<entrada>/Celular/`
+(pronta pro `/api/edit`); cada `PUT` diz o offset, então um pedaço reenviado
+nunca duplica. No Dart, `sendResumable` faz o loop e retoma sozinho. O
+download do resultado retoma com `Range` (`/api/videos/<id>/file/<kind>`).
 
 O `web_app.py`/`gui.py` legados são independentes e continuam funcionando.

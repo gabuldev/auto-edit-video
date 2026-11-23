@@ -124,6 +124,21 @@ void main() {
     await expectLater(phone.api.health(), throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401)));
   });
 
+  test('a video sent in chunks lands in the inbox, ready to edit', () async {
+    final data = List<int>.generate(50000, (i) => i % 256);
+    final up = await sendResumable(
+      client.api,
+      name: 'do celular.mp4',
+      size: data.length,
+      read: (offset, length) async => data.sublist(offset, offset + length),
+      chunkSize: 16384,
+    );
+    expect(up.done, isTrue);
+    expect(up.path, endsWith('/Celular/do celular.mp4'));
+    expect(File(up.path!).readAsBytesSync(), data);
+    expect((await client.api.videoFileInfo(path: up.path!)).name, 'do celular.mp4');
+  });
+
   test('an unknown video is an ApiException 404', () async {
     await expectLater(
       client.api.getVideo('nope'),

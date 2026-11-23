@@ -3,7 +3,7 @@ info:
   title: auto-edit engine API
   # Bump the minor for an addition (new route, new optional field), the major
   # for a change a client already in the hands of people would break on.
-  version: "1.5.0"
+  version: "1.6.0"
   description: |
     The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
     Every frontend (the desktop app, the phone as a remote, the cloud) talks to
@@ -44,6 +44,7 @@ tags:
   - name: settings
   - name: agents
   - name: lan
+  - name: uploads
 
 paths:
   /api/health:
@@ -1283,6 +1284,95 @@ paths:
                   name: {type: string}
         "403": {$ref: "#/components/responses/Forbidden"}
 
+  /api/uploads:
+    post:
+      tags: [uploads]
+      operationId: createUpload
+      summary: "Start a resumable upload of a video into the inbox (it ends up in <inbox>/Celular/)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, size]
+              properties:
+                name: {type: string, description: "The file's name (a video extension)"}
+                size: {type: integer, description: "Total bytes"}
+      responses:
+        "201":
+          description: "Started"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Upload"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+
+  /api/uploads/{upload_id}:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [uploads]
+      operationId: getUpload
+      summary: "How far an upload got (resume from `offset`)"
+      responses:
+        "200":
+          description: "The upload"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Upload"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [uploads]
+      operationId: uploadChunk
+      summary: "Append bytes at `offset`; the last chunk moves the file into the inbox (`done`, `path`)"
+      parameters:
+        - name: offset
+          in: query
+          required: true
+          description: "Where this chunk starts: must be the upload's current offset (else 409 with the right one)"
+          schema: {type: integer}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: "The upload after the chunk"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Upload"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: "Wrong offset (or already done): `upload` says where it is"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: {type: string}
+                  upload: {$ref: "#/components/schemas/Upload"}
+    delete:
+      tags: [uploads]
+      operationId: cancelUpload
+      summary: "Give up an upload (drops the partial file)"
+      responses:
+        "200":
+          description: "Dropped"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+
 components:
   parameters:
     VideoId:
@@ -1408,6 +1498,16 @@ components:
           schema: {$ref: "#/components/schemas/AgentStatus"}
 
   schemas:
+    Upload:
+      type: object
+      required: [id, name, size, offset, done, path]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        size: {type: integer}
+        offset: {type: integer, description: "Bytes the engine has"}
+        done: {type: boolean}
+        path: {type: [string, "null"], description: "Where the video is now (when done): hand it to /api/edit"}
     LanState:
       type: object
       required: [enabled, running, port, addresses, fingerprint, mdns, error, devices]
