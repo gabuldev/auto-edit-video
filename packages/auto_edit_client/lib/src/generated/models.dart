@@ -49,6 +49,46 @@ extension type const Timeline(String value) {
   static const values = [edited, original];
 }
 
+class Upload {
+  const Upload({
+    required this.id,
+    required this.name,
+    required this.size,
+    required this.offset,
+    required this.done,
+    this.path,
+  });
+
+  final String id;
+  final String name;
+  final int size;
+
+  /// Bytes the engine has
+  final int offset;
+  final bool done;
+
+  /// Where the video is now (when done): hand it to /api/edit
+  final String? path;
+
+  factory Upload.fromJson(Map<String, Object?> json) => Upload(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    size: (json['size'] as num).toInt(),
+    offset: (json['offset'] as num).toInt(),
+    done: json['done'] as bool,
+    path: json['path'] == null ? null : json['path'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'size': size,
+    'offset': offset,
+    'done': done,
+    'path': path,
+  };
+}
+
 class LanState {
   const LanState({
     required this.enabled,
@@ -2717,6 +2757,35 @@ class PairResponse {
     'device_id': deviceId,
     'name': name,
   };
+}
+
+class CreateUploadRequest {
+  const CreateUploadRequest({required this.name, required this.size});
+
+  /// The file's name (a video extension)
+  final String name;
+
+  /// Total bytes
+  final int size;
+
+  factory CreateUploadRequest.fromJson(Map<String, Object?> json) =>
+      CreateUploadRequest(
+        name: json['name'] as String,
+        size: (json['size'] as num).toInt(),
+      );
+
+  Map<String, Object?> toJson() => {'name': name, 'size': size};
+}
+
+class CancelUploadResponse {
+  const CancelUploadResponse({required this.ok});
+
+  final bool ok;
+
+  factory CancelUploadResponse.fromJson(Map<String, Object?> json) =>
+      CancelUploadResponse(ok: json['ok'] as bool);
+
+  Map<String, Object?> toJson() => {'ok': ok};
 }
 
 class BrowseDirsItem {

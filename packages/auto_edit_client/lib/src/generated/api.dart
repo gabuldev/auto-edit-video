@@ -7,14 +7,14 @@ import 'dart:typed_data';
 import '../transport.dart';
 import 'models.dart';
 
-/// Every operation of the engine API (contract 1.5.0).
+/// Every operation of the engine API (contract 1.6.0).
 class AutoEditApi {
   AutoEditApi(this.transport);
 
   final Transport transport;
 
   /// The `info.version` this client was generated from.
-  static const contractVersion = '1.5.0';
+  static const contractVersion = '1.6.0';
 
   /// The engine is up, and which contract it speaks
   ///
@@ -843,4 +843,57 @@ class AutoEditApi {
     (await transport.json('POST', '/api/pair', body: body.toJson()) as Map)
         .cast<String, Object?>(),
   );
+
+  /// Start a resumable upload of a video into the inbox (it ends up in <inbox>/Celular/)
+  ///
+  /// `POST /api/uploads`
+  Future<Upload> createUpload(CreateUploadRequest body) async =>
+      Upload.fromJson(
+        (await transport.json('POST', '/api/uploads', body: body.toJson())
+                as Map)
+            .cast<String, Object?>(),
+      );
+
+  /// How far an upload got (resume from `offset`)
+  ///
+  /// `GET /api/uploads/{upload_id}`
+  Future<Upload> getUpload(String uploadId) async => Upload.fromJson(
+    (await transport.json(
+              'GET',
+              '/api/uploads/${Uri.encodeComponent(uploadId)}',
+            )
+            as Map)
+        .cast<String, Object?>(),
+  );
+
+  /// Append bytes at `offset`; the last chunk moves the file into the inbox (`done`, `path`)
+  ///
+  /// `PUT /api/uploads/{upload_id}`
+  Future<Upload> uploadChunk(
+    String uploadId,
+    List<int> body, {
+    required int offset,
+  }) async => Upload.fromJson(
+    (await transport.json(
+              'PUT',
+              '/api/uploads/${Uri.encodeComponent(uploadId)}',
+              query: {'offset': '$offset'},
+              raw: body,
+            )
+            as Map)
+        .cast<String, Object?>(),
+  );
+
+  /// Give up an upload (drops the partial file)
+  ///
+  /// `DELETE /api/uploads/{upload_id}`
+  Future<CancelUploadResponse> cancelUpload(String uploadId) async =>
+      CancelUploadResponse.fromJson(
+        (await transport.json(
+                  'DELETE',
+                  '/api/uploads/${Uri.encodeComponent(uploadId)}',
+                )
+                as Map)
+            .cast<String, Object?>(),
+      );
 }

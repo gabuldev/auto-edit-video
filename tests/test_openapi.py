@@ -326,6 +326,20 @@ def test_lan_matches_the_schema(client, monkeypatch):
     _check(client, "put", "/api/lan", "/api/lan", body={"enabled": False})
 
 
+def test_uploads_match_the_schema(client):
+    up = client.post("/api/uploads", json={"name": "a.mp4", "size": 4})
+    assert up.status_code == 201
+    assert validate(up.get_json(), _response_schema("/api/uploads", "post", 201)) == []
+    uid = up.get_json()["id"]
+    _check(client, "get", f"/api/uploads/{uid}", "/api/uploads/{upload_id}")
+    wrong = client.put(f"/api/uploads/{uid}?offset=2", data=b"ab", content_type="application/octet-stream")
+    assert validate(wrong.get_json(), _response_schema("/api/uploads/{upload_id}", "put", 409)) == []
+    done = client.put(f"/api/uploads/{uid}?offset=0", data=b"abcd", content_type="application/octet-stream")
+    assert validate(done.get_json(), _response_schema("/api/uploads/{upload_id}", "put", 200)) == []
+    _check(client, "post", "/api/uploads", "/api/uploads", 400, body={"name": "a.txt", "size": 1})
+    _check(client, "get", "/api/uploads/nope", "/api/uploads/{upload_id}", 404)
+
+
 def test_job_events_match_the_schema():
     jobs = engine.JobManager()
 

@@ -132,8 +132,9 @@ class Transport {
   }
 
   /// Sends a request and decodes the JSON answer (null for an empty body).
-  Future<Object?> json(String method, String path, {Map<String, String>? query, Object? body}) async {
-    final res = await _send(method, path, query: query, body: body);
+  /// [raw] goes as `application/octet-stream` instead of a JSON [body].
+  Future<Object?> json(String method, String path, {Map<String, String>? query, Object? body, List<int>? raw}) async {
+    final res = await _send(method, path, query: query, body: body, raw: raw);
     final text = utf8.decode(res.bodyBytes);
     return text.isEmpty ? null : jsonDecode(text);
   }
@@ -142,9 +143,18 @@ class Transport {
   Future<Uint8List> bytes(String method, String path, {Map<String, String>? query, Object? body}) async =>
       (await _send(method, path, query: query, body: body)).bodyBytes;
 
-  Future<http.Response> _send(String method, String path, {Map<String, String>? query, Object? body}) async {
+  Future<http.Response> _send(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Object? body,
+    List<int>? raw,
+  }) async {
     final req = http.Request(method, uri(path, query: query))..headers.addAll(headers);
-    if (body != null) {
+    if (raw != null) {
+      req.headers['Content-Type'] = 'application/octet-stream';
+      req.bodyBytes = raw;
+    } else if (body != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
     }
