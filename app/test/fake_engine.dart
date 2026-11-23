@@ -136,6 +136,18 @@ class FakeEngine {
 
   List<Map<String, Object?>> library = [];
 
+  /// `GET /api/lan` (the network access).
+  Map<String, Object?> lan = {
+    'enabled': false,
+    'running': false,
+    'port': 8761,
+    'addresses': ['192.168.0.10'],
+    'fingerprint': null,
+    'mdns': true,
+    'error': null,
+    'devices': <Object?>[],
+  };
+
   Map<String, Object?> recordings = {
     'folder': '/home/me/Gravações',
     'exists': true,
@@ -274,12 +286,38 @@ class FakeEngine {
         return {'job_id': 'job-$id', 'video_id': id};
       case ('POST', '/api/open-url'):
         return {'opened': (body as Map)['url']};
+      case ('GET', '/api/lan'):
+        return lan;
+      case ('PUT', '/api/lan'):
+        final on = (body as Map)['enabled'] as bool;
+        lan = {...lan, 'enabled': on, 'running': on, 'fingerprint': on ? 'ab12cd34ef56789000' * 3 : null};
+        return lan;
+      case ('POST', '/api/lan/pairing'):
+        return {
+          'code': 'c0d1g0',
+          'expires_at': DateTime.now().add(const Duration(minutes: 5)).toUtc().toIso8601String(),
+          'host': '192.168.0.10',
+          'port': 8761,
+          'fingerprint': lan['fingerprint'],
+          'url': 'autoedit://pair?host=192.168.0.10&port=8761&code=c0d1g0&fp=${lan['fingerprint']}',
+        };
       case ('PUT', '/api/agents/openrouter/key'):
         final i = agents.indexWhere((a) => a['name'] == 'openrouter');
         agents[i] = {...agents[i], 'installed': true, 'key_hint': 'sk-or-…abcd', 'key_source': 'settings'};
         return agents[i];
     }
     if (req.method == 'GET' && path == '/api/insights/trend') return trend;
+    final dev = RegExp(r'^/api/lan/devices/(\w+)$').firstMatch(path);
+    if (dev != null && req.method == 'DELETE') {
+      lan = {
+        ...lan,
+        'devices': [
+          for (final d in lan['devices']! as List)
+            if ((d as Map)['id'] != dev[1]) d,
+        ],
+      };
+      return {'ok': true};
+    }
     final fx = RegExp(r'^/api/videos/([\w-]+)/(effects|effects/\d+|plan/cut|retention)$').firstMatch(path);
     if (fx != null) {
       final id = fx[1]!;

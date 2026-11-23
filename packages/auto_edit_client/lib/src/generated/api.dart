@@ -7,14 +7,14 @@ import 'dart:typed_data';
 import '../transport.dart';
 import 'models.dart';
 
-/// Every operation of the engine API (contract 1.4.0).
+/// Every operation of the engine API (contract 1.5.0).
 class AutoEditApi {
   AutoEditApi(this.transport);
 
   final Transport transport;
 
   /// The `info.version` this client was generated from.
-  static const contractVersion = '1.4.0';
+  static const contractVersion = '1.5.0';
 
   /// The engine is up, and which contract it speaks
   ///
@@ -797,6 +797,50 @@ class AutoEditApi {
   /// `POST /api/open-url`
   Future<Opened> openUrl(OpenUrlRequest body) async => Opened.fromJson(
     (await transport.json('POST', '/api/open-url', body: body.toJson()) as Map)
+        .cast<String, Object?>(),
+  );
+
+  /// Network access: on? the address, the certificate's fingerprint, paired devices (this machine only)
+  ///
+  /// `GET /api/lan`
+  Future<LanState> getLan() async => LanState.fromJson(
+    (await transport.json('GET', '/api/lan') as Map).cast<String, Object?>(),
+  );
+
+  /// Turn the network access on/off or change its port (this machine only)
+  ///
+  /// `PUT /api/lan`
+  Future<LanState> setLan(SetLanRequest body) async => LanState.fromJson(
+    (await transport.json('PUT', '/api/lan', body: body.toJson()) as Map)
+        .cast<String, Object?>(),
+  );
+
+  /// A one-time code (5 min) and the link the QR code shows (this machine only)
+  ///
+  /// `POST /api/lan/pairing`
+  Future<Pairing> startPairing() async => Pairing.fromJson(
+    (await transport.json('POST', '/api/lan/pairing') as Map)
+        .cast<String, Object?>(),
+  );
+
+  /// Revoke a paired device: its token stops working (this machine only)
+  ///
+  /// `DELETE /api/lan/devices/{device_id}`
+  Future<RevokeDeviceResponse> revokeDevice(String deviceId) async =>
+      RevokeDeviceResponse.fromJson(
+        (await transport.json(
+                  'DELETE',
+                  '/api/lan/devices/${Uri.encodeComponent(deviceId)}',
+                )
+                as Map)
+            .cast<String, Object?>(),
+      );
+
+  /// A device trades the QR's code for its own token (the one route the network listener serves without a token)
+  ///
+  /// `POST /api/pair`
+  Future<PairResponse> pair(PairRequest body) async => PairResponse.fromJson(
+    (await transport.json('POST', '/api/pair', body: body.toJson()) as Map)
         .cast<String, Object?>(),
   );
 }

@@ -9,6 +9,7 @@ import '../engine_card.dart';
 import '../shell.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'lan_card.dart';
 import 'settings_controller.dart';
 
 const _modelHint = {
@@ -76,11 +77,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _AgentsCard(c: c),
           if (c.agentNamed('ollama') != null) _OllamaCard(c: c),
           if (c.loaded) _DefaultsCard(c: c),
+          // Only the engine's own machine manages the network access.
+          if (_isLocal(widget.client)) LanCard(client: widget.client),
           if (widget.status != null) EngineCard(status: widget.status!, client: widget.client),
         ],
       ),
     );
   }
+}
+
+bool _isLocal(AutoEditClient client) {
+  final host = client.config.baseUrl.host;
+  return host == '127.0.0.1' || host == 'localhost' || host == '::1';
 }
 
 class _SaveStatus extends StatelessWidget {

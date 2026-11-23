@@ -79,6 +79,10 @@ Endpoints
     POST /api/open-url                        {url}  só links do YouTube
     GET  /api/jobs/<job_id>/events        (SSE)
     GET  /api/videos/<id>/events          (SSE, that video's current job)
+    GET|PUT /api/lan                      rede local: {enabled, port}, aparelhos (só no computador)
+    POST /api/lan/pairing                 código de uso único + link do QR (só no computador)
+    DELETE /api/lan/devices/<id>          revoga um aparelho (só no computador)
+    POST /api/pair                        {code, name} → {token} (o celular, pela rede)
 """
 from __future__ import annotations
 
@@ -88,7 +92,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
-from auto_edit import engine
+from auto_edit import engine, lan
 from auto_edit import shorts as sh
 from auto_edit.publish import youtube as yt
 
@@ -132,7 +136,7 @@ def create_app(jobs: engine.JobManager | None = None):
     @app.after_request
     def _cors(resp):
         resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         return resp
 
@@ -867,6 +871,53 @@ def create_app(jobs: engine.JobManager | None = None):
             return jsonify({"error": "no_active_job", "id": video_id}), 404
         return Response(_sse(job.subscribe()), mimetype="text/event-stream")
 
+    # ── Rede local (auto_edit/lan.py): só no computador; o celular só pareia ──
+    def _local_only():
+        if request.environ.get(lan.ENV_LAN) or request.remote_addr not in ("127.0.0.1", "::1"):
+            return jsonify({"error": "só no computador do motor"}), 403
+        return None
+
+    @app.get("/api/lan")
+    def lan_state():
+        return _local_only() or jsonify(lan.manager.state())
+
+    @app.put("/api/lan")
+    def lan_configure():
+        if (denied := _local_only()):
+            return denied
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(lan.manager.configure(enabled=body.get("enabled"), port=body.get("port")))
+        except lan.LanError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/lan/pairing")
+    def lan_pairing():
+        if (denied := _local_only()):
+            return denied
+        try:
+            return jsonify(lan.manager.pairing())
+        except lan.LanError as exc:
+            return jsonify({"error": str(exc)}), 409
+
+    @app.delete("/api/lan/devices/<device_id>")
+    def lan_revoke(device_id: str):
+        if (denied := _local_only()):
+            return denied
+        if not lan.manager.revoke(device_id):
+            return jsonify({"error": "not_found", "id": device_id}), 404
+        return jsonify({"ok": True})
+
+    @app.post("/api/pair")
+    def lan_pair():
+        """O celular troca o código do QR por um token só dele."""
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(lan.manager.redeem(body.get("code"), body.get("name") or ""))
+        except lan.LanError as exc:
+            return jsonify({"error": str(exc)}), 403
+
+    lan.manager.bind(app)
     return app
 
 
@@ -874,4 +925,5 @@ def serve(host: str = "127.0.0.1", port: int = 8760) -> None:
     """Start the API server (blocking). threaded=True so SSE streams don't block."""
     engine.ensure_default_folders()  # workspace/input and workspace/output, ready on first launch
     app = create_app()
+    lan.manager.start_if_enabled()  # the LAN listener, when turned on (auto_edit/lan.py)
     app.run(host=host, port=port, threaded=True)

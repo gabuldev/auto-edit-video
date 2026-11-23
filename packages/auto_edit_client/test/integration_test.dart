@@ -89,6 +89,41 @@ void main() {
     expect(await api.getFile('vid', ArtifactKind.video), hasLength(64));
   });
 
+  test('a paired device reaches the network listener; anyone else gets 401', () async {
+    final port = await freePort();
+    final state = await client.api.setLan(SetLanRequest(enabled: true, port: port));
+    expect(state.running, isTrue, reason: '${state.error}\n$log');
+    addTearDown(() => client.api.setLan(const SetLanRequest(enabled: false)));
+
+    final pairing = await client.api.startPairing();
+    final link = EngineConfig.pairingLink(pairing.url)!;
+    expect(link.code, pairing.code);
+    expect(link.config.fingerprint, pairing.fingerprint);
+    expect(link.config.baseUrl.scheme, 'https');
+
+    // The QR's address may be another interface: talk over loopback, same listener.
+    final remote = EngineConfig(baseUrl: Uri.parse('https://127.0.0.1:$port'), fingerprint: pairing.fingerprint);
+    final stranger = AutoEditClient(remote);
+    addTearDown(stranger.close);
+    await expectLater(stranger.api.health(), throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401)));
+
+    // A certificate that isn't the pinned one: the TLS handshake fails.
+    final wrongPin = AutoEditClient(EngineConfig(baseUrl: remote.baseUrl, fingerprint: 'ab' * 32));
+    addTearDown(wrongPin.close);
+    await expectLater(wrongPin.api.health(), throwsA(isNot(isA<ApiException>())));
+
+    final paired = await stranger.api.pair(PairRequest(code: link.code, name: 'Teste'));
+    final phone = AutoEditClient(remote.withToken(paired.token));
+    addTearDown(phone.close);
+    expect((await phone.api.health()).ok, isTrue);
+    expect((await phone.api.listLibrary()).videos, isNotEmpty);
+
+    final devices = (await client.api.getLan()).devices;
+    expect(devices.map((d) => d.name), ['Teste']);
+    await client.api.revokeDevice(paired.deviceId);
+    await expectLater(phone.api.health(), throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401)));
+  });
+
   test('an unknown video is an ApiException 404', () async {
     await expectLater(
       client.api.getVideo('nope'),

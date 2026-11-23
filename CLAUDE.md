@@ -258,8 +258,22 @@ POST /api/styles/palette          # {image?} → {colors, suggested} (sem imagem
 POST /api/styles/<id>/export      # grava em Downloads e mostra no Finder → {path}
 POST /api/styles/import           # {file} → estilo salvo (nunca sobrescreve)
 PUT|DELETE|GET /api/brand/logo    # {data: "data:image/png;base64,…"}
+GET|PUT /api/lan                  # rede local (celular): {enabled, port}, endereço, fingerprint, aparelhos — só no computador
+POST /api/lan/pairing             # código de uso único (5 min) + link autoedit://pair?… do QR — só no computador
+DELETE /api/lan/devices/<id>      # revoga um aparelho
+POST /api/pair                    # {code, name} → {token}: o celular, pela rede
 GET  /api/jobs/<job_id>/events    # progresso ao vivo (SSE: log/stage/progress/done/error)
 GET  /api/videos/<id>/events      # SSE do job atual daquele vídeo
 ```
+
+**Rede local** (`auto_edit/lan.py`, desligada por padrão; app → Configurações →
+Celular): um segundo listener em todas as interfaces (porta 8761) serve a
+mesma API por HTTPS com certificado autoassinado (`~/.auto-edit/lan/`), e toda
+rota pede `Authorization: Bearer <token do aparelho>` (401 sem). O QR leva
+endereço, porta, um código de uso único e o SHA-256 do certificado, que o
+cliente Dart fixa (`EngineConfig(fingerprint:)`); o celular troca o código por
+um token em `POST /api/pair`. Só o hash do token fica em disco; revogar apaga.
+As rotas `/api/lan*` só respondem no próprio computador. Com o `zeroconf`, o
+motor se anuncia como `_autoedit._tcp.local.`. A 8760 (localhost) segue sem token.
 
 O `web_app.py`/`gui.py` legados são independentes e continuam funcionando.

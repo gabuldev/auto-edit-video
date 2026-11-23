@@ -49,6 +49,130 @@ extension type const Timeline(String value) {
   static const values = [edited, original];
 }
 
+class LanState {
+  const LanState({
+    required this.enabled,
+    required this.running,
+    required this.port,
+    required this.addresses,
+    this.fingerprint,
+    required this.mdns,
+    this.error,
+    required this.devices,
+  });
+
+  final bool enabled;
+
+  /// Listening now (false with enabled: see error)
+  final bool running;
+  final int port;
+
+  /// This machine's IPv4 addresses, the routed one first
+  final List<String> addresses;
+
+  /// SHA-256 of the certificate (hex), null while off
+  final String? fingerprint;
+
+  /// Announced as _autoedit._tcp.local.
+  final bool mdns;
+  final String? error;
+  final List<LanDevice> devices;
+
+  factory LanState.fromJson(Map<String, Object?> json) => LanState(
+    enabled: json['enabled'] as bool,
+    running: json['running'] as bool,
+    port: (json['port'] as num).toInt(),
+    addresses: (json['addresses'] as List).map((e) => e as String).toList(),
+    fingerprint: json['fingerprint'] == null
+        ? null
+        : json['fingerprint'] as String,
+    mdns: json['mdns'] as bool,
+    error: json['error'] == null ? null : json['error'] as String,
+    devices: (json['devices'] as List)
+        .map((e) => LanDevice.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
+  );
+
+  Map<String, Object?> toJson() => {
+    'enabled': enabled,
+    'running': running,
+    'port': port,
+    'addresses': addresses,
+    'fingerprint': fingerprint,
+    'mdns': mdns,
+    'error': error,
+    'devices': devices.map((e) => e.toJson()).toList(),
+  };
+}
+
+class LanDevice {
+  const LanDevice({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    this.lastSeen,
+  });
+
+  final String id;
+  final String name;
+  final String createdAt;
+  final String? lastSeen;
+
+  factory LanDevice.fromJson(Map<String, Object?> json) => LanDevice(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    createdAt: json['created_at'] as String,
+    lastSeen: json['last_seen'] == null ? null : json['last_seen'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'created_at': createdAt,
+    'last_seen': lastSeen,
+  };
+}
+
+class Pairing {
+  const Pairing({
+    required this.code,
+    required this.expiresAt,
+    this.host,
+    required this.port,
+    required this.fingerprint,
+    required this.url,
+  });
+
+  final String code;
+  final String expiresAt;
+
+  /// The address the QR points at (null: no network found)
+  final String? host;
+  final int port;
+  final String fingerprint;
+
+  /// autoedit://pair?host=…&port=…&code=…&fp=…&name=… — what the QR code holds
+  final String url;
+
+  factory Pairing.fromJson(Map<String, Object?> json) => Pairing(
+    code: json['code'] as String,
+    expiresAt: json['expires_at'] as String,
+    host: json['host'] == null ? null : json['host'] as String,
+    port: (json['port'] as num).toInt(),
+    fingerprint: json['fingerprint'] as String,
+    url: json['url'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    'code': code,
+    'expires_at': expiresAt,
+    'host': host,
+    'port': port,
+    'fingerprint': fingerprint,
+    'url': url,
+  };
+}
+
 class ApiError {
   const ApiError({required this.error});
 
@@ -2521,6 +2645,78 @@ class OpenUrlRequest {
       OpenUrlRequest(url: json['url'] as String);
 
   Map<String, Object?> toJson() => {'url': url};
+}
+
+class SetLanRequest {
+  const SetLanRequest({this.enabled, this.port});
+
+  final bool? enabled;
+  final int? port;
+
+  factory SetLanRequest.fromJson(Map<String, Object?> json) => SetLanRequest(
+    enabled: json['enabled'] == null ? null : json['enabled'] as bool,
+    port: json['port'] == null ? null : (json['port'] as num).toInt(),
+  );
+
+  Map<String, Object?> toJson() => {
+    if (enabled != null) 'enabled': enabled!,
+    if (port != null) 'port': port!,
+  };
+}
+
+class RevokeDeviceResponse {
+  const RevokeDeviceResponse({required this.ok});
+
+  final bool ok;
+
+  factory RevokeDeviceResponse.fromJson(Map<String, Object?> json) =>
+      RevokeDeviceResponse(ok: json['ok'] as bool);
+
+  Map<String, Object?> toJson() => {'ok': ok};
+}
+
+class PairRequest {
+  const PairRequest({required this.code, this.name});
+
+  final String code;
+
+  /// How the device shows in the list (e.g. the phone's model)
+  final String? name;
+
+  factory PairRequest.fromJson(Map<String, Object?> json) => PairRequest(
+    code: json['code'] as String,
+    name: json['name'] == null ? null : json['name'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    'code': code,
+    if (name != null) 'name': name!,
+  };
+}
+
+class PairResponse {
+  const PairResponse({
+    required this.token,
+    required this.deviceId,
+    required this.name,
+  });
+
+  /// Send as `Authorization: Bearer`; shown only now
+  final String token;
+  final String deviceId;
+  final String name;
+
+  factory PairResponse.fromJson(Map<String, Object?> json) => PairResponse(
+    token: json['token'] as String,
+    deviceId: json['device_id'] as String,
+    name: json['name'] as String,
+  );
+
+  Map<String, Object?> toJson() => {
+    'token': token,
+    'device_id': deviceId,
+    'name': name,
+  };
 }
 
 class BrowseDirsItem {

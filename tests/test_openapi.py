@@ -302,6 +302,30 @@ def test_errors_match_the_schema(client):
     _check(client, "get", "/api/jobs/nope/events", "/api/jobs/{job_id}/events", 404)
 
 
+def test_lan_matches_the_schema(client, monkeypatch):
+    """Network access: state, pairing, the phone's exchange, revoking. The
+    listener itself isn't started here (tests/test_lan.py does that)."""
+    from auto_edit import lan
+
+    monkeypatch.setattr(lan.manager, "start", lambda: None)
+    _check(client, "get", "/api/lan", "/api/lan")
+    _check(client, "post", "/api/lan/pairing", "/api/lan/pairing", 409)  # off: nothing to pair with
+    _check(client, "put", "/api/lan", "/api/lan", body={"enabled": True, "port": 8799})
+    _check(client, "put", "/api/lan", "/api/lan", 400, body={"port": 80})
+    pairing = client.post("/api/lan/pairing").get_json()
+    _check(client, "post", "/api/lan/pairing", "/api/lan/pairing")
+    pairing = client.post("/api/lan/pairing").get_json()  # the newest code is the one that counts
+    _check(client, "post", "/api/pair", "/api/pair", 403, body={"code": "errado"})
+    _check(client, "post", "/api/pair", "/api/pair", body={"code": pairing["code"], "name": "Pixel"})
+    _check(client, "post", "/api/pair", "/api/pair", 403, body={"code": pairing["code"]})  # one use
+    state = client.get("/api/lan").get_json()
+    _check(client, "get", "/api/lan", "/api/lan")
+    device = state["devices"][0]["id"]
+    _check(client, "delete", f"/api/lan/devices/{device}", "/api/lan/devices/{device_id}")
+    _check(client, "delete", f"/api/lan/devices/{device}", "/api/lan/devices/{device_id}", 404)
+    _check(client, "put", "/api/lan", "/api/lan", body={"enabled": False})
+
+
 def test_job_events_match_the_schema():
     jobs = engine.JobManager()
 
