@@ -1311,6 +1311,11 @@ def serve(
     engine.ensure_default_folders()  # workspace/input and workspace/output, ready on first launch
     console.print(f"[cyan]auto-edit API[/cyan] → http://{host}:{port}  [dim](Ctrl+C to stop)[/dim]")
     console.print(f"[dim]Library root:[/dim] {(Path.cwd() / 'workspace')}")
+    from auto_edit import lan
+
+    lan.manager.start_if_enabled()  # rede local, se ligada (auto_edit/lan.py)
+    if lan.manager.state()["running"]:
+        console.print(f"[cyan]Rede local[/cyan] → https://0.0.0.0:{lan.manager.state()['port']} (token por aparelho)")
     app_.run(host=host, port=port, threaded=True)
 
 

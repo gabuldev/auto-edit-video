@@ -1,11 +1,13 @@
 import 'dart:convert';
 
+import 'package:auto_edit/ui/settings/lan_card.dart';
 import 'package:auto_edit/ui/settings/settings_screen.dart';
 import 'package:auto_edit/ui/theme.dart';
 import 'package:auto_edit/ui/welcome.dart';
 import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'fake_engine.dart';
 
@@ -244,5 +246,95 @@ void main() {
       e.whisper = {...e.whisper, 'ready': true};
       expect(missing(), isNull);
     });
+  });
+
+  group('Celular (rede local)', () {
+    late FakeEngine engine;
+
+    Future<void> open(WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(
+          SingleChildScrollView(
+            child: LanCard(client: engine.client(), every: const Duration(milliseconds: 50)),
+          ),
+        ),
+      );
+      await settle(tester);
+    }
+
+    setUp(() => engine = FakeEngine());
+
+    testWidgets('off by default; turning it on shows where it listens', (tester) async {
+      await open(tester);
+      expect(find.text('Parear aparelho'), findsNothing);
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+      expect(engine.calls, contains('PUT /api/lan'));
+      expect(find.textContaining('192.168.0.10:8761'), findsOneWidget);
+      expect(find.text('Parear aparelho'), findsOneWidget);
+    });
+
+    testWidgets('pairing shows the QR until the phone shows up in the list', (tester) async {
+      engine.lan = {...engine.lan, 'enabled': true, 'running': true, 'fingerprint': 'ab12cd34ef567890' * 4};
+      await open(tester);
+      await tester.tap(find.text('Parear aparelho'));
+      await settle(tester);
+      expect(find.byType(QrImageView), findsOneWidget);
+      expect(find.textContaining('AB12 CD34 EF56 7890', findRichText: true), findsOneWidget);
+
+      // The phone pairs: the next refresh sees it and the QR goes away.
+      engine.lan = {
+        ...engine.lan,
+        'devices': [
+          {'id': 'd1', 'name': 'Pixel 8', 'created_at': '2026-11-23T10:00:00+00:00', 'last_seen': null},
+        ],
+      };
+      await settle(tester);
+      expect(find.byType(QrImageView), findsNothing);
+      expect(find.text('Pixel 8'), findsOneWidget);
+      expect(find.textContaining('ainda não usou'), findsOneWidget);
+    });
+
+    testWidgets('revoking asks twice', (tester) async {
+      engine.lan = {
+        ...engine.lan,
+        'enabled': true,
+        'running': true,
+        'fingerprint': 'ab' * 32,
+        'devices': [
+          {
+            'id': 'd1',
+            'name': 'Pixel 8',
+            'created_at': '2026-11-23T10:00:00+00:00',
+            'last_seen': '2026-11-23T11:00:00+00:00',
+          },
+        ],
+      };
+      await open(tester);
+      await tester.tap(find.text('Revogar'));
+      await settle(tester);
+      expect(engine.calls, isNot(contains('DELETE /api/lan/devices/d1')));
+      await tester.tap(find.text('Revogar mesmo'));
+      await settle(tester);
+      expect(engine.calls, contains('DELETE /api/lan/devices/d1'));
+      expect(find.text('Pixel 8'), findsNothing);
+    });
+
+    testWidgets('a port in use is said, with no pairing', (tester) async {
+      engine.lan = {
+        ...engine.lan,
+        'enabled': true,
+        'running': false,
+        'error': 'a porta 8761 já está em uso: escolha outra',
+      };
+      await open(tester);
+      expect(find.textContaining('já está em uso'), findsOneWidget);
+      expect(find.text('Parear aparelho'), findsNothing);
+    });
+  });
+
+  test('shortFingerprint groups the start of the hash', () {
+    expect(shortFingerprint('ab12cd34ef5678900000'), 'AB12 CD34 EF56 7890');
+    expect(shortFingerprint('AB:12:CD'), 'AB12 CD');
   });
 }

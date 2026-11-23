@@ -3,7 +3,7 @@ info:
   title: auto-edit engine API
   # Bump the minor for an addition (new route, new optional field), the major
   # for a change a client already in the hands of people would break on.
-  version: "1.4.0"
+  version: "1.5.0"
   description: |
     The local API of the auto-edit engine (`auto-edit serve`, `auto_edit/api.py`).
     Every frontend (the desktop app, the phone as a remote, the cloud) talks to
@@ -16,8 +16,19 @@ info:
 
     `tests/test_openapi.py` checks this file against the Flask routes and the
     shape of the real answers, so it can't drift from the code.
+
+    Two listeners serve this same API. `127.0.0.1:8760` is for the machine
+    itself: no token. When the network access is on (`/api/lan`), a second
+    one on all interfaces (default port 8761) speaks HTTPS with a self-signed
+    certificate, which the client pins by its SHA-256 fingerprint. Every
+    request there needs `Authorization: Bearer <device token>` (401 without
+    one), except `POST /api/pair`; the `/api/lan` routes answer 403 there.
 servers:
   - url: http://127.0.0.1:8760
+  - url: https://{host}:8761
+    description: "The network listener (a paired device's token)"
+    variables:
+      host: {default: "192.168.0.10"}
 tags:
   - name: engine
   - name: library
@@ -32,6 +43,7 @@ tags:
   - name: styles
   - name: settings
   - name: agents
+  - name: lan
 
 paths:
   /api/health:
@@ -1179,6 +1191,98 @@ paths:
         "200": {$ref: "#/components/responses/Opened"}
         "400": {$ref: "#/components/responses/BadRequest"}
 
+  /api/lan:
+    get:
+      tags: [lan]
+      operationId: getLan
+      summary: "Network access: on? the address, the certificate's fingerprint, paired devices (this machine only)"
+      responses:
+        "200": {$ref: "#/components/responses/LanState"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+    put:
+      tags: [lan]
+      operationId: setLan
+      summary: "Turn the network access on/off or change its port (this machine only)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: {type: boolean}
+                port: {type: integer, minimum: 1024, maximum: 65535}
+      responses:
+        "200": {$ref: "#/components/responses/LanState"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
+  /api/lan/pairing:
+    post:
+      tags: [lan]
+      operationId: startPairing
+      summary: "A one-time code (5 min) and the link the QR code shows (this machine only)"
+      responses:
+        "200":
+          description: "The pairing"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Pairing"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+
+  /api/lan/devices/{device_id}:
+    delete:
+      tags: [lan]
+      operationId: revokeDevice
+      summary: "Revoke a paired device: its token stops working (this machine only)"
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: "Revoked"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {type: boolean}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/pair:
+    post:
+      tags: [lan]
+      operationId: pair
+      summary: "A device trades the QR's code for its own token (the one route the network listener serves without a token)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string}
+                name: {type: string, description: "How the device shows in the list (e.g. the phone's model)"}
+      responses:
+        "200":
+          description: "Paired"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, device_id, name]
+                properties:
+                  token: {type: string, description: "Send as `Authorization: Bearer`; shown only now"}
+                  device_id: {type: string}
+                  name: {type: string}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
 components:
   parameters:
     VideoId:
@@ -1199,6 +1303,16 @@ components:
       schema: {$ref: "#/components/schemas/ArtifactKind"}
 
   responses:
+    Forbidden:
+      description: "Not allowed here (a wrong pairing code, or a route only for the engine's machine)"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    LanState:
+      description: "The network access"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LanState"}
     NotFound:
       description: "Not found"
       content:
@@ -1294,6 +1408,38 @@ components:
           schema: {$ref: "#/components/schemas/AgentStatus"}
 
   schemas:
+    LanState:
+      type: object
+      required: [enabled, running, port, addresses, fingerprint, mdns, error, devices]
+      properties:
+        enabled: {type: boolean}
+        running: {type: boolean, description: "Listening now (false with enabled: see error)"}
+        port: {type: integer}
+        addresses: {type: array, items: {type: string}, description: "This machine's IPv4 addresses, the routed one first"}
+        fingerprint: {type: [string, "null"], description: "SHA-256 of the certificate (hex), null while off"}
+        mdns: {type: boolean, description: "Announced as _autoedit._tcp.local."}
+        error: {type: [string, "null"]}
+        devices:
+          type: array
+          items: {$ref: "#/components/schemas/LanDevice"}
+    LanDevice:
+      type: object
+      required: [id, name, created_at, last_seen]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        created_at: {type: string}
+        last_seen: {type: [string, "null"]}
+    Pairing:
+      type: object
+      required: [code, expires_at, host, port, fingerprint, url]
+      properties:
+        code: {type: string}
+        expires_at: {type: string}
+        host: {type: [string, "null"], description: "The address the QR points at (null: no network found)"}
+        port: {type: integer}
+        fingerprint: {type: string}
+        url: {type: string, description: "autoedit://pair?host=…&port=…&code=…&fp=…&name=… — what the QR code holds"}
     Error:
       type: object
       required: [error]

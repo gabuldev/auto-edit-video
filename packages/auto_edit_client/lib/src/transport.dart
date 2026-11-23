@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'pinning/pinned_stub.dart' if (dart.library.io) 'pinning/pinned_io.dart';
 import 'sse.dart';
 
 /// Where the engine is and how to talk to it.
@@ -11,8 +12,33 @@ import 'sse.dart';
 /// The same client drives the engine on this machine (`127.0.0.1:8760`, what
 /// the desktop app starts), the home computer from the phone (its LAN or VPN
 /// address) or the cloud. [token] goes as `Authorization: Bearer` when set.
+///
+/// The home computer's network listener speaks HTTPS with a self-signed
+/// certificate: [fingerprint] (its SHA-256, from the pairing QR code) is the
+/// only certificate the client then accepts.
 class EngineConfig {
-  const EngineConfig({required this.baseUrl, this.token});
+  const EngineConfig({required this.baseUrl, this.token, this.fingerprint});
+
+  /// What the pairing QR code holds (`autoedit://pair?host=…&port=…&code=…&fp=…`):
+  /// the engine to pair with, before there's a token. Null if it isn't one.
+  static PairingLink? pairingLink(String text) {
+    final uri = Uri.tryParse(text.trim());
+    if (uri == null || uri.scheme != 'autoedit' || uri.host != 'pair') return null;
+    final q = uri.queryParameters;
+    final host = q['host'] ?? '';
+    final port = int.tryParse(q['port'] ?? '');
+    final code = q['code'] ?? '';
+    final fp = q['fp'] ?? '';
+    if (host.isEmpty || port == null || code.isEmpty || fp.isEmpty) return null;
+    return PairingLink(
+      config: EngineConfig(
+        baseUrl: Uri(scheme: 'https', host: host, port: port),
+        fingerprint: fp,
+      ),
+      code: code,
+      name: q['name'],
+    );
+  }
 
   /// The engine the desktop app starts on this machine.
   factory EngineConfig.local({int port = 8760}) => EngineConfig(baseUrl: Uri.parse('http://127.0.0.1:$port'));
@@ -33,6 +59,23 @@ class EngineConfig {
 
   final Uri baseUrl;
   final String? token;
+
+  /// SHA-256 (hex) of the engine's certificate, pinned when set.
+  final String? fingerprint;
+
+  /// The same engine with the token from `pair`.
+  EngineConfig withToken(String token) => EngineConfig(baseUrl: baseUrl, token: token, fingerprint: fingerprint);
+}
+
+/// A scanned pairing QR code: where the engine is and the one-time code.
+class PairingLink {
+  const PairingLink({required this.config, required this.code, this.name});
+
+  final EngineConfig config;
+  final String code;
+
+  /// The computer's name, to show before pairing.
+  final String? name;
 }
 
 /// A non-2xx answer. [message] is the engine's `{"error": ...}` when it sent one.
@@ -72,7 +115,7 @@ class ReconnectPolicy {
 /// HTTP to one engine. The generated [AutoEditApi] calls this.
 class Transport {
   Transport(this.config, {http.Client? client, this.reconnect = const ReconnectPolicy()})
-    : _client = client ?? http.Client();
+    : _client = client ?? (config.fingerprint != null ? pinnedClient(config.fingerprint!) : http.Client());
 
   final EngineConfig config;
   final ReconnectPolicy reconnect;
