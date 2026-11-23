@@ -88,3 +88,13 @@ jobs:
     with:
       tag: ${{ needs.release.outputs.tag }}
     secrets: inherit
+
+  app:
+    # The Flutter app as "Auto-Edit Beta", next to the Tauri installers
+    # (#144): no in-app update, its own bundle id on macOS.
+    needs: release
+    if: needs.release.outputs.tag != ''
+    uses: ./.github/workflows/app-package.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit

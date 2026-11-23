@@ -3,8 +3,8 @@
 Sem isso, o macOS bloqueia a primeira abertura do app ("Apple could not verify
 'Auto-Edit' is free of malware"). Com isso, o `.dmg` abre com duplo clique.
 
-O CI (`.github/workflows/desktop.yml`) assina e notariza **sozinho** em todo
-release, buscando os secrets abaixo no Doppler (`DOPPLER_TOKEN`). Sem eles, o app sai com assinatura
+O CI (`.github/workflows/desktop.yml` pro Tauri e `app-package.yml` pro beta
+do app Flutter) assina e notariza **sozinho** em todo release, buscando os secrets abaixo no Doppler (`DOPPLER_TOKEN`). Sem eles, o app sai com assinatura
 ad-hoc (o comportamento antigo). Pull requests sempre usam ad-hoc.
 
 ## O que o CI faz
