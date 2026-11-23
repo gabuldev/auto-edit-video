@@ -50,6 +50,14 @@ class FakePickers implements Pickers {
   String? nextBroll;
   @override
   Future<String?> broll() async => nextBroll;
+
+  bool sharing = false;
+  final shared = <String>[];
+  @override
+  bool get canShare => sharing;
+  @override
+  Future<void> share(AutoEditClient client, String videoId, String kind, String fileName) async =>
+      shared.add('$videoId/$kind/$fileName');
 }
 
 Map<String, Object?> summary(
@@ -87,6 +95,15 @@ Map<String, Object?> summary(
 class FakeEngine {
   bool up = true;
   final requests = <http.Request>[];
+
+  /// The phone's token was revoked: every request is a 401.
+  bool revoked = false;
+
+  /// The code `POST /api/pair` takes (the QR's); anything else is a 403.
+  String pairCode = 'c0d1g0';
+
+  /// The configs the app connected with (address, token, fingerprint).
+  final configs = <EngineConfig>[];
 
   List<Map<String, Object?>> agents = [
     agent('claude', 'Claude Code', installed: true, version: '2.1 (Claude Code)', login: 'claude'),
@@ -534,11 +551,22 @@ class FakeEngine {
     return null;
   }
 
-  AutoEditClient client() {
-    final config = EngineConfig.local();
+  AutoEditClient client([EngineConfig? at]) {
+    final config = at ?? EngineConfig.local();
+    configs.add(config);
     final mock = MockClient((req) async {
       if (!up) throw http.ClientException('connection refused');
       requests.add(req);
+      if (revoked && req.url.path != '/api/pair') {
+        return http.Response(jsonEncode({'error': 'aparelho não pareado'}), 401);
+      }
+      if (req.method == 'POST' && req.url.path == '/api/pair') {
+        final code = (jsonDecode(req.body) as Map)['code'];
+        if (code != pairCode) {
+          return http.Response(jsonEncode({'error': 'código expirado: gere outro QR no computador'}), 403);
+        }
+        return http.Response(jsonEncode({'token': 'tok-123', 'device_id': 'd1', 'name': 'Android'}), 200);
+      }
       final sse = RegExp(r'^/api/videos/([\w-]+)/events$').firstMatch(req.url.path);
       if (sse != null) {
         final history = events[sse[1]];

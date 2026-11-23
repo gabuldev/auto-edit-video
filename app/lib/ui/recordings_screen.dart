@@ -169,7 +169,9 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
         ),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(28, 20, 28, 40),
+            padding: isCompact(context)
+                ? const EdgeInsets.fromLTRB(14, 14, 14, 32)
+                : const EdgeInsets.fromLTRB(28, 20, 28, 40),
             children: [
               if (_error != null) Notice(_error!),
               if (d == null && _error == null)
@@ -219,6 +221,7 @@ class _RecordingRow extends StatelessWidget {
     final dims = r.width != null ? '${r.width}×${r.height} · ' : '';
     final edit = r.edits.firstOrNull;
     const mono = TextStyle(fontFamily: Tokens.mono, fontSize: 12, color: Tokens.dim);
+    if (isCompact(context)) return _compact(context, shape, dims, edit, mono);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -310,4 +313,78 @@ class _RecordingRow extends StatelessWidget {
       ),
     );
   }
+
+  /// A phone: thumb and name on top; the facts in one line; the edit's state and "Editar" below.
+  Widget _compact(
+    BuildContext context,
+    (String, VideoType?)? shape,
+    String dims,
+    RecordingsRecordingsItemEditsItem? edit,
+    TextStyle mono,
+  ) => Container(
+    margin: const EdgeInsets.only(bottom: 6),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Tokens.panel,
+      border: Border.all(color: Tokens.borderSoft),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            VideoThumb(
+              url: client.api.recordingThumbUri(path: r.path),
+              headers: client.transport.headers,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      duration(r.duration),
+                      '$dims${r.ext.toUpperCase()}',
+                      humanSize(r.size),
+                    ].where((x) => x.isNotEmpty).join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono.copyWith(fontSize: 11.5, color: Tokens.faint),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (shape != null)
+                    Badge2(shape.$1, color: shape.$2 == VideoType.short ? const Color(0xFFC084FC) : Tokens.accent),
+                  if (edit != null)
+                    Chip2(_editLabel[edit.status.value] ?? edit.status.value, color: statusColor(edit.status)),
+                ],
+              ),
+            ),
+            SmallButton('Editar', primary: true, onPressed: () => onEdit(r.path, shape?.$2)),
+          ],
+        ),
+      ],
+    ),
+  );
 }

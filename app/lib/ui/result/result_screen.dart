@@ -36,6 +36,9 @@ const fileLabels = {
   'notes': 'Metadata (.txt)',
 };
 
+/// The file name of an engine path (Windows or POSIX).
+String _baseName(String path) => path.split(RegExp(r'[\\/]')).last;
+
 const _qa = {
   'aprovada': ('QA aprovou', Tokens.ok),
   'reprovada': ('QA reprovou', Tokens.err),
@@ -388,12 +391,21 @@ class _ResultScreenState extends State<ResultScreen> {
                   style: const TextStyle(fontFamily: Tokens.mono, fontSize: 12, color: Tokens.faint),
                 ),
                 const SizedBox(width: 6),
-                IconButton(
-                  tooltip: 'Mostrar ${fileLabels[k]} na pasta',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _reveal(k),
-                  icon: const Icon(Icons.folder_open_outlined, size: 18, color: Tokens.dim),
-                ),
+                // On the phone the files are on the computer: download and share.
+                if (widget.pickers.canShare)
+                  IconButton(
+                    tooltip: 'Compartilhar ${fileLabels[k]}',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => widget.pickers.share(widget.client, widget.id, k, _baseName(r.files[k]!.path)),
+                    icon: const Icon(Icons.ios_share, size: 18, color: Tokens.accent),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Mostrar ${fileLabels[k]} na pasta',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _reveal(k),
+                    icon: const Icon(Icons.folder_open_outlined, size: 18, color: Tokens.dim),
+                  ),
               ],
             ),
           ),

@@ -31,9 +31,21 @@ const ollamaSlow =
 /// the folders and the defaults of a new edit. Saved by the engine in
 /// ~/.auto-edit/settings.json; environment variables still win over it.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.client, required this.pickers, this.status, this.debounce});
+  const SettingsScreen({
+    super.key,
+    required this.client,
+    required this.pickers,
+    this.status,
+    this.debounce,
+    this.remote,
+    this.onUnpair,
+  });
 
   final AutoEditClient client;
+
+  /// On the phone: the paired computer's name, and forgetting it.
+  final String? remote;
+  final VoidCallback? onUnpair;
 
   /// For the Motor card at the end (none in the tests that don't care).
   final EngineStatus? status;
@@ -72,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         children: [
           if (c.error != null) Notice(c.error!),
+          if (widget.remote != null) _RemoteCard(name: widget.remote!, onUnpair: widget.onUnpair),
           _FoldersCard(c: c, pickers: widget.pickers),
           _YoutubeCard(c: c, pickers: widget.pickers),
           _AgentsCard(c: c),
@@ -89,6 +102,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
 bool _isLocal(AutoEditClient client) {
   final host = client.config.baseUrl.host;
   return host == '127.0.0.1' || host == 'localhost' || host == '::1';
+}
+
+/// On the phone: which computer it drives, and unpairing.
+class _RemoteCard extends StatefulWidget {
+  const _RemoteCard({required this.name, this.onUnpair});
+  final String name;
+  final VoidCallback? onUnpair;
+
+  @override
+  State<_RemoteCard> createState() => _RemoteCardState();
+}
+
+class _RemoteCardState extends State<_RemoteCard> {
+  var _armed = false;
+
+  @override
+  Widget build(BuildContext context) => Panel(
+    title: 'Computador',
+    subtitle: Text(
+      'Este celular dirige o Auto-Edit em ${widget.name}: as edições rodam lá, '
+      'com o agente de IA e as contas de lá.',
+    ),
+    children: [
+      if (widget.onUnpair != null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: DangerButton(
+            _armed ? 'Desconectar mesmo' : 'Desconectar este celular',
+            confirm: _armed,
+            onPressed: () => _armed ? widget.onUnpair!() : setState(() => _armed = true),
+          ),
+        ),
+    ],
+  );
 }
 
 class _SaveStatus extends StatelessWidget {
@@ -288,6 +335,14 @@ class _YoutubeCardState extends State<_YoutubeCard> {
         ? FilledButton(onPressed: canPress ? c.connectOrDisconnect : null, child: Text(label))
         : OutlinedButton(onPressed: canPress ? c.connectOrDisconnect : null, child: Text(label));
 
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (connecting) OutlinedButton(onPressed: c.cancelConnect, child: const Text('Cancelar')),
+        Tooltip(message: ready || connected ? '' : 'Primeiro escolha o JSON da credencial (passo 5)', child: button),
+      ],
+    );
     void docs(String url) => unawaited(c.openUrl(url));
     return Panel(
       title: 'YouTube',
@@ -302,16 +357,10 @@ class _YoutubeCardState extends State<_YoutubeCard> {
             ),
             const SizedBox(width: 10),
             Expanded(child: Text(status, style: const TextStyle(fontSize: 13.5))),
-            if (connecting) ...[
-              OutlinedButton(onPressed: c.cancelConnect, child: const Text('Cancelar')),
-              const SizedBox(width: 8),
-            ],
-            Tooltip(
-              message: ready || connected ? '' : 'Primeiro escolha o JSON da credencial (passo 5)',
-              child: button,
-            ),
+            if (!isCompact(context)) actions,
           ],
         ),
+        if (isCompact(context)) Padding(padding: const EdgeInsets.only(top: 10), child: actions),
         if (c.youtubeError != null) Padding(padding: const EdgeInsets.only(top: 12), child: Notice(c.youtubeError!)),
         if (ready)
           Padding(
@@ -553,6 +602,14 @@ class _AgentRow extends StatelessWidget {
     final isPrimary = a.name == c.primary;
     final busy = c.testing.contains(a.name);
     final note = c.notes[a.name];
+    final buttons = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (a.installed) SmallButton(busy ? 'testando…' : 'Testar', onPressed: busy ? null : () => c.test(a.name)),
+        if (a.installed && a.loginCommand != null) SmallButton('Fazer login', onPressed: () => c.login(a.name)),
+      ],
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(6, 10, 12, 10),
@@ -588,22 +645,14 @@ class _AgentRow extends StatelessWidget {
                     const SizedBox(height: 3),
                     ..._meta(),
                     if (a.installed) ...[const SizedBox(height: 8), _ModelField(c: c, a: a)],
+                    if (isCompact(context)) ...[const SizedBox(height: 8), buttons],
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Wrap(
-                  spacing: 6,
-                  children: [
-                    if (a.installed)
-                      SmallButton(busy ? 'testando…' : 'Testar', onPressed: busy ? null : () => c.test(a.name)),
-                    if (a.installed && a.loginCommand != null)
-                      SmallButton('Fazer login', onPressed: () => c.login(a.name)),
-                  ],
-                ),
-              ),
+              if (!isCompact(context)) ...[
+                const SizedBox(width: 10),
+                Padding(padding: const EdgeInsets.only(top: 4), child: buttons),
+              ],
             ],
           ),
           if (busy)
@@ -865,12 +914,14 @@ class _OllamaCardState extends State<_OllamaCard> {
         const SizedBox(height: 12),
         Row(
           children: [
-            SizedBox(
-              width: 240,
-              child: TextField(
-                controller: _model,
-                style: const TextStyle(fontFamily: Tokens.mono, fontSize: 12.5),
-                decoration: fieldDecoration(hint: 'qwen2.5:7b'),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: TextField(
+                  controller: _model,
+                  style: const TextStyle(fontFamily: Tokens.mono, fontSize: 12.5),
+                  decoration: fieldDecoration(hint: 'qwen2.5:7b'),
+                ),
               ),
             ),
             const SizedBox(width: 8),

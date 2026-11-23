@@ -43,12 +43,18 @@ class Shell extends StatefulWidget {
     required this.client,
     required this.prefs,
     this.pickers = const NativePickers(),
+    this.remote,
+    this.onUnpair,
   });
 
   final EngineStatus status;
   final AutoEditClient client;
   final AppPrefs prefs;
   final Pickers pickers;
+
+  /// On the phone: the paired computer's name, and forgetting it.
+  final String? remote;
+  final VoidCallback? onUnpair;
 
   @override
   State<Shell> createState() => _ShellState();
@@ -110,34 +116,50 @@ class _ShellState extends State<Shell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Row(
+    final content = ListenableBuilder(
+      listenable: widget.status,
+      builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Sidebar(status: widget.status, current: _welcome ? null : _section, onSelect: _select),
-          Expanded(
-            child: ListenableBuilder(
-              listenable: widget.status,
-              builder: (context, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.status.ok == false) OfflineBanner(onRetry: widget.status.check),
-                  if (!_welcome && _section == Section.edits && _missing != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 16, 28, 0),
-                      child: Notice(
-                        _missing!,
-                        tone: Tone.warn,
-                        action: SmallButton('Configurar', onPressed: () => setState(() => _welcome = true)),
-                      ),
-                    ),
-                  Expanded(child: _screen()),
-                ],
+          if (widget.status.ok == false) OfflineBanner(onRetry: widget.status.check),
+          if (!_welcome && _section == Section.edits && _missing != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 16, 28, 0),
+              child: Notice(
+                _missing!,
+                tone: Tone.warn,
+                action: SmallButton('Configurar', onPressed: () => setState(() => _welcome = true)),
               ),
             ),
-          ),
+          Expanded(child: _screen()),
         ],
       ),
+    );
+    return LayoutBuilder(
+      builder: (context, box) {
+        // A phone: the sections go to a bar at the bottom.
+        if (box.maxWidth < compactWidth) {
+          return Scaffold(
+            body: SafeArea(bottom: false, child: content),
+            bottomNavigationBar: NavigationBar(
+              height: 64,
+              selectedIndex: _welcome ? 0 : _section.index,
+              onDestinationSelected: (i) => _select(Section.values[i]),
+              labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+              destinations: [for (final s in Section.values) NavigationDestination(icon: Icon(s.icon), label: s.label)],
+            ),
+          );
+        }
+        return Scaffold(
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Sidebar(status: widget.status, current: _welcome ? null : _section, onSelect: _select),
+              Expanded(child: content),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -230,7 +252,13 @@ class _ShellState extends State<Shell> {
       ),
       Section.retention => TrendScreen(client: widget.client, onOpen: (id) => _openVideo(id, VideoPage.result)),
       Section.styles => StylesScreen(client: widget.client, pickers: widget.pickers),
-      Section.settings => SettingsScreen(client: widget.client, pickers: widget.pickers, status: widget.status),
+      Section.settings => SettingsScreen(
+        client: widget.client,
+        pickers: widget.pickers,
+        status: widget.remote == null ? widget.status : null,
+        remote: widget.remote,
+        onUnpair: widget.onUnpair,
+      ),
     };
   }
 }
@@ -497,39 +525,60 @@ class TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return Container(
-      height: 70,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      constraints: const BoxConstraints(minHeight: 70),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 28, vertical: 8),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Tokens.borderSoft)),
       ),
-      child: Row(
-        children: [
-          if (onBack != null) ...[
-            IconButton.outlined(tooltip: 'Voltar', onPressed: onBack, icon: const Icon(Icons.arrow_back, size: 18)),
-            const SizedBox(width: 14),
-          ],
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                if (subtitleWidget != null)
-                  subtitleWidget!
-                else if (subtitle != null)
-                  Text(subtitle!, style: const TextStyle(fontSize: 13, color: Tokens.dim)),
-              ],
+      child: _row(
+        compact,
+        Row(
+          children: [
+            if (onBack != null) ...[
+              IconButton.outlined(tooltip: 'Voltar', onPressed: onBack, icon: const Icon(Icons.arrow_back, size: 18)),
+              const SizedBox(width: 14),
+            ],
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  if (subtitleWidget != null)
+                    subtitleWidget!
+                  else if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      maxLines: compact ? 2 : null,
+                      overflow: compact ? TextOverflow.ellipsis : null,
+                      style: const TextStyle(fontSize: 13, color: Tokens.dim),
+                    ),
+                ],
+              ),
             ),
-          ),
-          ...actions,
-        ],
+            if (!compact) ...actions,
+          ],
+        ),
       ),
     );
   }
+
+  /// A phone: the actions go on a line under the title.
+  Widget _row(bool compact, Widget row) => !compact || actions.isEmpty
+      ? row
+      : Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            row,
+            const SizedBox(height: 6),
+            Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: actions),
+          ],
+        );
 }
