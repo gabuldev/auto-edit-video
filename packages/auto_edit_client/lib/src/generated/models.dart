@@ -30,7 +30,15 @@ extension type const ArtifactKind(String value) {
   static const captions = ArtifactKind('captions');
   static const notes = ArtifactKind('notes');
   static const source = ArtifactKind('source');
-  static const values = [video, thumbnail, thumbnailB, thumbnailC, captions, notes, source];
+  static const values = [
+    video,
+    thumbnail,
+    thumbnailB,
+    thumbnailC,
+    captions,
+    notes,
+    source,
+  ];
 }
 
 /// edited: the time of the video the person watched; original: the raw recording
@@ -71,7 +79,14 @@ class Upload {
     path: json['path'] == null ? null : json['path'] as String,
   );
 
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'size': size, 'offset': offset, 'done': done, 'path': path};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'size': size,
+    'offset': offset,
+    'done': done,
+    'path': path,
+  };
 }
 
 class LanState {
@@ -108,10 +123,14 @@ class LanState {
     running: json['running'] as bool,
     port: (json['port'] as num).toInt(),
     addresses: (json['addresses'] as List).map((e) => e as String).toList(),
-    fingerprint: json['fingerprint'] == null ? null : json['fingerprint'] as String,
+    fingerprint: json['fingerprint'] == null
+        ? null
+        : json['fingerprint'] as String,
     mdns: json['mdns'] as bool,
     error: json['error'] == null ? null : json['error'] as String,
-    devices: (json['devices'] as List).map((e) => LanDevice.fromJson((e as Map).cast<String, Object?>())).toList(),
+    devices: (json['devices'] as List)
+        .map((e) => LanDevice.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
   );
 
   Map<String, Object?> toJson() => {
@@ -127,7 +146,12 @@ class LanState {
 }
 
 class LanDevice {
-  const LanDevice({required this.id, required this.name, required this.createdAt, this.lastSeen});
+  const LanDevice({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    this.lastSeen,
+  });
 
   final String id;
   final String name;
@@ -141,7 +165,12 @@ class LanDevice {
     lastSeen: json['last_seen'] == null ? null : json['last_seen'] as String,
   );
 
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'created_at': createdAt, 'last_seen': lastSeen};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'created_at': createdAt,
+    'last_seen': lastSeen,
+  };
 }
 
 class Pairing {
@@ -189,13 +218,19 @@ class ApiError {
 
   final String error;
 
-  factory ApiError.fromJson(Map<String, Object?> json) => ApiError(error: json['error'] as String);
+  factory ApiError.fromJson(Map<String, Object?> json) =>
+      ApiError(error: json['error'] as String);
 
   Map<String, Object?> toJson() => {'error': error};
 }
 
 class Health {
-  const Health({required this.ok, required this.apiVersion, required this.version, this.repoRoot});
+  const Health({
+    required this.ok,
+    required this.apiVersion,
+    required this.version,
+    this.repoRoot,
+  });
 
   final bool ok;
 
@@ -227,14 +262,21 @@ class Window {
   final double start;
   final double end;
 
-  factory Window.fromJson(Map<String, Object?> json) =>
-      Window(start: (json['start'] as num).toDouble(), end: (json['end'] as num).toDouble());
+  factory Window.fromJson(Map<String, Object?> json) => Window(
+    start: (json['start'] as num).toDouble(),
+    end: (json['end'] as num).toDouble(),
+  );
 
   Map<String, Object?> toJson() => {'start': start, 'end': end};
 }
 
 class VideoFile {
-  const VideoFile({required this.name, required this.path, required this.size, required this.modified});
+  const VideoFile({
+    required this.name,
+    required this.path,
+    required this.size,
+    required this.modified,
+  });
 
   final String name;
   final String path;
@@ -248,11 +290,22 @@ class VideoFile {
     modified: json['modified'] as String,
   );
 
-  Map<String, Object?> toJson() => {'name': name, 'path': path, 'size': size, 'modified': modified};
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'path': path,
+    'size': size,
+    'modified': modified,
+  };
 }
 
 class Browse {
-  const Browse({required this.dir, this.parent, required this.exists, required this.dirs, required this.videos});
+  const Browse({
+    required this.dir,
+    this.parent,
+    required this.exists,
+    required this.dirs,
+    required this.videos,
+  });
 
   final String dir;
   final String? parent;
@@ -264,8 +317,12 @@ class Browse {
     dir: json['dir'] as String,
     parent: json['parent'] == null ? null : json['parent'] as String,
     exists: json['exists'] as bool,
-    dirs: (json['dirs'] as List).map((e) => BrowseDirsItem.fromJson((e as Map).cast<String, Object?>())).toList(),
-    videos: (json['videos'] as List).map((e) => VideoFile.fromJson((e as Map).cast<String, Object?>())).toList(),
+    dirs: (json['dirs'] as List)
+        .map((e) => BrowseDirsItem.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
+    videos: (json['videos'] as List)
+        .map((e) => VideoFile.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
   );
 
   Map<String, Object?> toJson() => {
@@ -278,7 +335,12 @@ class Browse {
 }
 
 class Recordings {
-  const Recordings({required this.folder, required this.exists, required this.truncated, required this.recordings});
+  const Recordings({
+    required this.folder,
+    required this.exists,
+    required this.truncated,
+    required this.recordings,
+  });
 
   final String folder;
   final bool exists;
@@ -290,7 +352,11 @@ class Recordings {
     exists: json['exists'] as bool,
     truncated: json['truncated'] as bool,
     recordings: (json['recordings'] as List)
-        .map((e) => RecordingsRecordingsItem.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) => RecordingsRecordingsItem.fromJson(
+            (e as Map).cast<String, Object?>(),
+          ),
+        )
         .toList(),
   );
 
@@ -303,16 +369,27 @@ class Recordings {
 }
 
 class Folder {
-  const Folder({required this.path, required this.custom, required this.exists});
+  const Folder({
+    required this.path,
+    required this.custom,
+    required this.exists,
+  });
 
   final String path;
   final bool custom;
   final bool exists;
 
-  factory Folder.fromJson(Map<String, Object?> json) =>
-      Folder(path: json['path'] as String, custom: json['custom'] as bool, exists: json['exists'] as bool);
+  factory Folder.fromJson(Map<String, Object?> json) => Folder(
+    path: json['path'] as String,
+    custom: json['custom'] as bool,
+    exists: json['exists'] as bool,
+  );
 
-  Map<String, Object?> toJson() => {'path': path, 'custom': custom, 'exists': exists};
+  Map<String, Object?> toJson() => {
+    'path': path,
+    'custom': custom,
+    'exists': exists,
+  };
 }
 
 class Folders {
@@ -326,7 +403,10 @@ class Folders {
     output: Folder.fromJson((json['output'] as Map).cast<String, Object?>()),
   );
 
-  Map<String, Object?> toJson() => {'inbox': inbox.toJson(), 'output': output.toJson()};
+  Map<String, Object?> toJson() => {
+    'inbox': inbox.toJson(),
+    'output': output.toJson(),
+  };
 }
 
 /// What is left out comes from the settings
@@ -365,12 +445,18 @@ class EditRequest {
     type: VideoType(json['type'] as String),
     context: json['context'] == null ? null : json['context'] as String,
     language: json['language'] == null ? null : json['language'] as String,
-    whisperModel: json['whisper_model'] == null ? null : json['whisper_model'] as String,
-    maxIterations: json['max_iterations'] == null ? null : (json['max_iterations'] as num).toInt(),
+    whisperModel: json['whisper_model'] == null
+        ? null
+        : json['whisper_model'] as String,
+    maxIterations: json['max_iterations'] == null
+        ? null
+        : (json['max_iterations'] as num).toInt(),
     dryRun: json['dry_run'] == null ? null : json['dry_run'] as bool,
     coldOpen: json['cold_open'] == null ? null : json['cold_open'] as bool,
     reorder: json['reorder'] == null ? null : json['reorder'] as bool,
-    overlaysDir: json['overlays_dir'] == null ? null : json['overlays_dir'] as String,
+    overlaysDir: json['overlays_dir'] == null
+        ? null
+        : json['overlays_dir'] as String,
     name: json['name'] == null ? null : json['name'] as String,
   );
 
@@ -447,22 +533,36 @@ class VideoSummary {
     videoPath: json['video_path'] == null ? null : json['video_path'] as String,
     type: VideoType(json['type'] as String),
     language: json['language'] == null ? null : json['language'] as String,
-    currentStage: json['current_stage'] == null ? null : json['current_stage'] as String,
+    currentStage: json['current_stage'] == null
+        ? null
+        : json['current_stage'] as String,
     status: VideoStatus(json['status'] as String),
-    derivedFrom: json['derived_from'] == null ? null : json['derived_from'] as String,
+    derivedFrom: json['derived_from'] == null
+        ? null
+        : json['derived_from'] as String,
     title: json['title'] == null ? null : json['title'] as String,
     context: json['context'] == null ? null : json['context'] as String,
     hasThumbnail: json['has_thumbnail'] as bool,
-    iteration: json['iteration'] == null ? null : (json['iteration'] as num).toInt(),
-    maxIterations: json['max_iterations'] == null ? null : (json['max_iterations'] as num).toInt(),
+    iteration: json['iteration'] == null
+        ? null
+        : (json['iteration'] as num).toInt(),
+    maxIterations: json['max_iterations'] == null
+        ? null
+        : (json['max_iterations'] as num).toInt(),
     planId: json['plan_id'] == null ? null : json['plan_id'] as String,
     createdAt: json['created_at'] == null ? null : json['created_at'] as String,
-    stages: (json['stages'] as Map).map((k, e) => MapEntry(k as String, e == null ? null : e as String)),
-    estimatedTokens: json['estimated_tokens'] == null ? null : (json['estimated_tokens'] as num).toInt(),
+    stages: (json['stages'] as Map).map(
+      (k, e) => MapEntry(k as String, e == null ? null : e as String),
+    ),
+    estimatedTokens: json['estimated_tokens'] == null
+        ? null
+        : (json['estimated_tokens'] as num).toInt(),
     output: json['output'] == null ? null : json['output'] as String,
     published: json['published'] == null
         ? null
-        : VideoSummaryPublished.fromJson((json['published'] as Map).cast<String, Object?>()),
+        : VideoSummaryPublished.fromJson(
+            (json['published'] as Map).cast<String, Object?>(),
+          ),
   );
 
   Map<String, Object?> toJson() => {
@@ -559,26 +659,50 @@ class VideoDetail {
     videoPath: json['video_path'] == null ? null : json['video_path'] as String,
     type: VideoType(json['type'] as String),
     language: json['language'] == null ? null : json['language'] as String,
-    currentStage: json['current_stage'] == null ? null : json['current_stage'] as String,
+    currentStage: json['current_stage'] == null
+        ? null
+        : json['current_stage'] as String,
     status: VideoStatus(json['status'] as String),
-    derivedFrom: json['derived_from'] == null ? null : json['derived_from'] as String,
+    derivedFrom: json['derived_from'] == null
+        ? null
+        : json['derived_from'] as String,
     title: json['title'] == null ? null : json['title'] as String,
     context: json['context'] == null ? null : json['context'] as String,
     hasThumbnail: json['has_thumbnail'] as bool,
-    iteration: json['iteration'] == null ? null : (json['iteration'] as num).toInt(),
-    maxIterations: json['max_iterations'] == null ? null : (json['max_iterations'] as num).toInt(),
+    iteration: json['iteration'] == null
+        ? null
+        : (json['iteration'] as num).toInt(),
+    maxIterations: json['max_iterations'] == null
+        ? null
+        : (json['max_iterations'] as num).toInt(),
     planId: json['plan_id'] == null ? null : json['plan_id'] as String,
     createdAt: json['created_at'] == null ? null : json['created_at'] as String,
-    stages: (json['stages'] as Map).map((k, e) => MapEntry(k as String, e == null ? null : e as String)),
-    estimatedTokens: json['estimated_tokens'] == null ? null : (json['estimated_tokens'] as num).toInt(),
+    stages: (json['stages'] as Map).map(
+      (k, e) => MapEntry(k as String, e == null ? null : e as String),
+    ),
+    estimatedTokens: json['estimated_tokens'] == null
+        ? null
+        : (json['estimated_tokens'] as num).toInt(),
     output: json['output'] == null ? null : json['output'] as String,
     published: json['published'] == null
         ? null
-        : VideoSummaryPublished.fromJson((json['published'] as Map).cast<String, Object?>()),
-    stageDetail: (json['stage_detail'] as Map).map((k, e) => MapEntry(k as String, (e as Map).cast<String, Object?>())),
-    tokenStats: json['token_stats'] == null ? null : (json['token_stats'] as Map).cast<String, Object?>(),
-    plan: json['plan'] == null ? null : VideoDetailPlan.fromJson((json['plan'] as Map).cast<String, Object?>()),
-    metadata: json['metadata'] == null ? null : (json['metadata'] as Map).cast<String, Object?>(),
+        : VideoSummaryPublished.fromJson(
+            (json['published'] as Map).cast<String, Object?>(),
+          ),
+    stageDetail: (json['stage_detail'] as Map).map(
+      (k, e) => MapEntry(k as String, (e as Map).cast<String, Object?>()),
+    ),
+    tokenStats: json['token_stats'] == null
+        ? null
+        : (json['token_stats'] as Map).cast<String, Object?>(),
+    plan: json['plan'] == null
+        ? null
+        : VideoDetailPlan.fromJson(
+            (json['plan'] as Map).cast<String, Object?>(),
+          ),
+    metadata: json['metadata'] == null
+        ? null
+        : (json['metadata'] as Map).cast<String, Object?>(),
     jobId: json['job_id'] == null ? null : json['job_id'] as String,
   );
 
@@ -624,7 +748,11 @@ class SegmentInput {
     summary: json['summary'] == null ? null : json['summary'] as String,
   );
 
-  Map<String, Object?> toJson() => {'start': start, 'end': end, if (summary != null) 'summary': summary!};
+  Map<String, Object?> toJson() => {
+    'start': start,
+    'end': end,
+    if (summary != null) 'summary': summary!,
+  };
 }
 
 class Plan {
@@ -655,12 +783,19 @@ class Plan {
     name: json['name'] == null ? null : json['name'] as String,
     source: json['source'] as String,
     editable: json['editable'] as bool,
-    duration: json['duration'] == null ? null : (json['duration'] as num).toDouble(),
+    duration: json['duration'] == null
+        ? null
+        : (json['duration'] as num).toDouble(),
     keptTotal: (json['kept_total'] as num).toDouble(),
     keptSegments: (json['kept_segments'] as List)
-        .map((e) => PlanKeptSegmentsItem.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) =>
+              PlanKeptSegmentsItem.fromJson((e as Map).cast<String, Object?>()),
+        )
         .toList(),
-    cuts: (json['cuts'] as List).map((e) => PlanCutsItem.fromJson((e as Map).cast<String, Object?>())).toList(),
+    cuts: (json['cuts'] as List)
+        .map((e) => PlanCutsItem.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
     droppedBlocks: json['dropped_blocks'],
   );
 
@@ -678,7 +813,14 @@ class Plan {
 }
 
 class EffectInput {
-  const EffectInput({required this.type, required this.start, required this.end, this.scale, this.file, this.timeline});
+  const EffectInput({
+    required this.type,
+    required this.start,
+    required this.end,
+    this.scale,
+    this.file,
+    this.timeline,
+  });
 
   final String type;
   final double start;
@@ -697,7 +839,9 @@ class EffectInput {
     end: (json['end'] as num).toDouble(),
     scale: json['scale'] == null ? null : (json['scale'] as num).toDouble(),
     file: json['file'] == null ? null : json['file'] as String,
-    timeline: json['timeline'] == null ? null : Timeline(json['timeline'] as String),
+    timeline: json['timeline'] == null
+        ? null
+        : Timeline(json['timeline'] as String),
   );
 
   Map<String, Object?> toJson() => {
@@ -730,11 +874,16 @@ class Effects {
   factory Effects.fromJson(Map<String, Object?> json) => Effects(
     id: json['id'] as String,
     effects: (json['effects'] as List)
-        .map((e) => EffectsEffectsItem.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) =>
+              EffectsEffectsItem.fromJson((e as Map).cast<String, Object?>()),
+        )
         .toList(),
     stored: (json['stored'] as num).toInt(),
     notes: (json['notes'] as List).map((e) => e as String).toList(),
-    editedDuration: json['edited_duration'] == null ? null : (json['edited_duration'] as num).toDouble(),
+    editedDuration: json['edited_duration'] == null
+        ? null
+        : (json['edited_duration'] as num).toDouble(),
     rerenderFrom: json['rerender_from'] as String,
   );
 
@@ -791,7 +940,9 @@ class Captions {
 
   factory Captions.fromJson(Map<String, Object?> json) => Captions(
     captions: (json['captions'] as Map).cast<String, Object?>(),
-    adjust: CaptionAdjust.fromJson((json['adjust'] as Map).cast<String, Object?>()),
+    adjust: CaptionAdjust.fromJson(
+      (json['adjust'] as Map).cast<String, Object?>(),
+    ),
     fast: json['fast'] as bool,
     sourceOk: json['source_ok'] as bool,
     videoPath: json['video_path'] as String,
@@ -823,14 +974,17 @@ class ThumbnailOption {
   final List<String> qaReasons;
   final bool chosen;
 
-  factory ThumbnailOption.fromJson(Map<String, Object?> json) => ThumbnailOption(
-    id: json['id'] as String,
-    kind: ArtifactKind(json['kind'] as String),
-    layout: json['layout'] as String,
-    qa: json['qa'] == null ? null : json['qa'] as String,
-    qaReasons: (json['qa_reasons'] as List).map((e) => e as String).toList(),
-    chosen: json['chosen'] as bool,
-  );
+  factory ThumbnailOption.fromJson(Map<String, Object?> json) =>
+      ThumbnailOption(
+        id: json['id'] as String,
+        kind: ArtifactKind(json['kind'] as String),
+        layout: json['layout'] as String,
+        qa: json['qa'] == null ? null : json['qa'] as String,
+        qaReasons: (json['qa_reasons'] as List)
+            .map((e) => e as String)
+            .toList(),
+        chosen: json['chosen'] as bool,
+      );
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -873,14 +1027,23 @@ class Result {
     videoName: json['video_name'] as String,
     type: VideoType(json['type'] as String),
     status: VideoStatus(json['status'] as String),
-    metadata: json['metadata'] == null ? null : (json['metadata'] as Map).cast<String, Object?>(),
+    metadata: json['metadata'] == null
+        ? null
+        : (json['metadata'] as Map).cast<String, Object?>(),
     files: (json['files'] as Map).map(
-      (k, e) => MapEntry(k as String, ResultFilesValue.fromJson((e as Map).cast<String, Object?>())),
+      (k, e) => MapEntry(
+        k as String,
+        ResultFilesValue.fromJson((e as Map).cast<String, Object?>()),
+      ),
     ),
     thumbnails: (json['thumbnails'] as List)
-        .map((e) => ThumbnailOption.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) => ThumbnailOption.fromJson((e as Map).cast<String, Object?>()),
+        )
         .toList(),
-    tokenStats: json['token_stats'] == null ? null : (json['token_stats'] as Map).cast<String, Object?>(),
+    tokenStats: json['token_stats'] == null
+        ? null
+        : (json['token_stats'] as Map).cast<String, Object?>(),
   );
 
   Map<String, Object?> toJson() => {
@@ -929,11 +1092,16 @@ class ShortsState {
     hasPlan: json['has_plan'] as bool,
     maxDuration: (json['max_duration'] as num).toDouble(),
     clips: (json['clips'] as List)
-        .map((e) => ShortsStateClipsItem.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) =>
+              ShortsStateClipsItem.fromJson((e as Map).cast<String, Object?>()),
+        )
         .toList(),
     rejected: (json['rejected'] as List).map((e) => e).toList(),
     notes: json['notes'] as String,
-    job: json['job'] == null ? null : ShortsStateJob.fromJson((json['job'] as Map).cast<String, Object?>()),
+    job: json['job'] == null
+        ? null
+        : ShortsStateJob.fromJson((json['job'] as Map).cast<String, Object?>()),
   );
 
   Map<String, Object?> toJson() => {
@@ -971,7 +1139,9 @@ class YouTubeAccount {
 
   factory YouTubeAccount.fromJson(Map<String, Object?> json) => YouTubeAccount(
     connected: json['connected'] as bool,
-    needsReconnect: json['needs_reconnect'] == null ? null : json['needs_reconnect'] as bool,
+    needsReconnect: json['needs_reconnect'] == null
+        ? null
+        : json['needs_reconnect'] as bool,
     channel: json['channel'] == null ? null : json['channel'] as String,
     connecting: json['connecting'] as bool,
     error: json['error'] == null ? null : json['error'] as String,
@@ -1021,7 +1191,9 @@ class PublishRequest {
 
   factory PublishRequest.fromJson(Map<String, Object?> json) => PublishRequest(
     title: json['title'] == null ? null : json['title'] as String,
-    description: json['description'] == null ? null : json['description'] as String,
+    description: json['description'] == null
+        ? null
+        : json['description'] as String,
     tags: json['tags'],
     privacy: json['privacy'] == null ? null : json['privacy'] as String,
     publishAt: json['publish_at'] == null ? null : json['publish_at'] as String,
@@ -1082,21 +1254,39 @@ class PublishState {
     type: VideoType(json['type'] as String),
     eligible: json['eligible'] as bool,
     reason: json['reason'] == null ? null : json['reason'] as String,
-    defaults: PublishStateDefaults.fromJson((json['defaults'] as Map).cast<String, Object?>()),
+    defaults: PublishStateDefaults.fromJson(
+      (json['defaults'] as Map).cast<String, Object?>(),
+    ),
     thumbnail: json['thumbnail'] as bool,
-    thumbnailVariant: json['thumbnail_variant'] == null ? null : json['thumbnail_variant'] as String,
+    thumbnailVariant: json['thumbnail_variant'] == null
+        ? null
+        : json['thumbnail_variant'] as String,
     captions: json['captions'] as bool,
-    pinnedComment: json['pinned_comment'] == null ? null : json['pinned_comment'] as String,
+    pinnedComment: json['pinned_comment'] == null
+        ? null
+        : json['pinned_comment'] as String,
     titleOptions: json['title_options'] == null
         ? null
         : (json['title_options'] as List).map((e) => e as String).toList(),
     nextVideo: json['next_video'],
-    limits: PublishStateLimits.fromJson((json['limits'] as Map).cast<String, Object?>()),
+    limits: PublishStateLimits.fromJson(
+      (json['limits'] as Map).cast<String, Object?>(),
+    ),
     published: (json['published'] as List)
-        .map((e) => PublishStatePublishedItem.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) => PublishStatePublishedItem.fromJson(
+            (e as Map).cast<String, Object?>(),
+          ),
+        )
         .toList(),
-    account: YouTubeAccount.fromJson((json['account'] as Map).cast<String, Object?>()),
-    job: json['job'] == null ? null : PublishStateJob.fromJson((json['job'] as Map).cast<String, Object?>()),
+    account: YouTubeAccount.fromJson(
+      (json['account'] as Map).cast<String, Object?>(),
+    ),
+    job: json['job'] == null
+        ? null
+        : PublishStateJob.fromJson(
+            (json['job'] as Map).cast<String, Object?>(),
+          ),
   );
 
   Map<String, Object?> toJson() => {
@@ -1119,7 +1309,13 @@ class PublishState {
 }
 
 class Retention {
-  const Retention({required this.id, this.youtubeId, this.data, this.versusPrevious, required this.account});
+  const Retention({
+    required this.id,
+    this.youtubeId,
+    this.data,
+    this.versusPrevious,
+    required this.account,
+  });
 
   final String id;
   final String? youtubeId;
@@ -1132,9 +1328,15 @@ class Retention {
   factory Retention.fromJson(Map<String, Object?> json) => Retention(
     id: json['id'] as String,
     youtubeId: json['youtube_id'] == null ? null : json['youtube_id'] as String,
-    data: json['data'] == null ? null : (json['data'] as Map).cast<String, Object?>(),
-    versusPrevious: json['versus_previous'] == null ? null : (json['versus_previous'] as Map).cast<String, Object?>(),
-    account: YouTubeAccount.fromJson((json['account'] as Map).cast<String, Object?>()),
+    data: json['data'] == null
+        ? null
+        : (json['data'] as Map).cast<String, Object?>(),
+    versusPrevious: json['versus_previous'] == null
+        ? null
+        : (json['versus_previous'] as Map).cast<String, Object?>(),
+    account: YouTubeAccount.fromJson(
+      (json['account'] as Map).cast<String, Object?>(),
+    ),
   );
 
   Map<String, Object?> toJson() => {
@@ -1159,23 +1361,35 @@ class Trend {
 
   factory Trend.fromJson(Map<String, Object?> json) => Trend(
     type: json['type'] == null ? null : json['type'] as String,
-    videos: (json['videos'] as List).map((e) => TrendVideosItem.fromJson((e as Map).cast<String, Object?>())).toList(),
+    videos: (json['videos'] as List)
+        .map(
+          (e) => TrendVideosItem.fromJson((e as Map).cast<String, Object?>()),
+        )
+        .toList(),
     summary: json['summary'] == null
         ? null
         : (json['summary'] as Map).map(
-            (k, e) => MapEntry(k as String, TrendSummary.fromJson((e as Map).cast<String, Object?>())),
+            (k, e) => MapEntry(
+              k as String,
+              TrendSummary.fromJson((e as Map).cast<String, Object?>()),
+            ),
           ),
   );
 
   Map<String, Object?> toJson() => {
     if (type != null) 'type': type!,
     'videos': videos.map((e) => e.toJson()).toList(),
-    if (summary != null) 'summary': summary!.map((k, e) => MapEntry(k, e.toJson())),
+    if (summary != null)
+      'summary': summary!.map((k, e) => MapEntry(k, e.toJson())),
   };
 }
 
 class TrendSummary {
-  const TrendSummary({required this.count, this.olderVsNewer, this.withVsWithoutLessons});
+  const TrendSummary({
+    required this.count,
+    this.olderVsNewer,
+    this.withVsWithoutLessons,
+  });
 
   final int count;
   final TrendCompare? olderVsNewer;
@@ -1185,16 +1399,21 @@ class TrendSummary {
     count: (json['count'] as num).toInt(),
     olderVsNewer: json['older_vs_newer'] == null
         ? null
-        : TrendCompare.fromJson((json['older_vs_newer'] as Map).cast<String, Object?>()),
+        : TrendCompare.fromJson(
+            (json['older_vs_newer'] as Map).cast<String, Object?>(),
+          ),
     withVsWithoutLessons: json['with_vs_without_lessons'] == null
         ? null
-        : TrendCompare.fromJson((json['with_vs_without_lessons'] as Map).cast<String, Object?>()),
+        : TrendCompare.fromJson(
+            (json['with_vs_without_lessons'] as Map).cast<String, Object?>(),
+          ),
   );
 
   Map<String, Object?> toJson() => {
     'count': count,
     if (olderVsNewer != null) 'older_vs_newer': olderVsNewer!.toJson(),
-    if (withVsWithoutLessons != null) 'with_vs_without_lessons': withVsWithoutLessons!.toJson(),
+    if (withVsWithoutLessons != null)
+      'with_vs_without_lessons': withVsWithoutLessons!.toJson(),
   };
 }
 
@@ -1225,12 +1444,20 @@ class TrendCompare {
     newer: json['newer'] == null ? null : (json['newer'] as num).toInt(),
     without: json['without'] == null ? null : (json['without'] as num).toInt(),
     with_: json['with'] == null ? null : (json['with'] as num).toInt(),
-    at30s: json['at_30s'] == null ? null : TrendDelta.fromJson((json['at_30s'] as Map).cast<String, Object?>()),
-    at60s: json['at_60s'] == null ? null : TrendDelta.fromJson((json['at_60s'] as Map).cast<String, Object?>()),
-    atHalf: json['at_half'] == null ? null : TrendDelta.fromJson((json['at_half'] as Map).cast<String, Object?>()),
+    at30s: json['at_30s'] == null
+        ? null
+        : TrendDelta.fromJson((json['at_30s'] as Map).cast<String, Object?>()),
+    at60s: json['at_60s'] == null
+        ? null
+        : TrendDelta.fromJson((json['at_60s'] as Map).cast<String, Object?>()),
+    atHalf: json['at_half'] == null
+        ? null
+        : TrendDelta.fromJson((json['at_half'] as Map).cast<String, Object?>()),
     relativeMedian: json['relative_median'] == null
         ? null
-        : TrendDelta.fromJson((json['relative_median'] as Map).cast<String, Object?>()),
+        : TrendDelta.fromJson(
+            (json['relative_median'] as Map).cast<String, Object?>(),
+          ),
   );
 
   Map<String, Object?> toJson() => {
@@ -1266,7 +1493,13 @@ class TrendDelta {
 }
 
 class Style {
-  const Style({required this.id, required this.name, this.description, this.builtin, required this.tokens});
+  const Style({
+    required this.id,
+    required this.name,
+    this.description,
+    this.builtin,
+    required this.tokens,
+  });
 
   final String id;
   final String name;
@@ -1279,7 +1512,9 @@ class Style {
   factory Style.fromJson(Map<String, Object?> json) => Style(
     id: json['id'] as String,
     name: json['name'] as String,
-    description: json['description'] == null ? null : json['description'] as String,
+    description: json['description'] == null
+        ? null
+        : json['description'] as String,
     builtin: json['builtin'] == null ? null : json['builtin'] as bool,
     tokens: (json['tokens'] as Map).cast<String, Object?>(),
   );
@@ -1339,10 +1574,18 @@ class Styles {
 
   factory Styles.fromJson(Map<String, Object?> json) => Styles(
     active: json['active'] as String,
-    styles: (json['styles'] as List).map((e) => Style.fromJson((e as Map).cast<String, Object?>())).toList(),
-    fonts: (json['fonts'] as List).map((e) => StylesFontsItem.fromJson((e as Map).cast<String, Object?>())).toList(),
+    styles: (json['styles'] as List)
+        .map((e) => Style.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
+    fonts: (json['fonts'] as List)
+        .map(
+          (e) => StylesFontsItem.fromJson((e as Map).cast<String, Object?>()),
+        )
+        .toList(),
     icons: (json['icons'] as List).map((e) => e as String).toList(),
-    positions: StylesPositions.fromJson((json['positions'] as Map).cast<String, Object?>()),
+    positions: StylesPositions.fromJson(
+      (json['positions'] as Map).cast<String, Object?>(),
+    ),
     brand: Brand.fromJson((json['brand'] as Map).cast<String, Object?>()),
     aiVision: json['ai_vision'] as bool,
   );
@@ -1388,13 +1631,25 @@ class Settings {
 
   factory Settings.fromJson(Map<String, Object?> json) => Settings(
     language: json['language'] == null ? null : json['language'] as String,
-    whisperModel: json['whisper_model'] == null ? null : json['whisper_model'] as String,
+    whisperModel: json['whisper_model'] == null
+        ? null
+        : json['whisper_model'] as String,
     coldOpen: json['cold_open'] == null ? null : json['cold_open'] as bool,
     reorder: json['reorder'] == null ? null : json['reorder'] as bool,
-    overlaysDir: json['overlays_dir'] == null ? null : json['overlays_dir'] as String,
-    agent: json['agent'] == null ? null : SettingsAgent.fromJson((json['agent'] as Map).cast<String, Object?>()),
-    verifiedAgent: json['verified_agent'] == null ? null : json['verified_agent'] as String,
-    brand: json['brand'] == null ? null : (json['brand'] as Map).cast<String, Object?>(),
+    overlaysDir: json['overlays_dir'] == null
+        ? null
+        : json['overlays_dir'] as String,
+    agent: json['agent'] == null
+        ? null
+        : SettingsAgent.fromJson(
+            (json['agent'] as Map).cast<String, Object?>(),
+          ),
+    verifiedAgent: json['verified_agent'] == null
+        ? null
+        : json['verified_agent'] as String,
+    brand: json['brand'] == null
+        ? null
+        : (json['brand'] as Map).cast<String, Object?>(),
     inbox: json['inbox'] == null ? null : json['inbox'] as String,
     outputDir: json['output_dir'] == null ? null : json['output_dir'] as String,
     style: json['style'] == null ? null : json['style'] as String,
@@ -1464,16 +1719,22 @@ class AgentStatus {
     installed: json['installed'] as bool,
     path: json['path'] == null ? null : json['path'] as String,
     version: json['version'] == null ? null : json['version'] as String,
-    loginCommand: json['login_command'] == null ? null : json['login_command'] as String,
+    loginCommand: json['login_command'] == null
+        ? null
+        : json['login_command'] as String,
     docs: json['docs'] == null ? null : json['docs'] as String,
     apiKey: json['api_key'] == null ? null : json['api_key'] as bool,
     keyHint: json['key_hint'] == null ? null : json['key_hint'] as String,
     keySource: json['key_source'] == null ? null : json['key_source'] as String,
     server: json['server'] == null ? null : json['server'] as bool,
-    models: json['models'] == null ? null : (json['models'] as List).map((e) => e as String).toList(),
+    models: json['models'] == null
+        ? null
+        : (json['models'] as List).map((e) => e as String).toList(),
     pulling: json['pulling'] == null
         ? null
-        : (json['pulling'] as Map).map((k, e) => MapEntry(k as String, e as String)),
+        : (json['pulling'] as Map).map(
+            (k, e) => MapEntry(k as String, e as String),
+          ),
   );
 
   Map<String, Object?> toJson() => {
@@ -1507,7 +1768,9 @@ class SettingsAgent {
     fallback: json['fallback'] == null ? null : json['fallback'] as String,
     models: json['models'] == null
         ? null
-        : (json['models'] as Map).map((k, e) => MapEntry(k as String, e == null ? null : e as String)),
+        : (json['models'] as Map).map(
+            (k, e) => MapEntry(k as String, e == null ? null : e as String),
+          ),
   );
 
   Map<String, Object?> toJson() => {
@@ -1577,12 +1840,20 @@ class Setup {
   final String platform;
 
   factory Setup.fromJson(Map<String, Object?> json) => Setup(
-    agents: (json['agents'] as List).map((e) => AgentStatus.fromJson((e as Map).cast<String, Object?>())).toList(),
+    agents: (json['agents'] as List)
+        .map((e) => AgentStatus.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
     primary: json['primary'] == null ? null : json['primary'] as String,
-    installed: json['installed'] == null ? null : (json['installed'] as List).map((e) => e as String).toList(),
+    installed: json['installed'] == null
+        ? null
+        : (json['installed'] as List).map((e) => e as String).toList(),
     agentReady: json['agent_ready'] as bool,
-    verifiedAgent: json['verified_agent'] == null ? null : json['verified_agent'] as String,
-    whisper: WhisperState.fromJson((json['whisper'] as Map).cast<String, Object?>()),
+    verifiedAgent: json['verified_agent'] == null
+        ? null
+        : json['verified_agent'] as String,
+    whisper: WhisperState.fromJson(
+      (json['whisper'] as Map).cast<String, Object?>(),
+    ),
     ready: json['ready'] as bool,
     installCommands: json['install_commands'] == null
         ? null
@@ -1642,7 +1913,9 @@ class JobEvent {
     output: json['output'] == null ? null : json['output'] as String,
     url: json['url'] == null ? null : json['url'] as String,
     videoId: json['video_id'] == null ? null : json['video_id'] as String,
-    result: json['result'] == null ? null : (json['result'] as Map).cast<String, Object?>(),
+    result: json['result'] == null
+        ? null
+        : (json['result'] as Map).cast<String, Object?>(),
   );
 
   Map<String, Object?> toJson() => {
@@ -1664,11 +1937,18 @@ class ListLibraryResponse {
 
   final List<VideoSummary> videos;
 
-  factory ListLibraryResponse.fromJson(Map<String, Object?> json) => ListLibraryResponse(
-    videos: (json['videos'] as List).map((e) => VideoSummary.fromJson((e as Map).cast<String, Object?>())).toList(),
-  );
+  factory ListLibraryResponse.fromJson(Map<String, Object?> json) =>
+      ListLibraryResponse(
+        videos: (json['videos'] as List)
+            .map(
+              (e) => VideoSummary.fromJson((e as Map).cast<String, Object?>()),
+            )
+            .toList(),
+      );
 
-  Map<String, Object?> toJson() => {'videos': videos.map((e) => e.toJson()).toList()};
+  Map<String, Object?> toJson() => {
+    'videos': videos.map((e) => e.toJson()).toList(),
+  };
 }
 
 class Opened {
@@ -1676,7 +1956,8 @@ class Opened {
 
   final String opened;
 
-  factory Opened.fromJson(Map<String, Object?> json) => Opened(opened: json['opened'] as String);
+  factory Opened.fromJson(Map<String, Object?> json) =>
+      Opened(opened: json['opened'] as String);
 
   Map<String, Object?> toJson() => {'opened': opened};
 }
@@ -1687,8 +1968,10 @@ class JobStarted {
   final String jobId;
   final String videoId;
 
-  factory JobStarted.fromJson(Map<String, Object?> json) =>
-      JobStarted(jobId: json['job_id'] as String, videoId: json['video_id'] as String);
+  factory JobStarted.fromJson(Map<String, Object?> json) => JobStarted(
+    jobId: json['job_id'] as String,
+    videoId: json['video_id'] as String,
+  );
 
   Map<String, Object?> toJson() => {'job_id': jobId, 'video_id': videoId};
 }
@@ -1699,32 +1982,48 @@ class DeleteVideoResponse {
   final String id;
   final List<String> removed;
 
-  factory DeleteVideoResponse.fromJson(Map<String, Object?> json) => DeleteVideoResponse(
-    id: json['id'] as String,
-    removed: (json['removed'] as List).map((e) => e as String).toList(),
-  );
+  factory DeleteVideoResponse.fromJson(Map<String, Object?> json) =>
+      DeleteVideoResponse(
+        id: json['id'] as String,
+        removed: (json['removed'] as List).map((e) => e as String).toList(),
+      );
 
   Map<String, Object?> toJson() => {'id': id, 'removed': removed};
 }
 
 class StopVideoResponse {
-  const StopVideoResponse({required this.id, required this.stopped, required this.resetStages});
+  const StopVideoResponse({
+    required this.id,
+    required this.stopped,
+    required this.resetStages,
+  });
 
   final String id;
   final List<String> stopped;
   final List<String> resetStages;
 
-  factory StopVideoResponse.fromJson(Map<String, Object?> json) => StopVideoResponse(
-    id: json['id'] as String,
-    stopped: (json['stopped'] as List).map((e) => e as String).toList(),
-    resetStages: (json['reset_stages'] as List).map((e) => e as String).toList(),
-  );
+  factory StopVideoResponse.fromJson(Map<String, Object?> json) =>
+      StopVideoResponse(
+        id: json['id'] as String,
+        stopped: (json['stopped'] as List).map((e) => e as String).toList(),
+        resetStages: (json['reset_stages'] as List)
+            .map((e) => e as String)
+            .toList(),
+      );
 
-  Map<String, Object?> toJson() => {'id': id, 'stopped': stopped, 'reset_stages': resetStages};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'stopped': stopped,
+    'reset_stages': resetStages,
+  };
 }
 
 class ResumeVideoRequest {
-  const ResumeVideoRequest({required this.fromStage, this.overlaysDir, this.captionOnly});
+  const ResumeVideoRequest({
+    required this.fromStage,
+    this.overlaysDir,
+    this.captionOnly,
+  });
 
   /// extract, plan, review, evaluate, execute, overlay, caption, metadata…
   final String fromStage;
@@ -1733,11 +2032,16 @@ class ResumeVideoRequest {
   /// short: rewrite only the burned captions
   final bool? captionOnly;
 
-  factory ResumeVideoRequest.fromJson(Map<String, Object?> json) => ResumeVideoRequest(
-    fromStage: json['from_stage'] as String,
-    overlaysDir: json['overlays_dir'] == null ? null : json['overlays_dir'] as String,
-    captionOnly: json['caption_only'] == null ? null : json['caption_only'] as bool,
-  );
+  factory ResumeVideoRequest.fromJson(Map<String, Object?> json) =>
+      ResumeVideoRequest(
+        fromStage: json['from_stage'] as String,
+        overlaysDir: json['overlays_dir'] == null
+            ? null
+            : json['overlays_dir'] as String,
+        captionOnly: json['caption_only'] == null
+            ? null
+            : json['caption_only'] as bool,
+      );
 
   Map<String, Object?> toJson() => {
     'from_stage': fromStage,
@@ -1751,29 +2055,45 @@ class SavePlanRequest {
 
   final List<SegmentInput> keptSegments;
 
-  factory SavePlanRequest.fromJson(Map<String, Object?> json) => SavePlanRequest(
-    keptSegments: (json['kept_segments'] as List)
-        .map((e) => SegmentInput.fromJson((e as Map).cast<String, Object?>()))
-        .toList(),
-  );
+  factory SavePlanRequest.fromJson(Map<String, Object?> json) =>
+      SavePlanRequest(
+        keptSegments: (json['kept_segments'] as List)
+            .map(
+              (e) => SegmentInput.fromJson((e as Map).cast<String, Object?>()),
+            )
+            .toList(),
+      );
 
-  Map<String, Object?> toJson() => {'kept_segments': keptSegments.map((e) => e.toJson()).toList()};
+  Map<String, Object?> toJson() => {
+    'kept_segments': keptSegments.map((e) => e.toJson()).toList(),
+  };
 }
 
 class CutRangeRequest {
-  const CutRangeRequest({required this.start, required this.end, this.timeline});
+  const CutRangeRequest({
+    required this.start,
+    required this.end,
+    this.timeline,
+  });
 
   final double start;
   final double end;
   final Timeline? timeline;
 
-  factory CutRangeRequest.fromJson(Map<String, Object?> json) => CutRangeRequest(
-    start: (json['start'] as num).toDouble(),
-    end: (json['end'] as num).toDouble(),
-    timeline: json['timeline'] == null ? null : Timeline(json['timeline'] as String),
-  );
+  factory CutRangeRequest.fromJson(Map<String, Object?> json) =>
+      CutRangeRequest(
+        start: (json['start'] as num).toDouble(),
+        end: (json['end'] as num).toDouble(),
+        timeline: json['timeline'] == null
+            ? null
+            : Timeline(json['timeline'] as String),
+      );
 
-  Map<String, Object?> toJson() => {'start': start, 'end': end, if (timeline != null) 'timeline': timeline!.value};
+  Map<String, Object?> toJson() => {
+    'start': start,
+    'end': end,
+    if (timeline != null) 'timeline': timeline!.value,
+  };
 }
 
 class CutRangeResponse {
@@ -1801,17 +2121,26 @@ class CutRangeResponse {
   final Object? droppedBlocks;
   final List<Window> removedWindows;
 
-  factory CutRangeResponse.fromJson(Map<String, Object?> json) => CutRangeResponse(
+  factory CutRangeResponse.fromJson(
+    Map<String, Object?> json,
+  ) => CutRangeResponse(
     id: json['id'] as String,
     name: json['name'] == null ? null : json['name'] as String,
     source: json['source'] as String,
     editable: json['editable'] as bool,
-    duration: json['duration'] == null ? null : (json['duration'] as num).toDouble(),
+    duration: json['duration'] == null
+        ? null
+        : (json['duration'] as num).toDouble(),
     keptTotal: (json['kept_total'] as num).toDouble(),
     keptSegments: (json['kept_segments'] as List)
-        .map((e) => PlanKeptSegmentsItem.fromJson((e as Map).cast<String, Object?>()))
+        .map(
+          (e) =>
+              PlanKeptSegmentsItem.fromJson((e as Map).cast<String, Object?>()),
+        )
         .toList(),
-    cuts: (json['cuts'] as List).map((e) => PlanCutsItem.fromJson((e as Map).cast<String, Object?>())).toList(),
+    cuts: (json['cuts'] as List)
+        .map((e) => PlanCutsItem.fromJson((e as Map).cast<String, Object?>()))
+        .toList(),
     droppedBlocks: json['dropped_blocks'],
     removedWindows: (json['removed_windows'] as List)
         .map((e) => Window.fromJson((e as Map).cast<String, Object?>()))
@@ -1848,13 +2177,19 @@ class ChooseThumbnailResponse {
 
   final List<ThumbnailOption> thumbnails;
 
-  factory ChooseThumbnailResponse.fromJson(Map<String, Object?> json) => ChooseThumbnailResponse(
-    thumbnails: (json['thumbnails'] as List)
-        .map((e) => ThumbnailOption.fromJson((e as Map).cast<String, Object?>()))
-        .toList(),
-  );
+  factory ChooseThumbnailResponse.fromJson(Map<String, Object?> json) =>
+      ChooseThumbnailResponse(
+        thumbnails: (json['thumbnails'] as List)
+            .map(
+              (e) =>
+                  ThumbnailOption.fromJson((e as Map).cast<String, Object?>()),
+            )
+            .toList(),
+      );
 
-  Map<String, Object?> toJson() => {'thumbnails': thumbnails.map((e) => e.toJson()).toList()};
+  Map<String, Object?> toJson() => {
+    'thumbnails': thumbnails.map((e) => e.toJson()).toList(),
+  };
 }
 
 class OpenFileRequest {
@@ -1863,7 +2198,9 @@ class OpenFileRequest {
   final bool? reveal;
 
   factory OpenFileRequest.fromJson(Map<String, Object?> json) =>
-      OpenFileRequest(reveal: json['reveal'] == null ? null : json['reveal'] as bool);
+      OpenFileRequest(
+        reveal: json['reveal'] == null ? null : json['reveal'] as bool,
+      );
 
   Map<String, Object?> toJson() => {if (reveal != null) 'reveal': reveal!};
 }
@@ -1874,7 +2211,11 @@ class FindShortsRequest {
   final double? maxDur;
 
   factory FindShortsRequest.fromJson(Map<String, Object?> json) =>
-      FindShortsRequest(maxDur: json['max_dur'] == null ? null : (json['max_dur'] as num).toDouble());
+      FindShortsRequest(
+        maxDur: json['max_dur'] == null
+            ? null
+            : (json['max_dur'] as num).toDouble(),
+      );
 
   Map<String, Object?> toJson() => {if (maxDur != null) 'max_dur': maxDur!};
 }
@@ -1885,12 +2226,18 @@ class CutShortsRequest {
   final List<int> pick;
   final double? maxDur;
 
-  factory CutShortsRequest.fromJson(Map<String, Object?> json) => CutShortsRequest(
-    pick: (json['pick'] as List).map((e) => (e as num).toInt()).toList(),
-    maxDur: json['max_dur'] == null ? null : (json['max_dur'] as num).toDouble(),
-  );
+  factory CutShortsRequest.fromJson(Map<String, Object?> json) =>
+      CutShortsRequest(
+        pick: (json['pick'] as List).map((e) => (e as num).toInt()).toList(),
+        maxDur: json['max_dur'] == null
+            ? null
+            : (json['max_dur'] as num).toDouble(),
+      );
 
-  Map<String, Object?> toJson() => {'pick': pick, if (maxDur != null) 'max_dur': maxDur!};
+  Map<String, Object?> toJson() => {
+    'pick': pick,
+    if (maxDur != null) 'max_dur': maxDur!,
+  };
 }
 
 class CutShortsResponse {
@@ -1899,7 +2246,9 @@ class CutShortsResponse {
   final List<String> shorts;
 
   factory CutShortsResponse.fromJson(Map<String, Object?> json) =>
-      CutShortsResponse(shorts: (json['shorts'] as List).map((e) => e as String).toList());
+      CutShortsResponse(
+        shorts: (json['shorts'] as List).map((e) => e as String).toList(),
+      );
 
   Map<String, Object?> toJson() => {'shorts': shorts};
 }
@@ -1910,32 +2259,49 @@ class YoutubeClientRequest {
   final String? path;
   final String? content;
 
-  factory YoutubeClientRequest.fromJson(Map<String, Object?> json) => YoutubeClientRequest(
-    path: json['path'] == null ? null : json['path'] as String,
-    content: json['content'] == null ? null : json['content'] as String,
-  );
+  factory YoutubeClientRequest.fromJson(Map<String, Object?> json) =>
+      YoutubeClientRequest(
+        path: json['path'] == null ? null : json['path'] as String,
+        content: json['content'] == null ? null : json['content'] as String,
+      );
 
-  Map<String, Object?> toJson() => {if (path != null) 'path': path!, if (content != null) 'content': content!};
+  Map<String, Object?> toJson() => {
+    if (path != null) 'path': path!,
+    if (content != null) 'content': content!,
+  };
 }
 
 class YoutubeRefreshResponse {
-  const YoutubeRefreshResponse({required this.checked, required this.changed, this.error});
+  const YoutubeRefreshResponse({
+    required this.checked,
+    required this.changed,
+    this.error,
+  });
 
   final bool checked;
   final bool changed;
   final String? error;
 
-  factory YoutubeRefreshResponse.fromJson(Map<String, Object?> json) => YoutubeRefreshResponse(
-    checked: json['checked'] as bool,
-    changed: json['changed'] as bool,
-    error: json['error'] == null ? null : json['error'] as String,
-  );
+  factory YoutubeRefreshResponse.fromJson(Map<String, Object?> json) =>
+      YoutubeRefreshResponse(
+        checked: json['checked'] as bool,
+        changed: json['changed'] as bool,
+        error: json['error'] == null ? null : json['error'] as String,
+      );
 
-  Map<String, Object?> toJson() => {'checked': checked, 'changed': changed, if (error != null) 'error': error!};
+  Map<String, Object?> toJson() => {
+    'checked': checked,
+    'changed': changed,
+    if (error != null) 'error': error!,
+  };
 }
 
 class GetPublishLiveResponse {
-  const GetPublishLiveResponse({required this.checked, required this.videos, this.error});
+  const GetPublishLiveResponse({
+    required this.checked,
+    required this.videos,
+    this.error,
+  });
 
   /// false: couldn't ask (not connected, offline)
   final bool checked;
@@ -1944,13 +2310,19 @@ class GetPublishLiveResponse {
   final Map<String, GetPublishLiveResponseVideosValue> videos;
   final String? error;
 
-  factory GetPublishLiveResponse.fromJson(Map<String, Object?> json) => GetPublishLiveResponse(
-    checked: json['checked'] as bool,
-    videos: (json['videos'] as Map).map(
-      (k, e) => MapEntry(k as String, GetPublishLiveResponseVideosValue.fromJson((e as Map).cast<String, Object?>())),
-    ),
-    error: json['error'] == null ? null : json['error'] as String,
-  );
+  factory GetPublishLiveResponse.fromJson(Map<String, Object?> json) =>
+      GetPublishLiveResponse(
+        checked: json['checked'] as bool,
+        videos: (json['videos'] as Map).map(
+          (k, e) => MapEntry(
+            k as String,
+            GetPublishLiveResponseVideosValue.fromJson(
+              (e as Map).cast<String, Object?>(),
+            ),
+          ),
+        ),
+        error: json['error'] == null ? null : json['error'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     'checked': checked,
@@ -1960,7 +2332,13 @@ class GetPublishLiveResponse {
 }
 
 class SaveStyleRequest {
-  const SaveStyleRequest({required this.name, required this.tokens, this.id, this.description, this.activate});
+  const SaveStyleRequest({
+    required this.name,
+    required this.tokens,
+    this.id,
+    this.description,
+    this.activate,
+  });
 
   final String name;
   final Map<String, Object?> tokens;
@@ -1968,13 +2346,16 @@ class SaveStyleRequest {
   final String? description;
   final bool? activate;
 
-  factory SaveStyleRequest.fromJson(Map<String, Object?> json) => SaveStyleRequest(
-    name: json['name'] as String,
-    tokens: (json['tokens'] as Map).cast<String, Object?>(),
-    id: json['id'] == null ? null : json['id'] as String,
-    description: json['description'] == null ? null : json['description'] as String,
-    activate: json['activate'] == null ? null : json['activate'] as bool,
-  );
+  factory SaveStyleRequest.fromJson(Map<String, Object?> json) =>
+      SaveStyleRequest(
+        name: json['name'] as String,
+        tokens: (json['tokens'] as Map).cast<String, Object?>(),
+        id: json['id'] == null ? null : json['id'] as String,
+        description: json['description'] == null
+            ? null
+            : json['description'] as String,
+        activate: json['activate'] == null ? null : json['activate'] as bool,
+      );
 
   Map<String, Object?> toJson() => {
     'name': name,
@@ -1990,7 +2371,8 @@ class SetActiveStyleRequest {
 
   final String id;
 
-  factory SetActiveStyleRequest.fromJson(Map<String, Object?> json) => SetActiveStyleRequest(id: json['id'] as String);
+  factory SetActiveStyleRequest.fromJson(Map<String, Object?> json) =>
+      SetActiveStyleRequest(id: json['id'] as String);
 
   Map<String, Object?> toJson() => {'id': id};
 }
@@ -2000,7 +2382,8 @@ class ActiveStyle {
 
   final String active;
 
-  factory ActiveStyle.fromJson(Map<String, Object?> json) => ActiveStyle(active: json['active'] as String);
+  factory ActiveStyle.fromJson(Map<String, Object?> json) =>
+      ActiveStyle(active: json['active'] as String);
 
   Map<String, Object?> toJson() => {'active': active};
 }
@@ -2010,7 +2393,8 @@ class ExportStyleResponse {
 
   final String path;
 
-  factory ExportStyleResponse.fromJson(Map<String, Object?> json) => ExportStyleResponse(path: json['path'] as String);
+  factory ExportStyleResponse.fromJson(Map<String, Object?> json) =>
+      ExportStyleResponse(path: json['path'] as String);
 
   Map<String, Object?> toJson() => {'path': path};
 }
@@ -2022,7 +2406,11 @@ class ImportStyleRequest {
   final ImportStyleRequestFile file;
 
   factory ImportStyleRequest.fromJson(Map<String, Object?> json) =>
-      ImportStyleRequest(file: ImportStyleRequestFile.fromJson((json['file'] as Map).cast<String, Object?>()));
+      ImportStyleRequest(
+        file: ImportStyleRequestFile.fromJson(
+          (json['file'] as Map).cast<String, Object?>(),
+        ),
+      );
 
   Map<String, Object?> toJson() => {'file': file.toJson()};
 }
@@ -2033,7 +2421,11 @@ class PreviewStyleRequest {
   final Map<String, Object?>? tokens;
 
   factory PreviewStyleRequest.fromJson(Map<String, Object?> json) =>
-      PreviewStyleRequest(tokens: json['tokens'] == null ? null : (json['tokens'] as Map).cast<String, Object?>());
+      PreviewStyleRequest(
+        tokens: json['tokens'] == null
+            ? null
+            : (json['tokens'] as Map).cast<String, Object?>(),
+      );
 
   Map<String, Object?> toJson() => {if (tokens != null) 'tokens': tokens!};
 }
@@ -2044,10 +2436,13 @@ class GenerateStyleRequest {
   final String? description;
   final String? image;
 
-  factory GenerateStyleRequest.fromJson(Map<String, Object?> json) => GenerateStyleRequest(
-    description: json['description'] == null ? null : json['description'] as String,
-    image: json['image'] == null ? null : json['image'] as String,
-  );
+  factory GenerateStyleRequest.fromJson(Map<String, Object?> json) =>
+      GenerateStyleRequest(
+        description: json['description'] == null
+            ? null
+            : json['description'] as String,
+        image: json['image'] == null ? null : json['image'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     if (description != null) 'description': description!,
@@ -2060,25 +2455,35 @@ class TaskStarted {
 
   final String jobId;
 
-  factory TaskStarted.fromJson(Map<String, Object?> json) => TaskStarted(jobId: json['job_id'] as String);
+  factory TaskStarted.fromJson(Map<String, Object?> json) =>
+      TaskStarted(jobId: json['job_id'] as String);
 
   Map<String, Object?> toJson() => {'job_id': jobId};
 }
 
 class AdjustStyleRequest {
-  const AdjustStyleRequest({required this.tokens, required this.request, this.image});
+  const AdjustStyleRequest({
+    required this.tokens,
+    required this.request,
+    this.image,
+  });
 
   final Map<String, Object?> tokens;
   final String request;
   final String? image;
 
-  factory AdjustStyleRequest.fromJson(Map<String, Object?> json) => AdjustStyleRequest(
-    tokens: (json['tokens'] as Map).cast<String, Object?>(),
-    request: json['request'] as String,
-    image: json['image'] == null ? null : json['image'] as String,
-  );
+  factory AdjustStyleRequest.fromJson(Map<String, Object?> json) =>
+      AdjustStyleRequest(
+        tokens: (json['tokens'] as Map).cast<String, Object?>(),
+        request: json['request'] as String,
+        image: json['image'] == null ? null : json['image'] as String,
+      );
 
-  Map<String, Object?> toJson() => {'tokens': tokens, 'request': request, if (image != null) 'image': image!};
+  Map<String, Object?> toJson() => {
+    'tokens': tokens,
+    'request': request,
+    if (image != null) 'image': image!,
+  };
 }
 
 class StylePaletteRequest {
@@ -2087,7 +2492,9 @@ class StylePaletteRequest {
   final String? image;
 
   factory StylePaletteRequest.fromJson(Map<String, Object?> json) =>
-      StylePaletteRequest(image: json['image'] == null ? null : json['image'] as String);
+      StylePaletteRequest(
+        image: json['image'] == null ? null : json['image'] as String,
+      );
 
   Map<String, Object?> toJson() => {if (image != null) 'image': image!};
 }
@@ -2098,10 +2505,11 @@ class StylePaletteResponse {
   final List<String> colors;
   final Map<String, Object?> suggested;
 
-  factory StylePaletteResponse.fromJson(Map<String, Object?> json) => StylePaletteResponse(
-    colors: (json['colors'] as List).map((e) => e as String).toList(),
-    suggested: (json['suggested'] as Map).cast<String, Object?>(),
-  );
+  factory StylePaletteResponse.fromJson(Map<String, Object?> json) =>
+      StylePaletteResponse(
+        colors: (json['colors'] as List).map((e) => e as String).toList(),
+        suggested: (json['suggested'] as Map).cast<String, Object?>(),
+      );
 
   Map<String, Object?> toJson() => {'colors': colors, 'suggested': suggested};
 }
@@ -2111,7 +2519,8 @@ class UploadLogoRequest {
 
   final String data;
 
-  factory UploadLogoRequest.fromJson(Map<String, Object?> json) => UploadLogoRequest(data: json['data'] as String);
+  factory UploadLogoRequest.fromJson(Map<String, Object?> json) =>
+      UploadLogoRequest(data: json['data'] as String);
 
   Map<String, Object?> toJson() => {'data': data};
 }
@@ -2122,7 +2531,9 @@ class DownloadWhisperRequest {
   final String? model;
 
   factory DownloadWhisperRequest.fromJson(Map<String, Object?> json) =>
-      DownloadWhisperRequest(model: json['model'] == null ? null : json['model'] as String);
+      DownloadWhisperRequest(
+        model: json['model'] == null ? null : json['model'] as String,
+      );
 
   Map<String, Object?> toJson() => {if (model != null) 'model': model!};
 }
@@ -2132,11 +2543,18 @@ class ListAgentsResponse {
 
   final List<AgentStatus> agents;
 
-  factory ListAgentsResponse.fromJson(Map<String, Object?> json) => ListAgentsResponse(
-    agents: (json['agents'] as List).map((e) => AgentStatus.fromJson((e as Map).cast<String, Object?>())).toList(),
-  );
+  factory ListAgentsResponse.fromJson(Map<String, Object?> json) =>
+      ListAgentsResponse(
+        agents: (json['agents'] as List)
+            .map(
+              (e) => AgentStatus.fromJson((e as Map).cast<String, Object?>()),
+            )
+            .toList(),
+      );
 
-  Map<String, Object?> toJson() => {'agents': agents.map((e) => e.toJson()).toList()};
+  Map<String, Object?> toJson() => {
+    'agents': agents.map((e) => e.toJson()).toList(),
+  };
 }
 
 class TestAgentRequest {
@@ -2145,13 +2563,21 @@ class TestAgentRequest {
   final String? model;
 
   factory TestAgentRequest.fromJson(Map<String, Object?> json) =>
-      TestAgentRequest(model: json['model'] == null ? null : json['model'] as String);
+      TestAgentRequest(
+        model: json['model'] == null ? null : json['model'] as String,
+      );
 
   Map<String, Object?> toJson() => {if (model != null) 'model': model!};
 }
 
 class TestAgentResponse {
-  const TestAgentResponse({this.name, required this.ok, this.seconds, this.answer, this.error});
+  const TestAgentResponse({
+    this.name,
+    required this.ok,
+    this.seconds,
+    this.answer,
+    this.error,
+  });
 
   final String? name;
   final bool ok;
@@ -2161,13 +2587,16 @@ class TestAgentResponse {
   final String? answer;
   final String? error;
 
-  factory TestAgentResponse.fromJson(Map<String, Object?> json) => TestAgentResponse(
-    name: json['name'] == null ? null : json['name'] as String,
-    ok: json['ok'] as bool,
-    seconds: json['seconds'] == null ? null : (json['seconds'] as num).toDouble(),
-    answer: json['answer'] == null ? null : json['answer'] as String,
-    error: json['error'] == null ? null : json['error'] as String,
-  );
+  factory TestAgentResponse.fromJson(Map<String, Object?> json) =>
+      TestAgentResponse(
+        name: json['name'] == null ? null : json['name'] as String,
+        ok: json['ok'] as bool,
+        seconds: json['seconds'] == null
+            ? null
+            : (json['seconds'] as num).toDouble(),
+        answer: json['answer'] == null ? null : json['answer'] as String,
+        error: json['error'] == null ? null : json['error'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     if (name != null) 'name': name!,
@@ -2198,12 +2627,16 @@ class InstallAgentResponse {
   /// The download page opened in the browser
   final String? opened;
 
-  factory InstallAgentResponse.fromJson(Map<String, Object?> json) => InstallAgentResponse(
-    command: json['command'] == null ? null : json['command'] as String,
-    opened: json['opened'] == null ? null : json['opened'] as String,
-  );
+  factory InstallAgentResponse.fromJson(Map<String, Object?> json) =>
+      InstallAgentResponse(
+        command: json['command'] == null ? null : json['command'] as String,
+        opened: json['opened'] == null ? null : json['opened'] as String,
+      );
 
-  Map<String, Object?> toJson() => {if (command != null) 'command': command!, if (opened != null) 'opened': opened!};
+  Map<String, Object?> toJson() => {
+    if (command != null) 'command': command!,
+    if (opened != null) 'opened': opened!,
+  };
 }
 
 class PullOllamaRequest {
@@ -2211,7 +2644,8 @@ class PullOllamaRequest {
 
   final String model;
 
-  factory PullOllamaRequest.fromJson(Map<String, Object?> json) => PullOllamaRequest(model: json['model'] as String);
+  factory PullOllamaRequest.fromJson(Map<String, Object?> json) =>
+      PullOllamaRequest(model: json['model'] as String);
 
   Map<String, Object?> toJson() => {'model': model};
 }
@@ -2223,7 +2657,10 @@ class PullOllamaResponse {
   final String status;
 
   factory PullOllamaResponse.fromJson(Map<String, Object?> json) =>
-      PullOllamaResponse(model: json['model'] as String, status: json['status'] as String);
+      PullOllamaResponse(
+        model: json['model'] as String,
+        status: json['status'] as String,
+      );
 
   Map<String, Object?> toJson() => {'model': model, 'status': status};
 }
@@ -2244,7 +2681,8 @@ class OpenUrlRequest {
 
   final String url;
 
-  factory OpenUrlRequest.fromJson(Map<String, Object?> json) => OpenUrlRequest(url: json['url'] as String);
+  factory OpenUrlRequest.fromJson(Map<String, Object?> json) =>
+      OpenUrlRequest(url: json['url'] as String);
 
   Map<String, Object?> toJson() => {'url': url};
 }
@@ -2260,7 +2698,10 @@ class SetLanRequest {
     port: json['port'] == null ? null : (json['port'] as num).toInt(),
   );
 
-  Map<String, Object?> toJson() => {if (enabled != null) 'enabled': enabled!, if (port != null) 'port': port!};
+  Map<String, Object?> toJson() => {
+    if (enabled != null) 'enabled': enabled!,
+    if (port != null) 'port': port!,
+  };
 }
 
 class RevokeDeviceResponse {
@@ -2268,7 +2709,8 @@ class RevokeDeviceResponse {
 
   final bool ok;
 
-  factory RevokeDeviceResponse.fromJson(Map<String, Object?> json) => RevokeDeviceResponse(ok: json['ok'] as bool);
+  factory RevokeDeviceResponse.fromJson(Map<String, Object?> json) =>
+      RevokeDeviceResponse(ok: json['ok'] as bool);
 
   Map<String, Object?> toJson() => {'ok': ok};
 }
@@ -2281,24 +2723,40 @@ class PairRequest {
   /// How the device shows in the list (e.g. the phone's model)
   final String? name;
 
-  factory PairRequest.fromJson(Map<String, Object?> json) =>
-      PairRequest(code: json['code'] as String, name: json['name'] == null ? null : json['name'] as String);
+  factory PairRequest.fromJson(Map<String, Object?> json) => PairRequest(
+    code: json['code'] as String,
+    name: json['name'] == null ? null : json['name'] as String,
+  );
 
-  Map<String, Object?> toJson() => {'code': code, if (name != null) 'name': name!};
+  Map<String, Object?> toJson() => {
+    'code': code,
+    if (name != null) 'name': name!,
+  };
 }
 
 class PairResponse {
-  const PairResponse({required this.token, required this.deviceId, required this.name});
+  const PairResponse({
+    required this.token,
+    required this.deviceId,
+    required this.name,
+  });
 
   /// Send as `Authorization: Bearer`; shown only now
   final String token;
   final String deviceId;
   final String name;
 
-  factory PairResponse.fromJson(Map<String, Object?> json) =>
-      PairResponse(token: json['token'] as String, deviceId: json['device_id'] as String, name: json['name'] as String);
+  factory PairResponse.fromJson(Map<String, Object?> json) => PairResponse(
+    token: json['token'] as String,
+    deviceId: json['device_id'] as String,
+    name: json['name'] as String,
+  );
 
-  Map<String, Object?> toJson() => {'token': token, 'device_id': deviceId, 'name': name};
+  Map<String, Object?> toJson() => {
+    'token': token,
+    'device_id': deviceId,
+    'name': name,
+  };
 }
 
 class CreateUploadRequest {
@@ -2311,7 +2769,10 @@ class CreateUploadRequest {
   final int size;
 
   factory CreateUploadRequest.fromJson(Map<String, Object?> json) =>
-      CreateUploadRequest(name: json['name'] as String, size: (json['size'] as num).toInt());
+      CreateUploadRequest(
+        name: json['name'] as String,
+        size: (json['size'] as num).toInt(),
+      );
 
   Map<String, Object?> toJson() => {'name': name, 'size': size};
 }
@@ -2321,7 +2782,8 @@ class CancelUploadResponse {
 
   final bool ok;
 
-  factory CancelUploadResponse.fromJson(Map<String, Object?> json) => CancelUploadResponse(ok: json['ok'] as bool);
+  factory CancelUploadResponse.fromJson(Map<String, Object?> json) =>
+      CancelUploadResponse(ok: json['ok'] as bool);
 
   Map<String, Object?> toJson() => {'ok': ok};
 }
@@ -2332,8 +2794,10 @@ class BrowseDirsItem {
   final String name;
   final String path;
 
-  factory BrowseDirsItem.fromJson(Map<String, Object?> json) =>
-      BrowseDirsItem(name: json['name'] as String, path: json['path'] as String);
+  factory BrowseDirsItem.fromJson(Map<String, Object?> json) => BrowseDirsItem(
+    name: json['name'] as String,
+    path: json['path'] as String,
+  );
 
   Map<String, Object?> toJson() => {'name': name, 'path': path};
 }
@@ -2363,20 +2827,27 @@ class RecordingsRecordingsItem {
   final int? height;
   final List<RecordingsRecordingsItemEditsItem> edits;
 
-  factory RecordingsRecordingsItem.fromJson(Map<String, Object?> json) => RecordingsRecordingsItem(
-    name: json['name'] as String,
-    path: json['path'] as String,
-    folder: json['folder'] as String,
-    ext: json['ext'] as String,
-    size: (json['size'] as num).toInt(),
-    modified: json['modified'] as String,
-    duration: json['duration'] == null ? null : (json['duration'] as num).toDouble(),
-    width: json['width'] == null ? null : (json['width'] as num).toInt(),
-    height: json['height'] == null ? null : (json['height'] as num).toInt(),
-    edits: (json['edits'] as List)
-        .map((e) => RecordingsRecordingsItemEditsItem.fromJson((e as Map).cast<String, Object?>()))
-        .toList(),
-  );
+  factory RecordingsRecordingsItem.fromJson(Map<String, Object?> json) =>
+      RecordingsRecordingsItem(
+        name: json['name'] as String,
+        path: json['path'] as String,
+        folder: json['folder'] as String,
+        ext: json['ext'] as String,
+        size: (json['size'] as num).toInt(),
+        modified: json['modified'] as String,
+        duration: json['duration'] == null
+            ? null
+            : (json['duration'] as num).toDouble(),
+        width: json['width'] == null ? null : (json['width'] as num).toInt(),
+        height: json['height'] == null ? null : (json['height'] as num).toInt(),
+        edits: (json['edits'] as List)
+            .map(
+              (e) => RecordingsRecordingsItemEditsItem.fromJson(
+                (e as Map).cast<String, Object?>(),
+              ),
+            )
+            .toList(),
+      );
 
   Map<String, Object?> toJson() => {
     'name': name,
@@ -2393,19 +2864,29 @@ class RecordingsRecordingsItem {
 }
 
 class VideoSummaryPublished {
-  const VideoSummaryPublished({this.privacy, this.publishAt, this.publishedAt, this.count});
+  const VideoSummaryPublished({
+    this.privacy,
+    this.publishAt,
+    this.publishedAt,
+    this.count,
+  });
 
   final String? privacy;
   final String? publishAt;
   final String? publishedAt;
   final int? count;
 
-  factory VideoSummaryPublished.fromJson(Map<String, Object?> json) => VideoSummaryPublished(
-    privacy: json['privacy'] == null ? null : json['privacy'] as String,
-    publishAt: json['publish_at'] == null ? null : json['publish_at'] as String,
-    publishedAt: json['published_at'] == null ? null : json['published_at'] as String,
-    count: json['count'] == null ? null : (json['count'] as num).toInt(),
-  );
+  factory VideoSummaryPublished.fromJson(Map<String, Object?> json) =>
+      VideoSummaryPublished(
+        privacy: json['privacy'] == null ? null : json['privacy'] as String,
+        publishAt: json['publish_at'] == null
+            ? null
+            : json['publish_at'] as String,
+        publishedAt: json['published_at'] == null
+            ? null
+            : json['published_at'] as String,
+        count: json['count'] == null ? null : (json['count'] as num).toInt(),
+      );
 
   Map<String, Object?> toJson() => {
     if (privacy != null) 'privacy': privacy!,
@@ -2421,10 +2902,13 @@ class VideoDetailPlan {
   final int? keptSegments;
   final Object? droppedBlocks;
 
-  factory VideoDetailPlan.fromJson(Map<String, Object?> json) => VideoDetailPlan(
-    keptSegments: json['kept_segments'] == null ? null : (json['kept_segments'] as num).toInt(),
-    droppedBlocks: json['dropped_blocks'],
-  );
+  factory VideoDetailPlan.fromJson(Map<String, Object?> json) =>
+      VideoDetailPlan(
+        keptSegments: json['kept_segments'] == null
+            ? null
+            : (json['kept_segments'] as num).toInt(),
+        droppedBlocks: json['dropped_blocks'],
+      );
 
   Map<String, Object?> toJson() => {
     if (keptSegments != null) 'kept_segments': keptSegments!,
@@ -2451,14 +2935,15 @@ class PlanKeptSegmentsItem {
   /// what is said in it
   final String text;
 
-  factory PlanKeptSegmentsItem.fromJson(Map<String, Object?> json) => PlanKeptSegmentsItem(
-    index: (json['index'] as num).toInt(),
-    start: (json['start'] as num).toDouble(),
-    end: (json['end'] as num).toDouble(),
-    duration: (json['duration'] as num).toDouble(),
-    summary: json['summary'] == null ? null : json['summary'] as String,
-    text: json['text'] as String,
-  );
+  factory PlanKeptSegmentsItem.fromJson(Map<String, Object?> json) =>
+      PlanKeptSegmentsItem(
+        index: (json['index'] as num).toInt(),
+        start: (json['start'] as num).toDouble(),
+        end: (json['end'] as num).toDouble(),
+        duration: (json['duration'] as num).toDouble(),
+        summary: json['summary'] == null ? null : json['summary'] as String,
+        text: json['text'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     'index': index,
@@ -2471,7 +2956,13 @@ class PlanKeptSegmentsItem {
 }
 
 class PlanCutsItem {
-  const PlanCutsItem({required this.start, required this.end, required this.duration, this.reason, this.type});
+  const PlanCutsItem({
+    required this.start,
+    required this.end,
+    required this.duration,
+    this.reason,
+    this.type,
+  });
 
   final double start;
   final double end;
@@ -2515,14 +3006,15 @@ class EffectsEffectsItem {
   final double? scale;
   final String? file;
 
-  factory EffectsEffectsItem.fromJson(Map<String, Object?> json) => EffectsEffectsItem(
-    index: (json['index'] as num).toInt(),
-    type: json['type'] as String,
-    start: (json['start'] as num).toDouble(),
-    end: (json['end'] as num).toDouble(),
-    scale: json['scale'] == null ? null : (json['scale'] as num).toDouble(),
-    file: json['file'] == null ? null : json['file'] as String,
-  );
+  factory EffectsEffectsItem.fromJson(Map<String, Object?> json) =>
+      EffectsEffectsItem(
+        index: (json['index'] as num).toInt(),
+        type: json['type'] as String,
+        start: (json['start'] as num).toDouble(),
+        end: (json['end'] as num).toDouble(),
+        scale: json['scale'] == null ? null : (json['scale'] as num).toDouble(),
+        file: json['file'] == null ? null : json['file'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     'index': index,
@@ -2541,7 +3033,10 @@ class ResultFilesValue {
   final int size;
 
   factory ResultFilesValue.fromJson(Map<String, Object?> json) =>
-      ResultFilesValue(path: json['path'] as String, size: (json['size'] as num).toInt());
+      ResultFilesValue(
+        path: json['path'] as String,
+        size: (json['size'] as num).toInt(),
+      );
 
   Map<String, Object?> toJson() => {'path': path, 'size': size};
 }
@@ -2572,20 +3067,23 @@ class ShortsStateClipsItem {
   final bool overlaps;
   final ShortsStateClipsItemShort? short;
 
-  factory ShortsStateClipsItem.fromJson(Map<String, Object?> json) => ShortsStateClipsItem(
-    number: (json['number'] as num).toInt(),
-    start: (json['start'] as num).toDouble(),
-    end: (json['end'] as num).toDouble(),
-    duration: (json['duration'] as num).toDouble(),
-    score: json['score'] == null ? null : (json['score'] as num).toDouble(),
-    hook: json['hook'] as String,
-    reason: json['reason'] == null ? null : json['reason'] as String,
-    text: json['text'] as String,
-    overlaps: json['overlaps'] as bool,
-    short: json['short'] == null
-        ? null
-        : ShortsStateClipsItemShort.fromJson((json['short'] as Map).cast<String, Object?>()),
-  );
+  factory ShortsStateClipsItem.fromJson(Map<String, Object?> json) =>
+      ShortsStateClipsItem(
+        number: (json['number'] as num).toInt(),
+        start: (json['start'] as num).toDouble(),
+        end: (json['end'] as num).toDouble(),
+        duration: (json['duration'] as num).toDouble(),
+        score: json['score'] == null ? null : (json['score'] as num).toDouble(),
+        hook: json['hook'] as String,
+        reason: json['reason'] == null ? null : json['reason'] as String,
+        text: json['text'] as String,
+        overlaps: json['overlaps'] as bool,
+        short: json['short'] == null
+            ? null
+            : ShortsStateClipsItemShort.fromJson(
+                (json['short'] as Map).cast<String, Object?>(),
+              ),
+      );
 
   Map<String, Object?> toJson() => {
     'number': number,
@@ -2612,23 +3110,36 @@ class ShortsStateJob {
     status: json['status'] == null ? null : json['status'] as String,
   );
 
-  Map<String, Object?> toJson() => {if (id != null) 'id': id!, if (status != null) 'status': status!};
+  Map<String, Object?> toJson() => {
+    if (id != null) 'id': id!,
+    if (status != null) 'status': status!,
+  };
 }
 
 class PublishStateDefaults {
-  const PublishStateDefaults({this.title, this.description, this.tags, this.privacy});
+  const PublishStateDefaults({
+    this.title,
+    this.description,
+    this.tags,
+    this.privacy,
+  });
 
   final String? title;
   final String? description;
   final List<String>? tags;
   final String? privacy;
 
-  factory PublishStateDefaults.fromJson(Map<String, Object?> json) => PublishStateDefaults(
-    title: json['title'] == null ? null : json['title'] as String,
-    description: json['description'] == null ? null : json['description'] as String,
-    tags: json['tags'] == null ? null : (json['tags'] as List).map((e) => e as String).toList(),
-    privacy: json['privacy'] == null ? null : json['privacy'] as String,
-  );
+  factory PublishStateDefaults.fromJson(Map<String, Object?> json) =>
+      PublishStateDefaults(
+        title: json['title'] == null ? null : json['title'] as String,
+        description: json['description'] == null
+            ? null
+            : json['description'] as String,
+        tags: json['tags'] == null
+            ? null
+            : (json['tags'] as List).map((e) => e as String).toList(),
+        privacy: json['privacy'] == null ? null : json['privacy'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     if (title != null) 'title': title!,
@@ -2645,7 +3156,10 @@ class PublishStateLimits {
   final int description;
 
   factory PublishStateLimits.fromJson(Map<String, Object?> json) =>
-      PublishStateLimits(title: (json['title'] as num).toInt(), description: (json['description'] as num).toInt());
+      PublishStateLimits(
+        title: (json['title'] as num).toInt(),
+        description: (json['description'] as num).toInt(),
+      );
 
   Map<String, Object?> toJson() => {'title': title, 'description': description};
 }
@@ -2685,16 +3199,22 @@ class PublishStatePublishedItem {
   /// deleted on YouTube, the last time the engine asked
   final bool? removed;
 
-  factory PublishStatePublishedItem.fromJson(Map<String, Object?> json) => PublishStatePublishedItem(
+  factory PublishStatePublishedItem.fromJson(
+    Map<String, Object?> json,
+  ) => PublishStatePublishedItem(
     videoId: json['video_id'] == null ? null : json['video_id'] as String,
     url: json['url'] == null ? null : json['url'] as String,
     title: json['title'] == null ? null : json['title'] as String,
     privacy: json['privacy'] == null ? null : json['privacy'] as String,
     publishAt: json['publish_at'] == null ? null : json['publish_at'] as String,
-    publishedAt: json['published_at'] == null ? null : json['published_at'] as String,
+    publishedAt: json['published_at'] == null
+        ? null
+        : json['published_at'] as String,
     captions: json['captions'] == null ? null : json['captions'] as bool,
     commentId: json['comment_id'] == null ? null : json['comment_id'] as String,
-    warnings: json['warnings'] == null ? null : (json['warnings'] as List).map((e) => e as String).toList(),
+    warnings: json['warnings'] == null
+        ? null
+        : (json['warnings'] as List).map((e) => e as String).toList(),
     removed: json['removed'] == null ? null : json['removed'] as bool,
   );
 
@@ -2718,12 +3238,16 @@ class PublishStateJob {
   final String? id;
   final String? status;
 
-  factory PublishStateJob.fromJson(Map<String, Object?> json) => PublishStateJob(
-    id: json['id'] == null ? null : json['id'] as String,
-    status: json['status'] == null ? null : json['status'] as String,
-  );
+  factory PublishStateJob.fromJson(Map<String, Object?> json) =>
+      PublishStateJob(
+        id: json['id'] == null ? null : json['id'] as String,
+        status: json['status'] == null ? null : json['status'] as String,
+      );
 
-  Map<String, Object?> toJson() => {if (id != null) 'id': id!, if (status != null) 'status': status!};
+  Map<String, Object?> toJson() => {
+    if (id != null) 'id': id!,
+    if (status != null) 'status': status!,
+  };
 }
 
 class TrendVideosItem {
@@ -2761,17 +3285,27 @@ class TrendVideosItem {
   final int? lessons;
   final int? drops;
 
-  factory TrendVideosItem.fromJson(Map<String, Object?> json) => TrendVideosItem(
+  factory TrendVideosItem.fromJson(
+    Map<String, Object?> json,
+  ) => TrendVideosItem(
     id: json['id'] == null ? null : json['id'] as String,
     type: json['type'] == null ? null : json['type'] as String,
     title: json['title'] == null ? null : json['title'] as String,
-    publishedAt: json['published_at'] == null ? null : json['published_at'] as String,
+    publishedAt: json['published_at'] == null
+        ? null
+        : json['published_at'] as String,
     youtubeId: json['youtube_id'] == null ? null : json['youtube_id'] as String,
-    duration: json['duration'] == null ? null : (json['duration'] as num).toDouble(),
+    duration: json['duration'] == null
+        ? null
+        : (json['duration'] as num).toDouble(),
     at30s: json['at_30s'] == null ? null : (json['at_30s'] as num).toDouble(),
     at60s: json['at_60s'] == null ? null : (json['at_60s'] as num).toDouble(),
-    atHalf: json['at_half'] == null ? null : (json['at_half'] as num).toDouble(),
-    relativeMedian: json['relative_median'] == null ? null : (json['relative_median'] as num).toDouble(),
+    atHalf: json['at_half'] == null
+        ? null
+        : (json['at_half'] as num).toDouble(),
+    relativeMedian: json['relative_median'] == null
+        ? null
+        : (json['relative_median'] as num).toDouble(),
     lessons: json['lessons'] == null ? null : (json['lessons'] as num).toInt(),
     drops: json['drops'] == null ? null : (json['drops'] as num).toInt(),
   );
@@ -2810,25 +3344,36 @@ class StylesPositions {
   final List<String> lowerThird;
   final List<String> cta;
 
-  factory StylesPositions.fromJson(Map<String, Object?> json) => StylesPositions(
-    lowerThird: (json['lower_third'] as List).map((e) => e as String).toList(),
-    cta: (json['cta'] as List).map((e) => e as String).toList(),
-  );
+  factory StylesPositions.fromJson(Map<String, Object?> json) =>
+      StylesPositions(
+        lowerThird: (json['lower_third'] as List)
+            .map((e) => e as String)
+            .toList(),
+        cta: (json['cta'] as List).map((e) => e as String).toList(),
+      );
 
   Map<String, Object?> toJson() => {'lower_third': lowerThird, 'cta': cta};
 }
 
 class GetPublishLiveResponseVideosValue {
-  const GetPublishLiveResponseVideosValue({this.privacy, this.publishAt, this.uploadStatus});
+  const GetPublishLiveResponseVideosValue({
+    this.privacy,
+    this.publishAt,
+    this.uploadStatus,
+  });
 
   final String? privacy;
   final String? publishAt;
   final String? uploadStatus;
 
-  factory GetPublishLiveResponseVideosValue.fromJson(Map<String, Object?> json) => GetPublishLiveResponseVideosValue(
+  factory GetPublishLiveResponseVideosValue.fromJson(
+    Map<String, Object?> json,
+  ) => GetPublishLiveResponseVideosValue(
     privacy: json['privacy'] == null ? null : json['privacy'] as String,
     publishAt: json['publish_at'] == null ? null : json['publish_at'] as String,
-    uploadStatus: json['upload_status'] == null ? null : json['upload_status'] as String,
+    uploadStatus: json['upload_status'] == null
+        ? null
+        : json['upload_status'] as String,
   );
 
   Map<String, Object?> toJson() => {
@@ -2840,7 +3385,12 @@ class GetPublishLiveResponseVideosValue {
 
 /// The content of the .autoedit-style.json ({format, name, description, tokens}), read by the app: the engine may be on another machine
 class ImportStyleRequestFile {
-  const ImportStyleRequestFile({required this.format, this.name, this.description, required this.tokens});
+  const ImportStyleRequestFile({
+    required this.format,
+    this.name,
+    this.description,
+    required this.tokens,
+  });
 
   /// 1
   final int format;
@@ -2848,12 +3398,15 @@ class ImportStyleRequestFile {
   final String? description;
   final Map<String, Object?> tokens;
 
-  factory ImportStyleRequestFile.fromJson(Map<String, Object?> json) => ImportStyleRequestFile(
-    format: (json['format'] as num).toInt(),
-    name: json['name'] == null ? null : json['name'] as String,
-    description: json['description'] == null ? null : json['description'] as String,
-    tokens: (json['tokens'] as Map).cast<String, Object?>(),
-  );
+  factory ImportStyleRequestFile.fromJson(Map<String, Object?> json) =>
+      ImportStyleRequestFile(
+        format: (json['format'] as num).toInt(),
+        name: json['name'] == null ? null : json['name'] as String,
+        description: json['description'] == null
+            ? null
+            : json['description'] as String,
+        tokens: (json['tokens'] as Map).cast<String, Object?>(),
+      );
 
   Map<String, Object?> toJson() => {
     'format': format,
@@ -2864,33 +3417,52 @@ class ImportStyleRequestFile {
 }
 
 class RecordingsRecordingsItemEditsItem {
-  const RecordingsRecordingsItemEditsItem({required this.id, this.name, required this.status});
+  const RecordingsRecordingsItemEditsItem({
+    required this.id,
+    this.name,
+    required this.status,
+  });
 
   final String id;
   final String? name;
   final VideoStatus status;
 
-  factory RecordingsRecordingsItemEditsItem.fromJson(Map<String, Object?> json) => RecordingsRecordingsItemEditsItem(
+  factory RecordingsRecordingsItemEditsItem.fromJson(
+    Map<String, Object?> json,
+  ) => RecordingsRecordingsItemEditsItem(
     id: json['id'] as String,
     name: json['name'] == null ? null : json['name'] as String,
     status: VideoStatus(json['status'] as String),
   );
 
-  Map<String, Object?> toJson() => {'id': id, if (name != null) 'name': name!, 'status': status.value};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    if (name != null) 'name': name!,
+    'status': status.value,
+  };
 }
 
 class ShortsStateClipsItemShort {
-  const ShortsStateClipsItemShort({this.id, this.status, this.overwriteWarning});
+  const ShortsStateClipsItemShort({
+    this.id,
+    this.status,
+    this.overwriteWarning,
+  });
 
   final String? id;
   final VideoStatus? status;
   final String? overwriteWarning;
 
-  factory ShortsStateClipsItemShort.fromJson(Map<String, Object?> json) => ShortsStateClipsItemShort(
-    id: json['id'] == null ? null : json['id'] as String,
-    status: json['status'] == null ? null : VideoStatus(json['status'] as String),
-    overwriteWarning: json['overwrite_warning'] == null ? null : json['overwrite_warning'] as String,
-  );
+  factory ShortsStateClipsItemShort.fromJson(Map<String, Object?> json) =>
+      ShortsStateClipsItemShort(
+        id: json['id'] == null ? null : json['id'] as String,
+        status: json['status'] == null
+            ? null
+            : VideoStatus(json['status'] as String),
+        overwriteWarning: json['overwrite_warning'] == null
+            ? null
+            : json['overwrite_warning'] as String,
+      );
 
   Map<String, Object?> toJson() => {
     if (id != null) 'id': id!,
