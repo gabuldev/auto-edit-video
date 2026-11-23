@@ -24,7 +24,15 @@ App (Flutter) packages → Run workflow) compila o app, põe o motor do
 `scripts/stage_engine.py` em `engine/` dentro do pacote (no macOS em
 `Contents/Resources`), roda o `smoke_engine.py` nele e guarda `.dmg`, `.zip`
 (Windows) e `.tar.gz` (Linux; precisa da `libmpv2` do sistema) como artefatos.
-Ainda não vão pro release nem atualizam o app Tauri (#144).
+
+Em todo release, o `release.yml` chama esse workflow e anexa os pacotes como
+**Auto-Edit Beta** (`Auto-Edit-Beta-*`), ao lado dos instaladores do Tauri.
+O beta não substitui o Tauri: no macOS tem nome e bundle id próprios
+(`dev.gabul.autoedit.beta`), sai assinado com o Developer ID e notarizado
+(os mesmos secrets do Doppler, `docs/macos-signing.md`), e ainda não tem
+atualização dentro do app (o updater do Tauri lê o `latest.json`, onde ele não
+entra). O Windows sai sem assinatura (o SmartScreen avisa na 1ª abertura).
+Trocar o Tauri pelo Flutter, com atualização automática, é o próximo passo (#144).
 
 Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev`
 (o player é o `media_kit`, que usa a libmpv do sistema no Linux; no macOS e

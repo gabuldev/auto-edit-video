@@ -6,15 +6,31 @@ name: App (Flutter) packages
 # scripts/stage_engine.py into the bundle's `engine/` (lib/engine/locator.dart
 # finds it there).
 #
-# Part 1 of #144: the packages are built and smoke-tested, and kept as the
-# run's artifacts. They are NOT attached to releases yet and there is no
-# in-app update: switching people from Tauri to Flutter is a separate step.
+# A beta next to the Tauri app (#144): "Auto-Edit Beta", its own bundle id on
+# macOS so it never replaces the installed Tauri app, and no in-app update yet
+# (the Tauri updater reads latest.json, which these files never enter).
 #
-# - On a pull request that touches the packaging: the same builds, as a check.
-# - By hand (Actions → App (Flutter) packages → Run workflow).
+# - Called by release.yml after it tags a version: the packages are attached
+#   to that release as Auto-Edit-Beta-*. macOS is signed with the Developer ID
+#   and notarized (the Apple secrets in Doppler, docs/macos-signing.md).
+# - On a pull request that touches the packaging: the same builds, ad-hoc
+#   signed, kept as the run's artifacts.
+# - By hand (Actions → App (Flutter) packages → Run workflow), optionally with
+#   a tag to (re)attach to.
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build and attach to, e.g. v0.57.0"
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach to (empty: artifacts only)"
+        required: false
+        type: string
   pull_request:
     paths:
       - ".github/workflows/app-package.yml"
@@ -27,7 +43,7 @@ on:
       - "scripts/sign_macos_engine.py"
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   FLUTTER_VERSION: "3.47.5"
@@ -53,9 +69,15 @@ jobs:
             flutter: linux
     runs-on: ${{ matrix.os }}
     env:
+      TAG: ${{ inputs.tag }}
       PYTHONUTF8: "1"  # Windows runners default to cp1252
+      # Same rule as desktop.yml: a release with DOPPLER_TOKEN signs with the
+      # Developer ID and notarizes; everything else is ad-hoc.
+      NOTARIZE: ${{ inputs.tag != '' && secrets.DOPPLER_TOKEN != '' && startsWith(matrix.os, 'macos') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Linux build dependencies
         if: runner.os == 'Linux'
@@ -77,16 +99,27 @@ jobs:
 
       - name: Build the app
         working-directory: app
+        shell: bash
         run: |
           flutter pub get
-          flutter build ${{ matrix.flutter }} --release
+          # The release's version (v0.57.0 → 0.57.0), shown in Configurações.
+          name="${TAG#v}"
+          flutter build ${{ matrix.flutter }} --release ${name:+--build-name "$name"}
 
       - name: Where the bundle is
         id: bundle
         shell: bash
         run: |
           case "${{ matrix.flutter }}" in
-            macos)   dir="app/build/macos/Build/Products/Release/Auto-Edit.app"; res="$dir/Contents/Resources" ;;
+            macos)
+              # "Auto-Edit Beta" with its own bundle id: installing it never
+              # replaces the Tauri app (dev.gabul.autoedit) in /Applications.
+              built="app/build/macos/Build/Products/Release/Auto-Edit.app"
+              dir="app/build/macos/Build/Products/Release/Auto-Edit Beta.app"
+              test -d "$built" && mv "$built" "$dir"
+              /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier dev.gabul.autoedit.beta" "$dir/Contents/Info.plist"
+              /usr/libexec/PlistBuddy -c "Set :CFBundleName Auto-Edit Beta" "$dir/Contents/Info.plist"
+              res="$dir/Contents/Resources" ;;
             windows) dir="app/build/windows/x64/runner/Release"; res="$dir" ;;
             linux)   dir="app/build/linux/x64/release/bundle"; res="$dir" ;;
           esac
@@ -100,14 +133,60 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/stage_engine.py --target ${{ matrix.target }} --out "${{ steps.bundle.outputs.engine }}"
 
-      - name: Sign the engine's binaries and the app (macOS, ad hoc)
+      - name: Fetch the Apple secrets from Doppler (macOS release)
+        if: env.NOTARIZE == 'true'
+        uses: dopplerhq/secrets-fetch-action@v1.3.0
+        with:
+          doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+          inject-env-vars: true  # masked in the logs
+
+      - name: Import the Developer ID certificate (macOS release)
+        if: env.NOTARIZE == 'true'
+        shell: bash
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            [ -n "${!v:-}" ] || { echo "::error::$v missing in Doppler (the DOPPLER_TOKEN config)"; exit 1; }
+          done
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASS="$(openssl rand -hex 16)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN" -A
+          security import "$RUNNER_TEMP/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$PASS" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          python scripts/write_p8.py "$RUNNER_TEMP/AuthKey.p8"  # tolerates a mangled paste
+          {
+            echo "SIGN_ID=$APPLE_SIGNING_IDENTITY"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign the engine's binaries and the app (macOS)
         if: runner.os == 'macOS'
         shell: bash
-        # Developer ID signing and notarization come with the release step;
-        # ad hoc here so the smoke test runs what would ship.
+        # Inside out, hardened runtime everywhere (notarization needs it): the
+        # engine's binaries with their entitlements, then Flutter's
+        # frameworks and dylibs, then the app. No --deep: it would re-sign the
+        # engine's executables without their entitlements.
         run: |
-          python scripts/sign_macos_engine.py "${{ steps.bundle.outputs.engine }}" --identity -
-          codesign --force --deep --sign - "${{ steps.bundle.outputs.dir }}"
+          set -euo pipefail
+          ID="${SIGN_ID:--}"
+          # Ad-hoc (PRs) without hardened runtime: library validation would
+          # refuse the team-less dylibs when someone opens the PR's build.
+          ts=(); [ "$ID" = "-" ] || ts=(--options runtime --timestamp)
+          app="${{ steps.bundle.outputs.dir }}"
+          python scripts/sign_macos_engine.py "${{ steps.bundle.outputs.engine }}" --identity "$ID"
+          find "$app/Contents/Frameworks" -depth \( -name '*.dylib' -o -name '*.framework' \) -print0 |
+            while IFS= read -r -d '' f; do
+              codesign --force ${ts[@]+"${ts[@]}"} --sign "$ID" "$f"
+            done
+          codesign --force ${ts[@]+"${ts[@]}"} --entitlements app/macos/Runner/Release.entitlements --sign "$ID" "$app"
+          codesign --verify --strict --verbose=2 "$app"
 
       - name: Smoke-test the engine as the installed app runs it
         shell: bash
@@ -120,20 +199,47 @@ jobs:
           mkdir -p dist
           case "${{ matrix.flutter }}" in
             macos)
-              out="dist/Auto-Edit-macos-arm64.dmg"
-              hdiutil create -volname "Auto-Edit" -srcfolder "${{ steps.bundle.outputs.dir }}" -ov -format UDZO "$out" ;;
+              out="dist/Auto-Edit-Beta-macos-arm64.dmg"
+              stage="$RUNNER_TEMP/dmg"; mkdir -p "$stage"
+              ditto "${{ steps.bundle.outputs.dir }}" "$stage/Auto-Edit Beta.app"
+              ln -s /Applications "$stage/Applications"
+              hdiutil create -volname "Auto-Edit Beta" -srcfolder "$stage" -ov -format UDZO "$out" ;;
             windows)
-              out="dist/Auto-Edit-windows-x64.zip"
+              out="dist/Auto-Edit-Beta-windows-x64.zip"
               (cd "${{ steps.bundle.outputs.dir }}" && 7z a -tzip -mx=5 "$GITHUB_WORKSPACE/$out" . > /dev/null) ;;
             linux)
-              out="dist/Auto-Edit-linux-x64.tar.gz"
-              tar -C "$(dirname "${{ steps.bundle.outputs.dir }}")" -czf "$out" --transform 's,^bundle,Auto-Edit,' bundle ;;
+              out="dist/Auto-Edit-Beta-linux-x64.tar.gz"
+              tar -C "$(dirname "${{ steps.bundle.outputs.dir }}")" -czf "$out" --transform 's,^bundle,Auto-Edit-Beta,' bundle ;;
           esac
           ls -la dist
           echo "file=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Notarize the dmg (macOS release)
+        if: env.NOTARIZE == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="${{ steps.pkg.outputs.file }}"
+          codesign --force --timestamp --sign "$SIGN_ID" "$dmg"
+          xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" --wait --timeout 2h --output-format json | tee "$RUNNER_TEMP/notary.json"
+          python3 -c 'import json,sys; s=json.load(open(sys.argv[1]))["status"]; sys.exit(0 if s=="Accepted" else f"notarization: {s}")' "$RUNNER_TEMP/notary.json" || {
+            id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$RUNNER_TEMP/notary.json")
+            xcrun notarytool log "$id" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER"
+            exit 1
+          }
+          xcrun stapler staple "$dmg"
+          spctl -a -vv -t open --context context:primary-signature "$dmg"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.flutter }}
           path: ${{ steps.pkg.outputs.file }}
           retention-days: 14
+
+      - name: Attach to the release
+        if: inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" "${{ steps.pkg.outputs.file }}" --clobber
