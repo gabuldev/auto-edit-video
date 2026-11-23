@@ -1,7 +1,7 @@
 # Auto-Edit (Flutter)
 
-O app novo, em Flutter (macOS, Windows e Linux; celular depois), que vai
-substituir o `desktop/` (Tauri). Épico #134. Fala com o motor só pela API
+O app novo, em Flutter (macOS, Windows e Linux, e o celular como controle
+remoto), que vai substituir o `desktop/` (Tauri). Épico #134. Fala com o motor só pela API
 (`packages/auto_edit_client`, gerado do `auto_edit/openapi.yaml`).
 
 Como o Tauri, ao abrir ele **reaproveita** um motor que já esteja na porta
@@ -105,3 +105,33 @@ Telas:
 Diálogos do sistema (pasta, JSON) passam por `Pickers` (`lib/platform.dart`,
 `file_selector`): o JSON da credencial vai pro motor como conteúdo, não
 caminho, pra funcionar com o motor em outra máquina.
+
+## No celular (Android e iOS, #147)
+
+O mesmo app, sem motor próprio: ele dirige o motor do computador pela rede
+local (`auto_edit/lan.py`, #145). `lib/main.dart` vê que é celular e abre
+`RemoteRoot` (`lib/remote/`):
+
+- **Parear** (`pair_screen.dart`): a câmera (`mobile_scanner`) lê o QR que o
+  computador mostra em Configurações → Celular, ou cola o link
+  `autoedit://pair?…`. O celular troca o código por um token e guarda
+  endereço, token e impressão digital do certificado no chaveiro do sistema
+  (`flutter_secure_storage`). Toda conexão fixa aquele certificado.
+- **Ao abrir**: se o computador não responde, procura por mDNS (`nsd`) o
+  motor com o mesmo certificado (o IP mudou) e atualiza o endereço. Um 401
+  (o computador revogou) volta pro pareamento, dizendo por quê.
+- **Telas**: as mesmas, com as seções numa barra embaixo (`Shell` abaixo de
+  `compactWidth`, 720 px) e as linhas empilhadas (`isCompact`).
+- **Novo edit**: o vídeo vem da galeria (`image_picker`) e sobe pro
+  computador com retomada (`sendResumable`, `/api/uploads`), caindo em
+  `<entrada>/Celular/`. Cancelar apaga o parcial.
+- **Resultado**: cada arquivo tem "Compartilhar": baixa do computador
+  (retomando com `Range`) e abre a folha de compartilhar (`share_plus`):
+  Instagram, TikTok, salvar na galeria.
+- **Notificação** quando uma edição que estava rodando termina ou falha
+  (`edit_watcher.dart`, `flutter_local_notifications`), enquanto o app está
+  aberto ou em segundo plano.
+- **Configurações → Computador**: qual está pareado e "Desconectar".
+
+A CI compila o APK (debug) e o iOS sem assinatura. TestFlight e Play (teste
+interno) precisam das contas das lojas.

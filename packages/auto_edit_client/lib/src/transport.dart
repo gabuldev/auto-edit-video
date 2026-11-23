@@ -221,5 +221,13 @@ class Transport {
     }
   }
 
+  /// Sends a request as is, with the token, over this engine's connection
+  /// (its pinned certificate): for what the generated methods don't cover,
+  /// like downloading a big file in a stream with `Range`.
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers.addAll(headers);
+    return _client.send(request);
+  }
+
   void close() => _client.close();
 }

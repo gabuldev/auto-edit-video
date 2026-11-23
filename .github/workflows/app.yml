@@ -1,7 +1,7 @@
 name: App (Flutter)
 
-# The Flutter desktop app (app/) and what it builds on: the Dart client and
-# the contract it is generated from.
+# The Flutter app (app/: desktop, and the phone as a remote) and what it
+# builds on: the Dart client and the contract it is generated from.
 on:
   pull_request:
     branches: [main]
@@ -56,6 +56,14 @@ jobs:
             target: macos
           - os: windows-latest
             target: windows
+          # The phone (#147): built to catch breakage, unsigned. TestFlight
+          # and Play need the store accounts.
+          - os: ubuntu-latest
+            target: apk
+            args: --debug
+          - os: macos-latest
+            target: ios
+            args: --no-codesign
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -64,9 +72,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Linux build dependencies
-        if: runner.os == 'Linux'
+        if: matrix.target == 'linux'
         working-directory: .
         run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev
+
+      - uses: actions/setup-java@v4
+        if: matrix.target == 'apk'
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -75,4 +89,4 @@ jobs:
           cache: true
 
       - run: flutter pub get
-      - run: flutter build ${{ matrix.target }} --release
+      - run: flutter build ${{ matrix.target }} ${{ matrix.args || '--release' }}

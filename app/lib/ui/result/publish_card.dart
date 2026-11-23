@@ -558,7 +558,9 @@ class PublishCardState extends State<PublishCard> {
         const SizedBox(height: 12),
         Text(notes.join(' '), style: const TextStyle(fontSize: 12.5, color: Tokens.faint, height: 1.45)),
         const SizedBox(height: 14),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             if (resend)
               OutlinedButton(
@@ -571,7 +573,6 @@ class PublishCardState extends State<PublishCard> {
                 child: const Text('Enviar pro YouTube'),
               ),
             if (resend) ...[
-              const SizedBox(width: 8),
               TextButton(
                 onPressed: () => setState(() {
                   _again = false;
@@ -588,7 +589,8 @@ class PublishCardState extends State<PublishCard> {
 
   Widget _label(String text, {String? trailing, bool bad = false}) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
-    child: Row(
+    child: Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(text, style: const TextStyle(fontSize: 13, color: Tokens.dim)),
         if (trailing != null) ...[

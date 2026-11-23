@@ -242,8 +242,9 @@ class _StylesScreenState extends State<StylesScreen> {
                     _field(
                       'Fundo da logo',
                       'Atrás da logo no vídeo (uma transparente mostra a cor).',
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           ChoiceChip(
                             label: const Text('Cor do estilo'),
@@ -251,7 +252,6 @@ class _StylesScreenState extends State<StylesScreen> {
                             selected: c.logoBg == null,
                             onSelected: (_) => c.setLogoBg(null),
                           ),
-                          const SizedBox(width: 8),
                           ColorButton(
                             color: own,
                             label: 'Outra cor',
@@ -587,24 +587,16 @@ class _StylesScreenState extends State<StylesScreen> {
           ],
         ),
         const SizedBox(height: 18),
-        Row(
-          children: [
-            SizedBox(
-              width: 260,
-              child: TextField(
-                controller: _draftName,
-                maxLength: 40,
-                onChanged: (v) => c.draftName = v,
-                decoration: fieldDecoration(hint: 'nome do estilo').copyWith(counterText: ''),
-              ),
-            ),
-            const Spacer(),
+        _SaveBar(
+          name: TextField(
+            controller: _draftName,
+            maxLength: 40,
+            onChanged: (v) => c.draftName = v,
+            decoration: fieldDecoration(hint: 'nome do estilo').copyWith(counterText: ''),
+          ),
+          buttons: [
             SmallButton(c.discardArmed ? 'Clique de novo pra descartar' : 'Descartar', onPressed: c.cancelEditing),
-            if (!c.builtin(s)) ...[
-              const SizedBox(width: 8),
-              SmallButton('Salvar como novo', onPressed: () => c.save(asNew: true)),
-            ],
-            const SizedBox(width: 8),
+            if (!c.builtin(s)) SmallButton('Salvar como novo', onPressed: () => c.save(asNew: true)),
             SmallButton('Salvar e usar', primary: true, onPressed: c.save),
           ],
         ),
@@ -997,6 +989,28 @@ class _ColorDialogState extends State<_ColorDialog> {
           onPressed: typed == null ? null : () => Navigator.of(context).pop(hexOf(typed)),
           child: const Text('Usar'),
         ),
+      ],
+    );
+  }
+}
+
+/// The style's name and the save buttons; a phone stacks them.
+class _SaveBar extends StatelessWidget {
+  const _SaveBar({required this.name, required this.buttons});
+  final Widget name;
+  final List<Widget> buttons;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.end, children: buttons);
+    if (isCompact(context)) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [name, const SizedBox(height: 10), row]);
+    }
+    return Row(
+      children: [
+        SizedBox(width: 260, child: name),
+        const SizedBox(width: 12),
+        Expanded(child: row),
       ],
     );
   }

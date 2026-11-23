@@ -130,17 +130,18 @@ class _Sub extends StatelessWidget {
     final tokens = d.estimatedTokens;
     return Padding(
       padding: const EdgeInsets.only(top: 3),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           TypeBadge(d.type),
-          const SizedBox(width: 8),
           Chip2(
             d.status == VideoStatus.interrupted ? 'Interrompido' : StatusChip.labels[d.status.value] ?? d.status.value,
             color: statusColor(d.status),
           ),
-          const SizedBox(width: 10),
           Text('iteração ${d.iteration ?? 1}/${d.maxIterations ?? 3}', style: mono),
-          if (tokens != null) ...[const SizedBox(width: 10), Text('~${thousands(tokens)} tokens', style: mono)],
+          if (tokens != null) Text('~${thousands(tokens)} tokens', style: mono),
         ],
       ),
     );

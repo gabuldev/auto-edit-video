@@ -518,7 +518,9 @@ class _Choice extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 10),
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    runSpacing: 4,
                     children: [
                       Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
                       TypeBadge(value),

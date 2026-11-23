@@ -201,13 +201,13 @@ class _EffectsPanelState extends State<EffectsPanel> {
               child: Row(
                 children: [
                   SizedBox(
-                    width: 80,
+                    width: isCompact(context) ? 64 : 80,
                     child: Badge2(
                       fx.type == 'zoom' ? 'zoom' : 'B-roll',
                       color: fx.type == 'zoom' ? Tokens.accent : Tokens.info,
                     ),
                   ),
-                  Text('${clock(fx.start)} – ${clock(fx.end)}', style: mono),
+                  Flexible(child: Text('${clock(fx.start)} – ${clock(fx.end)}', style: mono)),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(

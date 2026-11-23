@@ -190,29 +190,20 @@ class _CutsScreenState extends State<CutsScreen> {
               ? null
               : Padding(
                   padding: const EdgeInsets.only(top: 3),
-                  // one line: the draft note gives way in a narrow window
-                  child: Row(
+                  // wraps in a narrow window
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         '${kept.length} de ${p.keptSegments.length} trechos',
                         style: const TextStyle(fontSize: 13, color: Tokens.dim),
                       ),
-                      const SizedBox(width: 12),
                       Text('${shortDuration(total)} de corte final', style: mono),
-                      if (p.duration != null) ...[
-                        const SizedBox(width: 12),
-                        Text('bruto ${shortDuration(p.duration)}', style: mono),
-                      ],
+                      if (p.duration != null) ...[Text('bruto ${shortDuration(p.duration)}', style: mono)],
                       if (!p.editable) ...[
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: Text(
-                            'rascunho do planner (${p.source}) — salvar cria o reviewed_plan',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: mono,
-                          ),
-                        ),
+                        Text('rascunho do planner (${p.source}) — salvar cria o reviewed_plan', style: mono),
                       ],
                     ],
                   ),

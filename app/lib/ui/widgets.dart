@@ -5,6 +5,12 @@ import 'package:flutter/material.dart';
 import 'theme.dart';
 
 /// The `.card` of the Tauri app: a titled panel.
+/// Below this width (a phone) the sidebar becomes a bottom bar and the
+/// rows of the screens stack their parts.
+const compactWidth = 720.0;
+
+bool isCompact(BuildContext context) => MediaQuery.sizeOf(context).width < compactWidth;
+
 class Panel extends StatelessWidget {
   const Panel({super.key, this.title, this.subtitle, this.leading, this.trailing, required this.children});
 
@@ -28,7 +34,7 @@ class Panel extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(isCompact(context) ? 14 : 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -55,9 +61,15 @@ class Panel extends StatelessWidget {
                           ],
                         ),
                       ),
-                      if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+                      if (trailing != null && !isCompact(context)) ...[const SizedBox(width: 12), trailing!],
                     ],
                   ),
+                ),
+              // a phone: what sits right of the title goes under it
+              if (title != null && trailing != null && isCompact(context))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Align(alignment: Alignment.centerLeft, child: trailing!),
                 ),
               ...children,
             ],
@@ -83,7 +95,10 @@ class FormScreen extends StatelessWidget {
       ?top,
       Expanded(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
+          // a phone: narrower margins
+          padding: isCompact(context)
+              ? const EdgeInsets.fromLTRB(14, 16, 14, 32)
+              : const EdgeInsets.fromLTRB(28, 24, 28, 40),
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(

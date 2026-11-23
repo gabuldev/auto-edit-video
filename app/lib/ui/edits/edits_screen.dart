@@ -106,7 +106,9 @@ class _EditsScreenState extends State<EditsScreen> {
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(28, 20, 28, 40),
+                  padding: isCompact(context)
+                      ? const EdgeInsets.fromLTRB(14, 14, 14, 32)
+                      : const EdgeInsets.fromLTRB(28, 20, 28, 40),
                   children: [
                     if (c.error != null) Notice(c.error!),
                     if (_dropError != null) Notice(_dropError!),
@@ -225,6 +227,8 @@ class _Head extends StatelessWidget {
       value: all ? true : (picked > 0 ? null : false),
       onChanged: c.bulkBusy != null ? null : (_) => c.selectAll(!all),
     );
+    // A phone has no columns to name.
+    if (c.selected.isEmpty && isCompact(context)) return const SizedBox.shrink();
     if (c.selected.isEmpty) {
       const style = TextStyle(fontSize: 11.5, color: Tokens.faint, letterSpacing: .6);
       return Padding(
@@ -281,6 +285,39 @@ class _Head extends StatelessWidget {
         DangerButton('Excluir', icon: Icons.delete_outline, onPressed: () => c.armBulk(true)),
       ];
     }
+    final label = Text(
+      '$n ${n == 1 ? 'selecionada' : 'selecionadas'}',
+      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+    );
+    if (isCompact(context)) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(0, 6, 10, 10),
+        decoration: BoxDecoration(color: Tokens.navActive, borderRadius: BorderRadius.circular(10)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox(width: _cols[0], child: box),
+                label,
+              ],
+            ),
+            if (note.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 0, 8),
+                child: Text(note, style: const TextStyle(fontSize: 12.5, color: Tokens.dim)),
+              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 6,
+              children: acts,
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -288,10 +325,7 @@ class _Head extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(width: _cols[0], child: box),
-          Text(
-            '$n ${n == 1 ? 'selecionada' : 'selecionadas'}',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-          ),
+          label,
           const SizedBox(width: 14),
           Expanded(
             child: Text(note, style: const TextStyle(fontSize: 12.5, color: Tokens.dim)),
@@ -326,6 +360,7 @@ class _Row extends StatelessWidget {
       if (v.language != null) v.language!,
       if (v.derivedFrom != null) 'short de ${v.derivedFrom}',
     ].join(' · ');
+    if (isCompact(context)) return _compact(on, stage, liveLine, stageColor, meta);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
@@ -425,6 +460,94 @@ class _Row extends StatelessWidget {
       ),
     );
   }
+
+  /// A phone: the video on top, its progress and status under it, the actions last.
+  Widget _compact(bool on, String? stage, String? liveLine, Color stageColor, String meta) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Material(
+      color: on ? Tokens.navActive : Tokens.panel,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: on ? Tokens.accent.withValues(alpha: .35) : Tokens.borderSoft),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onOpen(v.id),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 8, 10, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Checkbox(value: on, onChanged: (x) => c.select(v.id, x ?? false)),
+                  VideoThumb(
+                    url: v.hasThumbnail ? client.api.getFileUri(v.id, ArtifactKind.thumbnail) : null,
+                    headers: client.transport.headers,
+                    width: 80,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          editName(v),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        Text(
+                          meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontFamily: Tokens.mono, fontSize: 11, color: Tokens.faint),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 0, 0),
+                child: Row(
+                  children: [
+                    TypeBadge(v.type),
+                    const SizedBox(width: 8),
+                    StatusChip(v),
+                    const SizedBox(width: 10),
+                    for (final (_, state) in c.dots(v)) _Dot(state),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        stage == 'done' ? '' : stage ?? '—',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: Tokens.mono, fontSize: 11, color: stageColor),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (liveLine != null && liveLine.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 0, 0),
+                  child: Text(
+                    liveLine,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: Tokens.mono, fontSize: 11, color: Tokens.dim),
+                  ),
+                ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Row(mainAxisSize: MainAxisSize.min, children: _acts()),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 
   List<Widget> _acts() {
     final armed = c.armed;

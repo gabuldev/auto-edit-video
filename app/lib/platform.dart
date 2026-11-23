@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:auto_edit_client/auto_edit_client.dart';
 import 'package:file_selector/file_selector.dart';
 
 /// The OS dialogs the screens use. Behind an interface so the widget tests
@@ -25,10 +26,24 @@ abstract class Pickers {
 
   /// A B-roll (image or video) path, or null.
   Future<String?> broll();
+
+  /// Whether finished files can go to the OS share sheet (the phone: the
+  /// files are on the computer, so they're downloaded first).
+  bool get canShare;
+
+  /// Downloads one artifact of [videoId] and opens the share sheet
+  /// (Instagram, TikTok, save to the gallery...).
+  Future<void> share(AutoEditClient client, String videoId, String kind, String fileName);
 }
 
 class NativePickers implements Pickers {
   const NativePickers();
+
+  @override
+  bool get canShare => false;
+
+  @override
+  Future<void> share(AutoEditClient client, String videoId, String kind, String fileName) async {}
 
   @override
   Future<String?> folder({String? initial}) => getDirectoryPath(

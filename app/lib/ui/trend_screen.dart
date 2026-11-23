@@ -136,33 +136,32 @@ class _TrendScreenState extends State<TrendScreen> {
                           onTap: v.id == null ? null : () => widget.onOpen(v.id!),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        v.title ?? v.id ?? '',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                                      ),
-                                      Text(
-                                        [
-                                          when(v.publishedAt).split(' ').first,
-                                          if (v.duration != null) duration(v.duration),
-                                          if ((v.drops ?? 0) > 0) '${v.drops} queda(s)',
-                                        ].where((x) => x.isNotEmpty).join(' · '),
-                                        style: const TextStyle(
-                                          fontFamily: Tokens.mono,
-                                          fontSize: 11.5,
-                                          color: Tokens.faint,
-                                        ),
-                                      ),
-                                    ],
+                            child: _VideoRow(
+                              compact: isCompact(context),
+                              title: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    v.title ?? v.id ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
                                   ),
-                                ),
+                                  Text(
+                                    [
+                                      when(v.publishedAt).split(' ').first,
+                                      if (v.duration != null) duration(v.duration),
+                                      if ((v.drops ?? 0) > 0) '${v.drops} queda(s)',
+                                    ].where((x) => x.isNotEmpty).join(' · '),
+                                    style: const TextStyle(
+                                      fontFamily: Tokens.mono,
+                                      fontSize: 11.5,
+                                      color: Tokens.faint,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              stats: [
                                 if ((v.lessons ?? 0) > 0) ...[
                                   Tooltip(
                                     message: 'Planejado com ${v.lessons} lição(ões) de retenção',
@@ -206,7 +205,7 @@ class _TrendScreenState extends State<TrendScreen> {
 
   Widget _summary(TrendSummary s) {
     Widget compare(String title, String sub, TrendCompare c) => Container(
-      width: 400,
+      width: isCompact(context) ? double.infinity : 400,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Tokens.panel2,
@@ -225,7 +224,8 @@ class _TrendScreenState extends State<TrendScreen> {
             if (_metric(c, m) case final TrendDelta d)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     SizedBox(
                       width: 90,
@@ -342,4 +342,30 @@ class _LinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LinePainter old) => old.pts != pts;
+}
+
+/// One analyzed video: its title and the numbers. A phone puts the numbers
+/// on their own line, spread across it.
+class _VideoRow extends StatelessWidget {
+  const _VideoRow({required this.compact, required this.title, required this.stats});
+  final bool compact;
+  final Widget title;
+  final List<Widget> stats;
+
+  @override
+  Widget build(BuildContext context) => compact
+      ? Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            title,
+            const SizedBox(height: 6),
+            Wrap(spacing: 4, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: stats),
+          ],
+        )
+      : Row(
+          children: [
+            Expanded(child: title),
+            ...stats,
+          ],
+        );
 }

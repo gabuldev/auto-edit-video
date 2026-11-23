@@ -155,13 +155,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
             if (s != null) ...[_agentStep(s), _whisperStep(s)],
             if (c.error != null) Notice(c.error!),
-            Row(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 8,
               children: [
                 TextButton(
                   onPressed: widget.onLater,
                   child: const Text('configurar depois', style: TextStyle(color: Tokens.faint)),
                 ),
-                const Spacer(),
                 FilledButton(
                   onPressed: s?.ready ?? false ? widget.onDone : null,
                   child: const Text('Começar a editar'),
@@ -312,6 +314,19 @@ class _AgentLineState extends State<_AgentLine> {
           '${a.name == 'ollama' ? ' · lento e impreciso em vídeo longo com modelo pequeno' : ''}';
     }
     final note = c.notes[a.name];
+    final compact = isCompact(context);
+    final buttons = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (!a.installed && !apiKey) SmallButton('Instalar', primary: rec, onPressed: () => c.install(a.name)),
+        if (!a.installed && apiKey) SmallButton('Criar chave', onPressed: () => c.install(a.name)),
+        if (a.installed && a.loginCommand != null && !verified)
+          SmallButton('Fazer login', onPressed: () => c.login(a.name)),
+        if (usable && !verified)
+          SmallButton(testing ? 'testando…' : 'Testar', primary: rec, onPressed: testing ? null : () => c.test(a.name)),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -333,25 +348,10 @@ class _AgentLineState extends State<_AgentLine> {
                   style: TextStyle(fontSize: 12.5, color: verified ? Tokens.ok : Tokens.faint),
                 ),
               ),
-              const SizedBox(width: 8),
-              Wrap(
-                spacing: 6,
-                children: [
-                  if (!a.installed && !apiKey)
-                    SmallButton('Instalar', primary: rec, onPressed: () => c.install(a.name)),
-                  if (!a.installed && apiKey) SmallButton('Criar chave', onPressed: () => c.install(a.name)),
-                  if (a.installed && a.loginCommand != null && !verified)
-                    SmallButton('Fazer login', onPressed: () => c.login(a.name)),
-                  if (usable && !verified)
-                    SmallButton(
-                      testing ? 'testando…' : 'Testar',
-                      primary: rec,
-                      onPressed: testing ? null : () => c.test(a.name),
-                    ),
-                ],
-              ),
+              if (!compact) ...[const SizedBox(width: 8), buttons],
             ],
           ),
+          if (compact) Padding(padding: const EdgeInsets.only(top: 6), child: buttons),
           if (!a.installed && apiKey)
             Padding(
               padding: const EdgeInsets.only(top: 8),

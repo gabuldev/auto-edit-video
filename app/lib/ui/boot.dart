@@ -7,10 +7,15 @@ import 'theme.dart';
 /// Until the engine first answers: nothing mounts half-offline. It never
 /// gives up, it only says more the longer it takes.
 class BootScreen extends StatefulWidget {
-  const BootScreen({super.key, this.startError});
+  const BootScreen({super.key, this.startError, this.remote, this.onUnpair});
 
   /// Why the app could not start the engine (still waits for one by hand).
   final String? startError;
+
+  /// On the phone: the paired computer's name (it waits for it, not for a
+  /// local engine), and a way to pair with another one.
+  final String? remote;
+  final VoidCallback? onUnpair;
 
   @override
   State<BootScreen> createState() => _BootScreenState();
@@ -53,7 +58,10 @@ class _BootScreenState extends State<BootScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2, color: Tokens.accent),
               ),
               const SizedBox(height: 12),
-              const Text('Iniciando o motor…', style: TextStyle(fontSize: 13.5, color: Tokens.dim)),
+              Text(
+                widget.remote != null ? 'Conectando a ${widget.remote}…' : 'Iniciando o motor…',
+                style: const TextStyle(fontSize: 13.5, color: Tokens.dim),
+              ),
               if (widget.startError != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -62,11 +70,22 @@ class _BootScreenState extends State<BootScreen> {
                   style: hint.copyWith(color: Tokens.err),
                 ),
               ],
-              if (waited.inSeconds >= 15) ...[
+              if (widget.remote != null && waited.inSeconds >= 8) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'O computador precisa estar ligado, com o Auto-Edit aberto e na mesma rede Wi-Fi.',
+                  textAlign: TextAlign.center,
+                  style: hint,
+                ),
+                if (widget.onUnpair != null) ...[
+                  const SizedBox(height: 12),
+                  TextButton(onPressed: widget.onUnpair, child: const Text('Parear com outro computador')),
+                ],
+              ] else if (waited.inSeconds >= 15) ...[
                 const SizedBox(height: 12),
                 const Text('Na primeira abertura pode levar um pouco mais.', textAlign: TextAlign.center, style: hint),
               ],
-              if (waited.inSeconds >= 60) ...[
+              if (widget.remote == null && waited.inSeconds >= 60) ...[
                 const SizedBox(height: 12),
                 Text(
                   'O motor ainda não respondeu. Se continuar assim, feche e abra o app de novo '
