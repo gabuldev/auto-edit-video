@@ -34,7 +34,7 @@ atualização dentro do app (o updater do Tauri lê o `latest.json`, onde ele n�
 entra). O Windows sai sem assinatura (o SmartScreen avisa na 1ª abertura).
 Trocar o Tauri pelo Flutter, com atualização automática, é o próximo passo (#144).
 
-Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev`
+Linux precisa de `clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev libsecret-1-dev`
 (o player é o `media_kit`, que usa a libmpv do sistema no Linux; no macOS e
 no Windows ela vem no pacote). Nos testes o player é trocado por um
 substituto (`PlayerScope`, `lib/ui/player.dart`).
