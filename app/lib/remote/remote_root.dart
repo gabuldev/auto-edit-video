@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:auto_edit_client/auto_edit_client.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -99,6 +100,9 @@ class _RemoteRootState extends State<RemoteRoot> {
   Future<void> _use(RemoteEngine? engine) async {
     _client?.close();
     _engine = engine;
+    // Image.network and friends use dart:io's own HttpClient, not the
+    // client's pinned one: teach it the computer's certificate too.
+    HttpOverrides.global = engine == null ? null : PinnedOverrides(engine.baseUrl, engine.fingerprint);
     _client = engine == null ? null : _connect(engine.config);
   }
 
@@ -162,3 +166,18 @@ Widget cameraScanner(BuildContext context, ValueChanged<String> onCode) => Mobil
 
 /// The phone build: no local engine, a paired computer instead.
 bool get isPhone => Platform.isAndroid || Platform.isIOS;
+
+/// Trusts the paired computer's self-signed certificate (by its SHA-256) for
+/// that host and port only; anything else goes through the normal checks.
+class PinnedOverrides extends HttpOverrides {
+  PinnedOverrides(this.base, String fingerprint) : _expected = fingerprint.replaceAll(':', '').toLowerCase();
+  final Uri base;
+  final String _expected;
+
+  bool trusts(X509Certificate cert, String host, int port) =>
+      host == base.host && port == base.port && sha256.convert(cert.der).toString() == _expected;
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) =>
+      super.createHttpClient(context)..badCertificateCallback = trusts;
+}

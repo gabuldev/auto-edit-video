@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -72,6 +73,9 @@ class VideoPlayer extends StatelessWidget {
   Widget build(BuildContext context) => PlayerScope.of(context)(context, source);
 }
 
+/// Android and iOS: touch controls on the player.
+bool get touchControls => Platform.isAndroid || Platform.isIOS;
+
 class MediaKitPlayer extends StatefulWidget {
   const MediaKitPlayer({super.key, required this.source});
   final PlayerSource source;
@@ -114,10 +118,18 @@ class _MediaKitPlayerState extends State<MediaKitPlayer> {
   @override
   Widget build(BuildContext context) => ColoredBox(
     color: Colors.black,
-    child: MaterialDesktopVideoControlsTheme(
-      normal: const MaterialDesktopVideoControlsThemeData(seekBarPositionColor: Tokens.accent),
-      fullscreen: const MaterialDesktopVideoControlsThemeData(seekBarPositionColor: Tokens.accent),
-      child: Video(controller: _controller, controls: MaterialDesktopVideoControls),
-    ),
+    // The desktop controls only show on mouse hover: a phone or tablet
+    // needs the touch ones (tap shows play, seek bar, full screen).
+    child: touchControls
+        ? MaterialVideoControlsTheme(
+            normal: const MaterialVideoControlsThemeData(seekBarPositionColor: Tokens.accent),
+            fullscreen: const MaterialVideoControlsThemeData(seekBarPositionColor: Tokens.accent),
+            child: Video(controller: _controller, controls: MaterialVideoControls),
+          )
+        : MaterialDesktopVideoControlsTheme(
+            normal: const MaterialDesktopVideoControlsThemeData(seekBarPositionColor: Tokens.accent),
+            fullscreen: const MaterialDesktopVideoControlsThemeData(seekBarPositionColor: Tokens.accent),
+            child: Video(controller: _controller, controls: MaterialDesktopVideoControls),
+          ),
   );
 }

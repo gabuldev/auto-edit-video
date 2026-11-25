@@ -25,6 +25,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   nsd: ^5.0.1
   flutter_local_notifications: ^22.0.0
+  crypto: ^3.0.8
 
 dev_dependencies:
   flutter_test:
